@@ -19,12 +19,16 @@ The serverless API expects these environment variables in the deployment environ
 - `MONGODB_URI` — MongoDB Atlas connection string for the AFTERDARK database user.
 - `MONGODB_DB` — database name; use `afterdark` if that is the intended database.
 - `JWT_SECRET` — a long, random secret used to sign sessions and hash invite tokens.
+- `RESEND_API_KEY` — API key for sending password-reset emails through Resend.
+- `FROM_EMAIL` — a sender address/domain verified with Resend (for example, `AFTERDARK <login@your-verified-domain>`).
+- `APP_URL` — canonical public site URL used in reset links (for example, `https://your-site.vercel.app`).
 
-Do not put real values in this repository. Set them in the deployment provider's environment-variable settings, then redeploy. Use `.env.example` only as a placeholder guide. Restrict the MongoDB network access list to the deployment's required network path where feasible; do not leave a broad public allowlist for a public launch.
+Do not put real values in this repository. Set them in the deployment provider's environment-variable settings, then redeploy. Password recovery will return a clear unavailable message until `RESEND_API_KEY`, `FROM_EMAIL`, and `APP_URL` are configured and the sender is verified. Use `.env.example` only as a placeholder guide. Restrict the MongoDB network access list to the deployment's required network path where feasible; do not leave a broad public allowlist for a public launch.
 
 ## Current API routes
 
 - `POST /api/register`, `POST /api/login`, `POST /api/logout`, `GET /api/me`
+- `POST /api/forgot-password`, `POST /api/reset-password` (one-time reset token, 60-minute expiry)
 - `POST /api/invites`, `GET /api/invites/:token`
 - `POST /api/invites/:token/approve`, `POST /api/invites/:token/ignore`
 - `GET /api/connections`
