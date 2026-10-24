@@ -59,7 +59,7 @@ export default async function handler(req, res) {
     if (action === 'forgot-password' && req.method === 'POST') {
       if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) return json(res, 503, { error: 'Password reset emails aren’t ready yet. Please try again later.' });
       const email = String(body.email || '').trim().toLowerCase();
-      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return json(res, 400, { error: 'Enter a valid email address.' });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(res, 400, { error: 'Enter a valid email address.' });
       const generic = { message: 'If that email is registered, a reset link will arrive shortly. Check your inbox and spam folder.' };
       const existing = await database.collection('users').findOne({ email }, { projection: { _id: 1 } });
       if (!existing) return json(res, 200, generic);
