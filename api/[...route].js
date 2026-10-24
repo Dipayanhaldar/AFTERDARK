@@ -68,7 +68,8 @@ export default async function handler(req, res) {
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
       await database.collection('password_resets').deleteMany({ userId: existing._id });
       await database.collection('password_resets').insertOne({ tokenHash, userId: existing._id, createdAt: new Date(), expiresAt });
-      const baseUrl = (process.env.APP_URL || (process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : '')).replace(/\\/$/, '');
+      const rawBaseUrl = process.env.APP_URL || (process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : '');
+      const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
       if (!baseUrl) { await database.collection('password_resets').deleteOne({ tokenHash }); return json(res, 503, { error: 'Password reset emails aren’t ready yet. Please try again later.' }); }
       const resetUrl = baseUrl + '/?token=' + encodeURIComponent(raw);
       const mail = await fetch('https://api.resend.com/emails', {
