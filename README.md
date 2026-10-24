@@ -1,32 +1,35 @@
 # AFTERDARK 🌙
 
-A consent-first relationship and situationship companion for adults (18+), with personal invite links, mutual approval, private chat, shared memories, games, date ideas, and contextual brand experiences.
-
-## Safety and release status
-
-This repository is a **separate development track**. The existing production website is not changed by commits here.
-
-**Current milestone:** initial frontend scaffold only. Invite links, approvals, messaging, QR generation, push notifications, AI, and Android APK must not be treated as production-ready until connected to a backend, tested, and released.
+AFTERDARK is a consent-first relationship and situationship space for adults 18+. The experience is built around personal invite links, QR sharing, an explicit approve/ignore choice, private chat for approved connections, and subtle date-plan suggestions.
 
 ## Product principles
 
-- Every account must be for adults 18+.
-- Connection requires explicit recipient approval; ignoring an invite does not unlock chat.
-- Private chat must be authorized server-side for the two mutually approved participants only.
-- Users need block, report, revoke-invite, account deletion, and data deletion controls.
-- Do not represent self-reported gender or a profile image as verified identity.
-- Brand placements must be contextual and any sponsorship/affiliate relationship disclosed.
-- Never commit API keys, database credentials, JWT secrets, or other secrets to this public repository.
+- Adults 18+ only. Registration requires explicit age confirmation.
+- Only signed-in users can create invites. Invite tokens are random, expire after seven days, and are stored as hashes.
+- The recipient must approve before a connection is created. Ignoring an invite never unlocks chat.
+- Message reads and sends are authorized on the server for the approved connection members.
+- Passwords are salted and hashed; sessions use HTTP-only, Secure, SameSite cookies.
+- Contextual brand suggestions use a small local ruleset and curated links. This is not a generative AI model, and brand links do not imply sponsorship.
+- Never commit database credentials, session secrets, API keys, or other secrets to this public repository.
 
-## Roadmap
+## Runtime configuration
 
-1. Preserve and recover the existing website's source/design before merging any existing UI into this separate project.
-2. Build the consent-first invite flow, unique expiring/revocable invite links, and QR download.
-3. Connect registration, login, approvals, chat, block/report, and account deletion to a secure backend.
-4. Add games, questions, dares, memories/archive, boundaries, date ideas, and template-based free-first suggestions.
-5. Add contextual brand cards for relevant date, food, travel, streaming, and gifting moments.
-6. Add opt-in push notifications and test a real Android APK build/signing/release process.
-7. Run build, security, API authorization, accessibility, and end-to-end tests before production promotion.
+The serverless API expects these environment variables in the deployment environment:
+
+- `MONGODB_URI` — MongoDB Atlas connection string for the AFTERDARK database user.
+- `MONGODB_DB` — database name; use `afterdark` if that is the intended database.
+- `JWT_SECRET` — a long, random secret used to sign sessions and hash invite tokens.
+
+Do not put real values in this repository. Set them in the deployment provider's environment-variable settings, then redeploy. Use `.env.example` only as a placeholder guide. Restrict the MongoDB network access list to the deployment's required network path where feasible; do not leave a broad public allowlist for a public launch.
+
+## Current API routes
+
+- `POST /api/register`, `POST /api/login`, `POST /api/logout`, `GET /api/me`
+- `POST /api/invites`, `GET /api/invites/:token`
+- `POST /api/invites/:token/approve`, `POST /api/invites/:token/ignore`
+- `GET /api/connections`
+- `GET /api/connections/:id/messages`, `POST /api/connections/:id/messages`
+- `POST /api/revoke-invites`, `DELETE /api/delete-account`
 
 ## Local development
 
@@ -34,6 +37,11 @@ This repository is a **separate development track**. The existing production web
 npm install
 npm run dev
 npm run build
-``
+node --check 'api/[...route].js'
+```
 
-See deployment configuration only after the initial build is verified. The existing production project must remain untouched.
+Vite's local development server does not automatically run Vercel serverless functions. To test the complete API locally, use Vercel's local development command with the environment variables configured, or deploy to a protected preview environment first.
+
+## Release checklist
+
+Before inviting real users, configure the runtime variables, test registration and login, test an invite from a separate account/device, verify approve and ignore paths, verify that an unapproved user cannot read or send messages, and verify account deletion. The Android APK, push notifications, block/report workflows, and deeper relationship features remain separate release work.
