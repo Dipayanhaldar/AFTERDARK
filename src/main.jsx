@@ -1,100 +1,102 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import QRCode from 'qrcode';
 import './style.css';
 
 const brands = [
-  { name: 'Starbucks', note: 'Matcha date?', category: 'Coffee', url: 'https://www.starbucks.in/' },
-  { name: 'Zomato', note: 'Send a little craving', category: 'Food', url: 'https://www.zomato.com/' },
-  { name: 'District', note: 'Find your next plan', category: 'Things to do', url: 'https://www.district.in/' },
-  { name: 'BookMyShow', note: 'Movie night, sorted', category: 'Movies', url: 'https://in.bookmyshow.com/' },
-  { name: 'IGP', note: 'Tiny gift, big hint', category: 'Gifting', url: 'https://www.igp.com/' },
-  { name: 'Uber', note: 'Get there together', category: 'Travel', url: 'https://www.uber.com/in/en/' },
+  { name: 'Starbucks', note: 'Matcha date?', category: 'Coffee', url: 'https://www.starbucks.in/', keys: ['matcha','coffee','cafe','chai','drink'] },
+  { name: 'Zomato', note: 'Send a little craving', category: 'Food', url: 'https://www.zomato.com/', keys: ['food','hungry','eat','dinner','lunch','craving','pizza','biryani'] },
+  { name: 'Blinkit', note: 'Little things, delivered', category: 'Little surprises', url: 'https://blinkit.com/', keys: ['snack','chocolate','surprise','midnight','ice cream'] },
+  { name: 'District', note: 'Find your next plan', category: 'Things to do', url: 'https://www.district.in/', keys: ['date','plan','event','concert','activity','weekend'] },
+  { name: 'BookMyShow', note: 'Movie night, sorted', category: 'Movies', url: 'https://in.bookmyshow.com/', keys: ['movie','film','cinema','pvr','show'] },
+  { name: 'IGP', note: 'Tiny gift, big hint', category: 'Gifting', url: 'https://www.igp.com/', keys: ['gift','birthday','anniversary','flowers','present'] },
+  { name: 'Uber', note: 'Get there together', category: 'Getting there', url: 'https://www.uber.com/in/en/', keys: ['ride','cab','travel','pickup','drop'] },
+  { name: 'Netflix', note: 'One more episode?', category: 'Watch together', url: 'https://www.netflix.com/', keys: ['watch','series','netflix','binge'] },
+  { name: 'H&M', note: 'Fit check energy', category: 'Style', url: 'https://www2.hm.com/en_in/index.html', keys: ['outfit','clothes','fashion','fit','style'] },
 ];
-
+const vibeLines = ['Acha suno… is this a soft launch or full launch? 👀','Scene kya hai, bestie? Keep it honest, keep it kind.','Arrey, that sounds like a date plan in disguise.','No pressure, bas clear communication. We love that.','Hyd Gen Z rule: plan banao, “dekhenge” pe mat chhodo.'];
+const suggestionsFor = (text) => { const lower = text.toLowerCase(); return brands.filter(b => b.keys.some(k => lower.includes(k))).slice(0, 2); };
+async function request(path, options = {}) {
+  let response;
+  try { response = await fetch('/api/' + path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options }); }
+  catch { throw new Error('Connection hiccup. Check your internet and try again.'); }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || 'Something glitched. Try again.');
+  return data;
+}
 function App() {
   const [tab, setTab] = useState('home');
-  const [invite, setInvite] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [user, setUser] = useState(null);
+  const [authMode, setAuthMode] = useState('register');
+  const [auth, setAuth] = useState({ email: '', password: '', handle: '', adult: false, consent: false });
+  const [authError, setAuthError] = useState('');
   const [toast, setToast] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [invite, setInvite] = useState('');
+  const [qr, setQr] = useState('');
+  const [inviteInfo, setInviteInfo] = useState(null);
+  const [connections, setConnections] = useState([]);
+  const [activeConnection, setActiveConnection] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [draft, setDraft] = useState('');
+  const [inviteReply, setInviteReply] = useState('');
   const [ageConfirmed, setAgeConfirmed] = useState(false);
-  const [inviteState, setInviteState] = useState('waiting');
+  const [chatSuggestionShown, setChatSuggestionShown] = useState({});
+  const inviteToken = useMemo(() => window.location.pathname.match(/^\/invite\/([A-Za-z0-9_-]+)\/?$/)?.[1] || '', []);
 
-  const createInvite = () => {
-    // Prototype only: real invites must be generated and validated by the server.
-    const token = Array.from(crypto.getRandomValues(new Uint8Array(18)), b => b.toString(16).padStart(2, '0')).join('');
-    setInvite(window.location.origin + '/invite/' + token);
-    setInviteState('waiting');
-    setCopied(false);
-    setToast('Preview invite created. Server-backed links are not connected yet.');
-  };
-
-  const copyInvite = async () => {
-    if (!invite) return;
-    try {
-      await navigator.clipboard.writeText(invite);
-      setCopied(true);
-      setToast('Invite copied. Send it only to the person you choose.');
-    } catch {
-      setToast('Copy is unavailable here. Select and copy the invite link manually.');
-    }
-  };
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <a className="wordmark" href="#" onClick={() => setTab('home')} aria-label="AFTERDARK home">
-          <span className="moon">☾</span> AFTERDARK<span className="dot">.</span>
-        </a>
-        <div className="top-actions"><span className="adult-pill">18+ ONLY</span><button className="ghost-btn" onClick={() => setTab('safety')}>Safety</button></div>
-      </header>
-
-      <main>
-        {!ageConfirmed && <section className="age-note">
-          <div><strong>Adults only. Always.</strong><p>AFTERDARK is designed for people aged 18 and above.</p></div>
-          <button className="primary-btn small" onClick={() => setAgeConfirmed(true)}>I'm 18 or older</button>
-        </section>}
-
-        <section className="hero">
-          <div className="eyebrow"><span className="pulse"></span> YOUR LITTLE WORLD, OFF THE TIMELINE</div>
-          <h1>Not just a <em>situationship.</em><br />Make it <span className="gradient-text">your thing.</span></h1>
-          <p className="hero-copy">No public swipe circus. No random people in your business. Just you, your person, and a private space you both choose.</p>
-          <div className="hero-actions">
-            <button className="primary-btn" onClick={() => { setTab('invite'); document.getElementById('workspace')?.scrollIntoView({behavior:'smooth'}); }}>Create your invite <span>↗</span></button>
-            <button className="secondary-btn" onClick={() => { setTab('explore'); document.getElementById('workspace')?.scrollIntoView({behavior:'smooth'}); }}>Explore the vibe</button>
-          </div>
-          <div className="trust-row"><span>✦ Consent first</span><span>✦ Private by design</span><span>✦ No public discovery</span></div>
-          <div className="orb orb-one"></div><div className="orb orb-two"></div>
-        </section>
-
-        <section className="workspace" id="workspace">
-          <div className="section-heading"><div><div className="eyebrow">THE AFTERDARK SPACE</div><h2>Your connection, your rules.</h2></div><span className="preview-tag">EARLY PREVIEW</span></div>
-          <nav className="tabs" aria-label="App sections">
-            {[['home','Overview'],['invite','Invite link'],['explore','Vibe drops'],['safety','Boundaries']].map(([id,label]) => <button key={id} className={tab === id ? 'tab active' : 'tab'} onClick={() => setTab(id)}>{label}</button>)}
-          </nav>
-
-          {tab === 'home' && <div className="feature-grid">
-            <article className="feature-card invite-card"><div className="card-icon">↗</div><span className="card-kicker">START WITH A PERSON</span><h3>One link.<br />One intentional choice.</h3><p>Share your invite through WhatsApp or Instagram. The other person decides whether to approve or ignore. No approval, no chat.</p><button className="text-btn" onClick={() => setTab('invite')}>Make an invite <span>→</span></button></article>
-            <article className="feature-card"><div className="card-icon pink">♡</div><span className="card-kicker">WHEN IT'S MUTUAL</span><h3>A space for just you two.</h3><p>Private chat, daily questions, mini games, dares, shared memories and boundaries — unlocked only after mutual approval.</p><span className="coming-label">PLANNED FEATURE</span></article>
-            <article className="feature-card"><div className="card-icon lilac">✧</div><span className="card-kicker">LESS “WHAT NOW?”</span><h3>Turn the vibe into a plan.</h3><p>Matcha this Sunday? Movie night? A small gift? Contextual ideas can help turn “we should” into an actual plan.</p><button className="text-btn" onClick={() => setTab('explore')}>Find a vibe <span>→</span></button></article>
-          </div>}
-
-          {tab === 'invite' && <div className="panel invite-panel">
-            <div className="panel-copy"><span className="card-kicker">YOUR PERSONAL INVITE</span><h3>Make the first move.<br /><em>Keep it mutual.</em></h3><p>Generate a preview link, then share it with the one person you have in mind. The live approval flow is not connected yet, so this preview link does not create an actual account connection.</p><button className="primary-btn" onClick={createInvite}>Generate preview link <span>↗</span></button></div>
-            <div className="invite-box"><div className="link-symbol">⌁</div><strong>Your invite link</strong><p className="muted">A private invite starts with a choice.</p>{invite ? <><div className="generated-link">{invite}</div><button className="secondary-btn full" onClick={copyInvite}>{copied ? 'Copied ✓' : 'Copy invite link'}</button><div className="state-row"><span className="state-dot"></span>{inviteState === 'waiting' ? 'Waiting for a real approval flow to be connected' : inviteState}</div></> : <div className="empty-link">Your link will appear here</div>}<small>Preview only · Not a live connection</small></div>
-          </div>}
-
-          {tab === 'explore' && <div className="explore-content"><div className="explore-intro"><span className="card-kicker">VIBE DROPS</span><h3>Less scrolling. More <em>“let's go.”</em></h3><p>Ideas and links for the moment you're in. These are independent brand links, not claims of sponsorship.</p></div><div className="brand-grid">{brands.map((brand, i) => <a className="brand-card" href={brand.url} target="_blank" rel="noreferrer" key={brand.name}><span className={'brand-mark mark-' + i}>{brand.name.slice(0,1)}</span><span className="brand-meta"><small>{brand.category}</small><strong>{brand.name}</strong><span>{brand.note}</span></span><span className="external">↗</span></a>)}</div><p className="disclosure">Brand links open the providers' websites. AFTERDARK does not claim a partnership or endorsement.</p></div>}
-
-          {tab === 'safety' && <div className="safety-grid"><div><span className="card-kicker">YOUR SPACE, YOUR CALL</span><h3>Consent isn't a setting.<br /><em>It's the foundation.</em></h3><p>These are product requirements for the live build. They are not all implemented in this preview.</p></div><ul className="safety-list"><li><span>✓</span><div><strong>Explicit approval</strong><p>Ignoring an invite never unlocks chat.</p></div></li><li><span>✓</span><div><strong>Private by default</strong><p>Only the two approved members can read messages.</p></div></li><li><span>✓</span><div><strong>Block and report</strong><p>Safety controls must be available in every connection.</p></div></li><li><span>✓</span><div><strong>Control your data</strong><p>Revoke invites and delete your account and data.</p></div></li></ul></div>}
-        </section>
-
-        <section className="coming-section"><div className="eyebrow">THE ROADMAP</div><h2>Little moments. <em>Big energy.</em></h2><div className="roadmap-grid">{[['01','The invite','Unique links, QR download, approve or ignore'],['02','The private space','Server-checked chat, games, questions and dares'],['03','The archive','Memories, milestones, boundaries and shared plans'],['04','The nudge','Opt-in push notifications and a real Android app']].map(([n,title,desc]) => <div className="roadmap-item" key={n}><span>{n}</span><div><strong>{title}</strong><p>{desc}</p></div></div>)}</div></section>
-      </main>
-
-      <footer><a className="wordmark" href="#"><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><span>For adults, by choice. Not by pressure.</span><span className="footer-status"><i></i> Preview build · backend not connected</span></footer>
-      {toast && <div className="toast" role="status">{toast}<button onClick={() => setToast('')} aria-label="Dismiss">×</button></div>}
-    </div>
-  );
+  useEffect(() => { request('me').then(data => { setUser(data.user); if (data.user) loadConnections(); }).catch(() => {}); }, []);
+  useEffect(() => {
+    if (inviteToken && user) request('invites/' + inviteToken).then(d => setInviteInfo(d.invite)).catch(e => setInviteReply(e.message));
+  }, [inviteToken, user]);
+  useEffect(() => { if (activeConnection && user) request('connections/' + activeConnection + '/messages').then(d => setMessages(d.messages || [])).catch(e => setToast(e.message)); }, [activeConnection, user]);
+  async function loadConnections() { try { const d = await request('connections'); setConnections(d.connections || []); if (!activeConnection && d.connections?.[0]) setActiveConnection(d.connections[0].id); } catch {} }
+  async function submitAuth(e) {
+    e.preventDefault(); setAuthError(''); setBusy(true);
+    try { const data = await request(authMode === 'register' ? 'register' : 'login', { method: 'POST', body: JSON.stringify(auth) }); setUser(data.user); setToast(authMode === 'register' ? 'You’re in. Now make it mutual ✨' : 'You’re back, bestie.'); if (inviteToken) { const d = await request('invites/' + inviteToken); setInviteInfo(d.invite); } else setTab('invite'); await loadConnections(); }
+    catch (e) { setAuthError(e.message); }
+    finally { setBusy(false); }
+  }
+  async function createInvite() {
+    setBusy(true); setToast('');
+    try { const data = await request('invites', { method: 'POST', body: '{}' }); const link = location.origin + '/invite/' + data.invite; setInvite(link); const image = await QRCode.toDataURL(link, { width: 600, margin: 2, color: { dark: '#251226', light: '#ffffff' }, errorCorrectionLevel: 'H' }); setQr(image); setToast('Invite ready. Share it with your person, not the whole timeline.'); }
+    catch (e) { setToast(e.message); }
+    finally { setBusy(false); }
+  }
+  async function respondToInvite(action) {
+    setBusy(true);
+    try { await request('invites/' + inviteToken + '/' + action, { method: 'POST', body: '{}' }); setInviteReply(action === 'approve' ? 'Approved! The vibe is mutual 💗' : 'Aiyo bro, ee saari scene set avvaledhu 💔'); if (action === 'approve') { await loadConnections(); setTab('chat'); } }
+    catch (e) { setInviteReply(e.message); }
+    finally { setBusy(false); }
+  }
+  async function sendMessage(e) {
+    e.preventDefault(); const text = draft.trim(); if (!text || !activeConnection) return;
+    setBusy(true);
+    try { const d = await request('connections/' + activeConnection + '/messages', { method: 'POST', body: JSON.stringify({ text }) }); setMessages(prev => [...prev, d.message]); setDraft(''); const matched = suggestionsFor(text); if (matched.length && !chatSuggestionShown[activeConnection]) { setChatSuggestionShown(prev => ({ ...prev, [activeConnection]: true })); setToast(vibeLines[Math.floor(Math.random() * vibeLines.length)]); } }
+    catch (e) { setToast(e.message); }
+    finally { setBusy(false); }
+  }
+  async function signOut() { try { await request('logout', { method: 'POST', body: '{}' }); } catch {} setUser(null); setConnections([]); setMessages([]); setActiveConnection(''); setInvite(''); setQr(''); setToast('Signed out. Take care, bestie.'); }
+  const active = connections.find(c => c.id === activeConnection);
+  const contextualBrands = suggestionsFor(messages.slice(-3).map(m => m.text).join(' '));
+  const showInviteLanding = Boolean(inviteToken);
+  return <div className="app-shell">
+    <header className="topbar"><a className="wordmark" href="/" onClick={e => { e.preventDefault(); history.pushState({}, '', '/'); setTab('home'); }} aria-label="AFTERDARK home"><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><div className="top-actions"><span className="adult-pill">18+ ONLY</span>{user ? <><span className="user-pill">@{user.handle}</span><button className="ghost-btn" onClick={signOut}>Log out</button></> : <button className="ghost-btn" onClick={() => { setAuthMode('login'); setTab('account'); }}>Sign in</button>}<button className="ghost-btn" onClick={() => setTab('safety')}>Safety</button></div></header>
+    <main>
+      {!ageConfirmed && <section className="age-note"><div><strong>Adults only. Always.</strong><p>AFTERDARK is for people aged 18 and above. Keep it consensual.</p></div><button className="primary-btn small" onClick={() => setAgeConfirmed(true)}>I’m 18 or older</button></section>}
+      {showInviteLanding ? <section className="invite-landing glass-panel"><span className="eyebrow">SOMEONE THOUGHT OF YOU ✦</span><h1>Ohooo, <em>you got a vibe invite.</em></h1>{inviteReply ? <p className="invite-result">{inviteReply}</p> : inviteInfo ? <><p>{inviteInfo.ownInvite ? 'This is your link, bestie. Share it with your person to let them choose.' : 'One person. One choice. No pressure. Approve only if you want to.'}</p>{!inviteInfo.ownInvite && inviteInfo.status === 'pending' && <div className="hero-actions"><button className="primary-btn" disabled={busy} onClick={() => respondToInvite('approve')}>Approve the vibe 💗</button><button className="secondary-btn" disabled={busy} onClick={() => respondToInvite('ignore')}>Not my scene</button></div>}</> : user ? <p>{inviteReply || 'Checking this invite…'}</p> : <p>Sign in or create an account to decide. Your choice stays yours.</p>}{!user && <button className="primary-btn" onClick={() => { setAuthMode('register'); setTab('account'); }}>Join AFTERDARK <span>↗</span></button>}</section> : <section className="hero"><div className="eyebrow"><span className="pulse"></span> YOUR LITTLE WORLD, OFF THE TIMELINE</div><h1>Not just a <em>situationship.</em><br/>Make it <span className="gradient-text">your thing.</span></h1><p className="hero-copy">No public swipe circus. No random log in your business. Just you, your person, and a private space you both choose.</p><div className="hero-actions"><button className="primary-btn" onClick={() => { setTab(user ? 'invite' : 'account'); document.getElementById('workspace')?.scrollIntoView({ behavior: 'smooth' }); }}>{user ? 'Create your invite' : 'Get your invite link'} <span>↗</span></button><button className="secondary-btn" onClick={() => { setTab('explore'); document.getElementById('workspace')?.scrollIntoView({ behavior: 'smooth' }); }}>Explore the vibe</button></div><div className="trust-row"><span>✦ Consent first</span><span>✦ Private by design</span><span>✦ No public discovery</span></div><div className="orb orb-one"></div><div className="orb orb-two"></div></section>}
+      <section className="workspace" id="workspace"><div className="section-heading"><div><div className="eyebrow">THE AFTERDARK SPACE</div><h2>Your connection, your rules.</h2></div><span className="preview-tag">YOUR PRIVATE SPACE</span></div>
+        <nav className="tabs" aria-label="App sections">{[['home','Overview'],['account','Sign in / Join'],['invite','Invite + QR'],['chat','Your chat'],['explore','Vibe drops'],['safety','Boundaries']].map(([id,label]) => <button key={id} className={tab === id ? 'tab active' : 'tab'} onClick={() => setTab(id)}>{label}</button>)}</nav>
+        {tab === 'home' && <div className="feature-grid"><article className="feature-card invite-card"><div className="card-icon">↗</div><span className="card-kicker">START WITH YOUR PERSON</span><h3>One link.<br/>One intentional choice.</h3><p>Share a link or QR through WhatsApp or Instagram. They decide whether to approve or ignore. No approval, no chat.</p><button className="text-btn" onClick={() => setTab(user ? 'invite' : 'account')}>Make an invite <span>→</span></button></article><article className="feature-card"><div className="card-icon pink">♡</div><span className="card-kicker">WHEN IT'S MUTUAL</span><h3>A space for just you two.</h3><p>Private chat, daily questions, mini games, dares, shared memories and boundaries — unlocked only after approval.</p><span className="coming-label">MORE MOMENTS COMING</span></article><article className="feature-card"><div className="card-icon lilac">✧</div><span className="card-kicker">LESS “WHAT NOW?”</span><h3>Turn the vibe into a plan.</h3><p>Matcha this Sunday? Movie night? A small gift? Tiny suggestions can turn “we should” into an actual plan.</p><button className="text-btn" onClick={() => setTab('explore')}>Find a vibe <span>→</span></button></article></div>}
+        {tab === 'account' && <div className="auth-layout"><div><span className="card-kicker">YOUR SPACE STARTS HERE</span><h3>{authMode === 'register' ? 'Join the private side.' : 'Back for the plot?'}</h3><p>Keep your password private. AFTERDARK will never ask you to share it with your person.</p><button className="text-btn" onClick={() => { setAuthMode(authMode === 'register' ? 'login' : 'register'); setAuthError(''); }}>{authMode === 'register' ? 'Already here? Sign in →' : 'New here? Create an account →'}</button></div><form className="auth-form" onSubmit={submitAuth}><label>Email<input type="email" required autoComplete="email" value={auth.email} onChange={e => setAuth({...auth,email:e.target.value})} placeholder="you@example.com"/></label>{authMode === 'register' && <label>Your handle (optional)<input value={auth.handle} onChange={e => setAuth({...auth,handle:e.target.value})} maxLength="24" placeholder="maincharacter"/></label>}<label>Password<input type="password" required minLength="10" autoComplete={authMode === 'register' ? 'new-password' : 'current-password'} value={auth.password} onChange={e => setAuth({...auth,password:e.target.value})} placeholder="At least 10 characters"/></label>{authMode === 'register' && <div className="checks"><label className="check"><input type="checkbox" checked={auth.adult} onChange={e => setAuth({...auth,adult:e.target.checked})}/> I’m 18 or older.</label><label className="check"><input type="checkbox" checked={auth.consent} onChange={e => setAuth({...auth,consent:e.target.checked})}/> I agree to use this space respectfully.</label></div>}{authError && <p className="form-error" role="alert">! {authError}</p>}<button className="primary-btn full" disabled={busy}>{busy ? 'One sec…' : authMode === 'register' ? 'Create my account ↗' : 'Sign in ↗'}</button></form></div>}
+        {tab === 'invite' && <div className="panel invite-panel"><div className="panel-copy"><span className="card-kicker">YOUR PERSONAL INVITE</span><h3>Make the first move.<br/><em>Keep it mutual.</em></h3><p>Only signed-in users can create an invite. Your person can scan the QR or open your link, then choose for themselves.</p><button className="primary-btn" disabled={!user || busy} onClick={createInvite}>{!user ? 'Sign in to make an invite' : busy ? 'Making your link…' : 'Generate my invite'} <span>↗</span></button>{!user && <button className="text-btn" onClick={() => setTab('account')}>Join or sign in →</button>}</div><div className="invite-box"><div className="link-symbol">⌁</div><strong>Your invite + QR</strong><p className="muted">One link for your person. Valid for 7 days.</p>{invite ? <><div className="generated-link">{invite}</div><div className="invite-actions"><button className="secondary-btn" onClick={async()=>{try{await navigator.clipboard.writeText(invite);setToast('Copied! Now drop it in their DMs 💌')}catch{setToast('Copy not available. Long-press the link to copy.')}}}>Copy link</button><a className="secondary-btn" href={qr} download="afterdark-invite-qr.png">Save QR image</a></div><img className="qr-image" src={qr} alt="Scannable AFTERDARK invitation QR code"/><p className="qr-hint">Save it to your gallery, then send the image. Easy scene.</p></> : <div className="empty-link">Your private link and QR will show up here</div>}</div></div>}
+        {tab === 'chat' && <div className="chat-layout"><aside className="chat-sidebar"><span className="card-kicker">YOUR PEOPLE</span>{connections.length ? connections.map(c => <button key={c.id} className={'connection-item '+(activeConnection===c.id?'selected':'')} onClick={()=>setActiveConnection(c.id)}><span className="avatar-dot">♡</span><span>{c.handle}</span><span className="online-dot"/></button>) : <p className="muted">No mutual vibes yet. Your chat unlocks after your person approves an invite.</p>}</aside><div className="chat-main"><div className="chat-title"><span className="avatar-dot">♡</span><div><strong>{active?.handle || 'Your private chat'}</strong><small>Just you two. Keep it kind.</small></div></div><div className="message-list">{activeConnection ? messages.map(m => <div key={m.id} className={'message '+(m.senderId===user?.id?'mine':'theirs')}><p>{m.text}</p><small>{new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>) : <div className="chat-empty"><span>☾</span><strong>Chat unlocks when the vibe is mutual.</strong><p>Share your invite. They choose. Then the conversation is yours.</p></div>}</div>{activeConnection && contextualBrands.length > 0 && <div className="suggestion-strip"><span>Little plan idea ✨</span>{contextualBrands.map(b => <a key={b.name} href={b.url} target="_blank" rel="noreferrer">{b.name} · {b.note} ↗</a>)}<button aria-label="Dismiss suggestions" onClick={()=>setChatSuggestionShown(p=>({...p,[activeConnection]:true}))}>×</button></div>}<form className="chat-composer" onSubmit={sendMessage}><input value={draft} onChange={e=>setDraft(e.target.value)} maxLength="2000" placeholder={activeConnection ? 'Drop a message, bestie…' : 'Your chat unlocks after approval'} disabled={!activeConnection || busy}/><button className="primary-btn" disabled={!activeConnection || !draft.trim() || busy}>Send ↗</button></form></div></div>}
+        {tab === 'explore' && <div className="explore-content"><div className="explore-intro"><span className="card-kicker">VIBE DROPS</span><h3>Less scrolling. More <em>“let's go.”</em></h3><p>Hyd Gen Z date ideas, little surprises and plans. External links only; no forced pop-ups.</p></div><div className="brand-grid">{brands.map((b,i)=><a className="brand-card" href={b.url} target="_blank" rel="noreferrer" key={b.name}><span className={'brand-mark mark-'+i}>{b.name.slice(0,1)}</span><span className="brand-meta"><small>{b.category}</small><strong>{b.name}</strong><span>{b.note}</span></span><span className="external">↗</span></a>)}</div><p className="disclosure">These links open the providers’ websites. No brand partnership is implied.</p></div>}
+        {tab === 'safety' && <div className="safety-grid"><div><span className="card-kicker">YOUR SPACE, YOUR CALL</span><h3>Consent isn't a setting.<br/><em>It's the foundation.</em></h3><p>Boundaries are real. No approval means no chat, no pressure, no chasing.</p>{user && <><button className="secondary-btn" onClick={async()=>{try{await request('revoke-invites',{method:'POST',body:'{}'});setInvite('');setQr('');setToast('All pending invites revoked. Clean slate.')}catch(e){setToast(e.message)}}}>Revoke pending invites</button><button className="danger-btn" onClick={async()=>{if(!confirm('Delete your account and associated chats? This cannot be undone.'))return;try{await request('delete-account',{method:'DELETE',body:'{}'});setUser(null);setConnections([]);setMessages([]);setToast('Account deleted. Take care.')}catch(e){setToast(e.message)}}}>Delete my account</button></>}</div><ul className="safety-list"><li><span>✓</span><div><strong>Explicit approval</strong><p>Ignoring an invite never unlocks chat.</p></div></li><li><span>✓</span><div><strong>Private by default</strong><p>Only approved people can open their chat.</p></div></li><li><span>✓</span><div><strong>Block and report</strong><p>Keep your boundaries clear. More controls are being built.</p></div></li><li><span>✓</span><div><strong>Your call, always</strong><p>Revoke pending invites and delete your account.</p></div></li></ul></div>}
+      </section>
+      <section className="coming-section"><div className="eyebrow">THE AFTERDARK VIBE</div><h2>Little moments. <em>Big energy.</em></h2><div className="roadmap-grid">{[['01','The invite','A personal link + QR, approve or ignore'],['02','The private space','Messages for approved connections only'],['03','The archive','Memories, milestones, boundaries and shared plans'],['04','The little nudge','Opt-in reminders that never spam your peace']].map(([n,title,desc])=><div className="roadmap-item" key={n}><span>{n}</span><div><strong>{title}</strong><p>{desc}</p></div></div>)}</div></section>
+    </main>
+    <footer><a className="wordmark" href="/" onClick={e=>{e.preventDefault();setTab('home')}}><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><span>For adults, by choice. Not by pressure.</span><div className="footer-links"><button onClick={()=>setTab('safety')}>Safety & boundaries</button><a href="mailto:hello@afterdark.example">Contact</a></div></footer>
+    {toast && <div className="toast" role="status">{toast}<button onClick={()=>setToast('')} aria-label="Dismiss">×</button></div>}
+  </div>;
 }
-
 createRoot(document.getElementById('root')).render(<App />);
