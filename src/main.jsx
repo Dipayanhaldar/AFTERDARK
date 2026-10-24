@@ -13,6 +13,10 @@ const brands = [
   { name: 'Uber', note: 'Get there together', category: 'Getting there', url: 'https://www.uber.com/in/en/', keys: ['ride','cab','travel','pickup','drop'] },
   { name: 'Netflix', note: 'One more episode?', category: 'Watch together', url: 'https://www.netflix.com/', keys: ['watch','series','netflix','binge'] },
   { name: 'H&M', note: 'Fit check energy', category: 'Style', url: 'https://www2.hm.com/en_in/index.html', keys: ['outfit','clothes','fashion','fit','style'] },
+  { name: 'Rapido', note: 'Ride over, no “maybe”', category: 'Getting there', url: 'https://www.rapido.bike/', keys: ['bike','rapido','scooter','pickup','drop'] },
+  { name: 'PVR Cinemas', note: 'Lights down, phones away', category: 'Movies', url: 'https://www.pvrcinemas.com/', keys: ['pvr','cinema','movie','film','screen'] },
+  { name: 'Zara', note: 'Main-character fit check', category: 'Style', url: 'https://www.zara.com/in/', keys: ['zara','dress','outfit','fit check','fashion'] },
+  { name: 'Zudio', note: 'Cute fits, sensible budget', category: 'Style', url: 'https://www.zudio.com/', keys: ['zudio','budget fit','shopping','clothes'] },
 ];
 const vibeLines = ['Acha suno… soft launch karna hai ya hard launch? 👀💋','Scene toh full filmy lag raha hai, jaan. Clock it. 💘','Arrey, this is giving “I made a playlist for you” energy. 🎧','Hyd Gen Z rule: “dekhenge” nahi, date ka time bolo. 🌙','Low-key obsessed? High-key communicate, bestie. 🫶','Aiyo, butterflies aa rahe kya? Don’t fumble the bag. 🦋'];
 const suggestionsFor = (text) => { const lower = text.toLowerCase(); return brands.filter(b => b.keys.some(k => lower.includes(k))).slice(0, 2); };
@@ -26,7 +30,7 @@ async function request(path, options = {}) {
 }
 function App() {
   const resetToken = useMemo(() => new URLSearchParams(window.location.search).get('token') || '', []);
-  const [tab, setTab] = useState('home');
+  const [tab, setTab] = useState(() => resetToken ? 'account' : 'home');
   const [user, setUser] = useState(null);
   const [authMode, setAuthMode] = useState(() => resetToken ? 'reset' : 'register');
   const [resetMessage, setResetMessage] = useState('');
