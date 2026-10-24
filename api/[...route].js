@@ -28,14 +28,15 @@ export default async function handler(req, res) {
       database.collection('invites').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       database.collection('connections').createIndex({ pairKey: 1 }, { unique: true }),
       database.collection('messages').createIndex({ connectionId: 1, createdAt: 1 }),
-      database.collection('rate_limits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+      database.collection('rate_limits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      database.collection('password_resets').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
     ]);
     const url = new URL(req.url, 'https://afterdark.invalid');
     const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     const action = parts.join('/');
     const body = ['POST','PATCH','DELETE'].includes(req.method) ? await readBody(req) : {};
     const ip = String(req.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim().slice(0, 80);
-    if (!await rateLimit(database, ip, action === 'login' || action === 'register' ? 8 : 45)) return json(res, 429, { error: 'Too many tries. Take a breath and try again shortly.' });
+    if (!await rateLimit(database, ip, ['login','register','forgot-password','reset-password'].includes(action) ? 8 : 45)) return json(res, 429, { error: 'Too many tries. Take a breath and try again shortly.' });
 
     if (action === 'register' && req.method === 'POST') {
       const email = String(body.email || '').trim().toLowerCase();
@@ -54,6 +55,50 @@ export default async function handler(req, res) {
       const [salt, stored] = user.passwordHash.split(':'); const actual = (await scrypt(password, salt, 64)).toString('hex');
       if (stored.length !== actual.length || !timingSafeEqual(Buffer.from(stored), Buffer.from(actual))) return json(res, 401, { error: 'Email or password doesn’t match. Check it and try again.' });
       cookie(res, sign({ sub: user._id.toString(), exp: Math.floor(Date.now()/1000) + DAY*14 })); return json(res, 200, { user: cleanUser(user) });
+    }
+    if (action === 'forgot-password' && req.method === 'POST') {
+      if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) return json(res, 503, { error: 'Password reset emails aren’t ready yet. Please try again later.' });
+      const email = String(body.email || '').trim().toLowerCase();
+      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return json(res, 400, { error: 'Enter a valid email address.' });
+      const generic = { message: 'If that email is registered, a reset link will arrive shortly. Check your inbox and spam folder.' };
+      const existing = await database.collection('users').findOne({ email }, { projection: { _id: 1 } });
+      if (!existing) return json(res, 200, generic);
+      const raw = token(32);
+      const tokenHash = createHmac('sha256', process.env.JWT_SECRET || '').update(raw).digest('hex');
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      await database.collection('password_resets').deleteMany({ userId: existing._id });
+      await database.collection('password_resets').insertOne({ tokenHash, userId: existing._id, createdAt: new Date(), expiresAt });
+      const baseUrl = (process.env.APP_URL || (process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : '')).replace(/\\/$/, '');
+      if (!baseUrl) { await database.collection('password_resets').deleteOne({ tokenHash }); return json(res, 503, { error: 'Password reset emails aren’t ready yet. Please try again later.' }); }
+      const resetUrl = baseUrl + '/?token=' + encodeURIComponent(raw);
+      const mail = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from: process.env.FROM_EMAIL,
+          to: [email],
+          subject: 'Reset your AFTERDARK password 🌙',
+          html: '<div style="font-family:Arial,sans-serif;background:#160f1c;color:#f8edf6;padding:32px;border-radius:18px"><h1 style="color:#ff91c4">AFTERDARK 🌙</h1><h2>Password reset requested?</h2><p>Tap below to choose a new password. This link expires in 60 minutes and can only be used once.</p><p><a href="' + resetUrl + '" style="display:inline-block;background:#ff91c4;color:#241126;padding:14px 20px;border-radius:10px;text-decoration:none;font-weight:bold">Reset my password</a></p><p>If you didn’t request this, ignore this email. Your password won’t change.</p></div>',
+          text: 'Reset your AFTERDARK password using this link (expires in 60 minutes): ' + resetUrl + '\\nIf you didn’t request this, ignore this email.'
+        })
+      });
+      if (!mail.ok) { await database.collection('password_resets').deleteOne({ tokenHash }); console.error('AFTERDARK reset email provider failed:', mail.status); return json(res, 503, { error: 'We couldn’t send the reset email just now. Try again shortly.' }); }
+      return json(res, 200, generic);
+    }
+    if (action === 'reset-password' && req.method === 'POST') {
+      const raw = String(body.token || '');
+      const password = String(body.password || '');
+      if (!raw || password.length < 10 || password.length > 128) return json(res, 400, { error: 'Use the reset link and choose a password with at least 10 characters.' });
+      const tokenHash = createHmac('sha256', process.env.JWT_SECRET || '').update(raw).digest('hex');
+      const resets = database.collection('password_resets');
+      const reset = await resets.findOne({ tokenHash, expiresAt: { $gt: new Date() } });
+      if (!reset) return json(res, 400, { error: 'This reset link has expired or was already used. Request a fresh one.' });
+      const salt = randomBytes(16).toString('hex');
+      const hash = (await scrypt(password, salt, 64)).toString('hex');
+      await database.collection('users').updateOne({ _id: reset.userId }, { $set: { passwordHash: salt + ':' + hash, passwordChangedAt: new Date() } });
+      await resets.deleteMany({ userId: reset.userId });
+      cookie(res, '', 0);
+      return json(res, 200, { message: 'Password updated. Sign in with your new password.' });
     }
     if (action === 'logout' && req.method === 'POST') { cookie(res, '', 0); return json(res, 200, { ok: true }); }
     const session = currentUser(req);
