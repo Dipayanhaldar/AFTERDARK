@@ -95,7 +95,7 @@ function App() {
       </section>
       <section className="coming-section"><div className="eyebrow">THE AFTERDARK VIBE</div><h2>Little moments. <em>Big energy.</em></h2><div className="roadmap-grid">{[['01','The invite','A personal link + QR, approve or ignore'],['02','The private space','Messages for approved connections only'],['03','The archive','Memories, milestones, boundaries and shared plans'],['04','The little nudge','Opt-in reminders that never spam your peace']].map(([n,title,desc])=><div className="roadmap-item" key={n}><span>{n}</span><div><strong>{title}</strong><p>{desc}</p></div></div>)}</div></section>
     </main>
-    <footer><a className="wordmark" href="/" onClick={e=>{e.preventDefault();setTab('home')}}><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><span>For adults, by choice. Not by pressure.</span><div className="footer-links"><button onClick={()=>setTab('safety')}>Safety & boundaries</button><a href="mailto:hello@afterdark.example">Contact</a></div></footer>
+    <footer><a className="wordmark" href="/" onClick={e=>{e.preventDefault();setTab('home')}}><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><span>For adults, by choice. Not by pressure.</span><div className="footer-links"><button onClick={()=>setTab('safety')}>Safety & boundaries</button><span>Keep it mutual ✦</span></div></footer>
     {toast && <div className="toast" role="status">{toast}<button onClick={()=>setToast('')} aria-label="Dismiss">×</button></div>}
   </div>;
 }
