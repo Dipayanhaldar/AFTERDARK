@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/invite/:token", "destination": "/" },
+    { "source": "/api/:path*", "destination": "/api/:path*" }
+  ]
+}
