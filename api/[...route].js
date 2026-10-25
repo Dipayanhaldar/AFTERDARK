@@ -178,6 +178,7 @@ export default async function handler(req, res) {
       const otherId = connection.memberIds.find(id => !id.equals(userId));
       await database.collection('users').updateOne({ _id: userId }, { $addToSet: { blockedUsers: otherId } });
       await database.collection('connections').updateOne({ _id: connectionId, status: 'approved' }, { $set: { status: 'blocked', blockedBy: userId, blockedAt: new Date() } });
+      await database.collection('date_plans').deleteOne({ connectionId });
       return json(res, 200, { ok: true });
     }
     if (parts[0] === 'connections' && parts[1] && parts[2] === 'report' && req.method === 'POST') {
@@ -199,7 +200,7 @@ export default async function handler(req, res) {
       if (req.method === 'POST') { const text = String(body.text || '').trim(); if (!text || text.length > 2000) return json(res, 400, { error: 'Keep your message between 1 and 2,000 characters.' }); const result = await messages.insertOne({ connectionId: connection._id, senderId: userId, text, createdAt: new Date() }); return json(res, 201, { message: { id: result.insertedId.toString(), text, senderId: userId.toString(), createdAt: new Date() } }); }
     }
     if (action === 'revoke-invites' && req.method === 'POST') { await database.collection('invites').updateMany({ ownerId: userId, status: 'pending' }, { $set: { status: 'revoked' } }); return json(res, 200, { ok: true }); }
-    if (action === 'delete-account' && req.method === 'DELETE') { const connections = await database.collection('connections').find({ memberIds: userId }).toArray(); await database.collection('messages').deleteMany({ connectionId: { $in: connections.map(c => c._id) } }); await database.collection('connections').deleteMany({ memberIds: userId }); await database.collection('invites').deleteMany({ $or: [{ ownerId: userId }, { recipientId: userId }] }); await database.collection('users').deleteOne({ _id: userId }); cookie(res, '', 0); return json(res, 200, { ok: true }); }
+    if (action === 'delete-account' && req.method === 'DELETE') { const connections = await database.collection('connections').find({ memberIds: userId }).toArray(); await database.collection('messages').deleteMany({ connectionId: { $in: connections.map(c => c._id) } }); await database.collection('date_plans').deleteMany({ connectionId: { $in: connections.map(c => c._id) } }); await database.collection('connections').deleteMany({ memberIds: userId }); await database.collection('invites').deleteMany({ $or: [{ ownerId: userId }, { recipientId: userId }] }); await database.collection('users').deleteOne({ _id: userId }); cookie(res, '', 0); return json(res, 200, { ok: true }); }
     return json(res, 404, { error: 'That page took a wrong turn. Try again.' });
   } catch (error) {
     const code = error?.message === 'DB_CONFIG' || error?.message === 'AUTH_CONFIG' ? 503 : 500;
