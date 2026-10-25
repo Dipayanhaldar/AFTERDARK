@@ -1,0 +1,30 @@
+{
+  "id": "/",
+  "name": "AFTERDARK — your little world",
+  "short_name": "AFTERDARK",
+  "description": "A consent-first 18+ situationship space for private invites and mutual vibes.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#1b0d17",
+  "theme_color": "#ff8fbd",
+  "categories": [
+    "lifestyle",
+    "social"
+  ],
+  "icons": [
+    {
+      "src": "/icon-192.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
