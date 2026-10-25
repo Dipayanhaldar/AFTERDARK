@@ -28,6 +28,7 @@ export default async function handler(req, res) {
       database.collection('invites').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       database.collection('connections').createIndex({ pairKey: 1 }, { unique: true }),
       database.collection('messages').createIndex({ connectionId: 1, createdAt: 1 }),
+      database.collection('messages').createIndex({ createdAt: 1 }, { expireAfterSeconds: 30 * DAY }),
       database.collection('rate_limits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       database.collection('password_resets').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       database.collection('date_plans').createIndex({ connectionId: 1 }, { unique: true }),
