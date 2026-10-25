@@ -50,6 +50,7 @@ function App() {
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [chatSuggestionShown, setChatSuggestionShown] = useState({});
   const [dismissedSuggestions, setDismissedSuggestions] = useState({});
+  const [installPrompt, setInstallPrompt] = useState(null);
   const inviteToken = useMemo(() => window.location.pathname.match(/^\/invite\/([A-Za-z0-9_-]+)\/?$/)?.[1] || '', []);
   function handleMicroReaction(e) {
     const target = e.target.closest('button, .brand-card');
@@ -61,6 +62,31 @@ function App() {
     setTimeout(() => setBursts(prev => prev.filter(item => item.id !== id)), 900);
   }
 
+  useEffect(() => {
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+    const onInstallPrompt = (event) => { event.preventDefault(); setInstallPrompt(event); };
+    const onInstalled = () => { setInstallPrompt(null); setToast('AFTERDARK is on your home screen. Keep it mutual 💗'); };
+    window.addEventListener('beforeinstallprompt', onInstallPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => { window.removeEventListener('beforeinstallprompt', onInstallPrompt); window.removeEventListener('appinstalled', onInstalled); };
+  }, []);
+  async function installApp() {
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+      setToast('You already have AFTERDARK installed. 💗'); return;
+    }
+    if (installPrompt) {
+      try {
+        await installPrompt.prompt();
+        const choice = await installPrompt.userChoice;
+        setToast(choice?.outcome === 'accepted' ? 'Installing AFTERDARK… 💗' : 'No pressure. You can install it whenever you want.');
+      } catch { setToast('Open your browser menu and choose Install app.'); }
+      setInstallPrompt(null); return;
+    }
+    if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+      setToast('On iPhone: tap Share ↑, then “Add to Home Screen”.'); return;
+    }
+    setToast('Open your browser menu (⋮) and choose “Install app” or “Add to Home screen”.');
+  }
   useEffect(() => { request('me').then(data => { setUser(data.user); if (data.user) loadConnections(); }).catch(() => {}); }, []);
   useEffect(() => {
     if (inviteToken && user) request('invites/' + inviteToken).then(d => setInviteInfo(d.invite)).catch(e => setInviteReply(e.message));
@@ -110,7 +136,7 @@ function App() {
   const contextualBrands = dismissedSuggestions[activeConnection] ? [] : suggestionsFor(messages.slice(-3).map(m => m.text).join(' '));
   const showInviteLanding = Boolean(inviteToken);
   return <div className="app-shell" onClick={handleMicroReaction}>
-    <header className="topbar"><a className="wordmark" href="/" onClick={e => { e.preventDefault(); history.pushState({}, '', '/'); setTab('home'); }} aria-label="AFTERDARK home"><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><div className="top-actions"><span className="adult-pill">18+ ONLY</span>{user ? <><span className="user-pill">@{user.handle}</span><button className="ghost-btn" onClick={signOut}>Log out</button></> : <button className="ghost-btn" onClick={() => { setAuthMode('login'); setTab('account'); }}>Sign in</button>}<button className="ghost-btn" onClick={() => setTab('safety')}>Safety</button></div></header>
+    <header className="topbar"><a className="wordmark" href="/" onClick={e => { e.preventDefault(); history.pushState({}, '', '/'); setTab('home'); }} aria-label="AFTERDARK home"><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><div className="top-actions"><span className="adult-pill">18+ ONLY</span>{user ? <><span className="user-pill">@{user.handle}</span><button className="ghost-btn" onClick={signOut}>Log out</button></> : <button className="ghost-btn" onClick={() => { setAuthMode('login'); setTab('account'); }}>Sign in</button>}<button className="ghost-btn" onClick={() => setTab('safety')}>Safety</button><button className="install-btn" onClick={installApp} aria-label="Install or download AFTERDARK app">↓ <span>Download App</span></button></div></header>
     <main>
       {!ageConfirmed && <section className="age-note"><div><strong>Adults only. Always.</strong><p>AFTERDARK is for people aged 18 and above. Keep it consensual.</p></div><button className="primary-btn small" onClick={() => setAgeConfirmed(true)}>I’m 18 or older</button></section>}
       {showInviteLanding ? <section className="invite-landing glass-panel"><span className="eyebrow">SOMEONE THOUGHT OF YOU ✦</span><h1>Ohooo, <em>you got a vibe invite.</em></h1>{inviteReply ? <p className="invite-result">{inviteReply}</p> : inviteInfo ? <><p>{inviteInfo.ownInvite ? 'This is your link, bestie. Share it with your person to let them choose.' : 'One person. One choice. No pressure. Approve only if you want to.'}</p>{!inviteInfo.ownInvite && inviteInfo.status === 'pending' && <div className="hero-actions"><button className="primary-btn" disabled={busy} onClick={() => respondToInvite('approve')}>Approve the vibe 💗</button><button className="secondary-btn" disabled={busy} onClick={() => respondToInvite('ignore')}>Not my scene</button></div>}</> : user ? <p>{inviteReply || 'Checking this invite…'}</p> : <p>Sign in or create an account to decide. Your choice stays yours.</p>}{!user && <button className="primary-btn" onClick={() => { setAuthMode('register'); setTab('account'); }}>Join AFTERDARK <span>↗</span></button>}</section> : <section className="hero"><div className="eyebrow"><span className="pulse"></span> YOUR LITTLE WORLD, OFF THE TIMELINE</div><h1>It’s giving <em>butterflies.</em><br/>Not another <span className="gradient-text">almost-love.</span></h1><p className="hero-copy">Soft launch the feelings. Drop the “wyd?” at 1:13 AM. Turn “we should” into “I booked it.” Your little corner of romance, chaos and mutual vibes. 💋</p><div className="hero-flirt"><span>“u up?”</span><span>“only for you 👀”</span><span>delulu? maybe. mutual? hopefully. 💗</span></div><div className="hero-actions"><button className="primary-btn" onClick={() => { setTab(user ? 'invite' : 'account'); document.getElementById('workspace')?.scrollIntoView({ behavior: 'smooth' }); }}>{user ? 'Create your invite' : 'Get your invite link'} <span>↗</span></button><button className="secondary-btn" onClick={() => { setTab('explore'); document.getElementById('workspace')?.scrollIntoView({ behavior: 'smooth' }); }}>Explore the vibe</button></div><div className="trust-row"><span>✦ Consent first</span><span>✦ Private by design</span><span>✦ No public discovery</span></div><div className="orb orb-one"></div><div className="orb orb-two"></div><div className="heart-3d" aria-hidden="true"><div className="heart-core">♥</div><span className="heart-chip chip-one">💌</span><span className="heart-chip chip-two">🦋</span><span className="heart-chip chip-three">💋</span></div></section>}
