@@ -49,3 +49,13 @@ Vite's local development server does not automatically run Vercel serverless fun
 ## Release checklist
 
 Before inviting real users, configure the runtime variables, test registration and login, test an invite from a separate account/device, verify approve and ignore paths, verify that an unapproved user cannot read or send messages, and verify account deletion. The Android APK, push notifications, block/report workflows, and deeper relationship features remain separate release work.
+
+
+## App install and Android APK
+
+- The website is also configured as an installable PWA. Android/desktop browsers may show the install prompt; on iPhone use Share → Add to Home Screen.
+- The Android APK is built by GitHub Actions from `.github/workflows/android-apk.yml` and published as a GitHub Release when the workflow succeeds.
+- The APK wrapper loads the live website at `https://afterdark-social-universe.vercel.app`, so it requires an internet connection and the same backend configuration as the website.
+- The direct APK download URL is `https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk`. It becomes available after the first successful release workflow.
+- Message records are configured for automatic deletion after 30 days using a MongoDB TTL index. Invite links expire after 7 days.
+- Date plans lock only after both approved connection members choose the same Hyderabad location and date/time. The chat includes block and report actions.
