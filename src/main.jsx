@@ -74,7 +74,11 @@ function App() {
     return () => { window.removeEventListener('beforeinstallprompt', onInstallPrompt); window.removeEventListener('appinstalled', onInstalled); };
   }, []);
   async function installApp() {
-    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
+    if (/android/i.test(navigator.userAgent) && !/; wv\)/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches) {
+      window.location.href = 'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk';
+      return;
+    }
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true || /; wv\)/i.test(navigator.userAgent)) {
       setToast('You already have AFTERDARK installed. 💗'); return;
     }
     if (installPrompt) {
