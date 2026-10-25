@@ -131,13 +131,23 @@ export default async function handler(req, res) {
       if (invite.ownerId.equals(userId)) return json(res, 403, { error: 'You can’t approve your own invite. Send it to your person.' });
       if (parts[2] === 'ignore') { await invites.updateOne({ _id: invite._id, status: 'pending' }, { $set: { status: 'ignored', recipientId: userId, respondedAt: new Date() } }); return json(res, 200, { status: 'ignored' }); }
       const pair = [invite.ownerId.toString(), userId.toString()].sort(); const pairKey = pair.join(':');
-      const connection = await database.collection('connections').findOneAndUpdate({ pairKey }, { $setOnInsert: { pairKey, memberIds: pair.map(id => new ObjectId(id)), status: 'approved', createdAt: new Date() } }, { upsert: true, returnDocument: 'after' });
+      const connection = await database.collection('connections').findOneAndUpdate({ pairKey }, { $setOnInsert: { pairKey, memberIds: pair.map(id => new ObjectId(id)), creatorId: invite.ownerId, recipientId: userId, status: 'approved', createdAt: new Date() } }, { upsert: true, returnDocument: 'after' });
+      if (connection?._id) await database.collection('connections').updateOne({ _id: connection._id, creatorId: { $exists: false } }, { $set: { creatorId: invite.ownerId, recipientId: userId } });
       await invites.updateOne({ _id: invite._id, status: 'pending' }, { $set: { status: 'approved', recipientId: userId, connectionId: connection?._id, respondedAt: new Date() } });
       return json(res, 200, { status: 'approved' });
     }
     if (action === 'connections' && req.method === 'GET') {
       const connections = await database.collection('connections').find({ memberIds: userId, status: 'approved' }).toArray();
-      const rows = await Promise.all(connections.map(async c => { const otherId = c.memberIds.find(id => !id.equals(userId)); const other = otherId ? await database.collection('users').findOne({ _id: otherId }, { projection: { email: 1, handle: 1 } }) : null; return { id: c._id.toString(), handle: other?.handle || 'your person' }; }));
+      const rows = await Promise.all(connections.map(async c => {
+        const otherId = c.memberIds.find(id => !id.equals(userId));
+        const other = otherId ? await database.collection('users').findOne({ _id: otherId }, { projection: { email: 1, handle: 1 } }) : null;
+        let role = c.recipientId ? (c.recipientId.equals(userId) ? 'invitee' : 'creator') : 'creator';
+        if (!c.recipientId) {
+          const originalInvite = await database.collection('invites').findOne({ connectionId: c._id, status: 'approved' }, { sort: { respondedAt: 1 } });
+          if (originalInvite?.recipientId?.equals(userId)) role = 'invitee';
+        }
+        return { id: c._id.toString(), handle: other?.handle || 'your person', role };
+      }));
       return json(res, 200, { connections: rows });
     }
     if (parts[0] === 'connections' && parts[1] && parts[2] === 'date-plan') {
