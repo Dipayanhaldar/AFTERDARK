@@ -29,7 +29,9 @@ export default async function handler(req, res) {
       database.collection('connections').createIndex({ pairKey: 1 }, { unique: true }),
       database.collection('messages').createIndex({ connectionId: 1, createdAt: 1 }),
       database.collection('rate_limits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-      database.collection('password_resets').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+      database.collection('password_resets').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+      database.collection('date_plans').createIndex({ connectionId: 1 }, { unique: true }),
+      database.collection('reports').createIndex({ createdAt: 1 })
     ]);
     const url = new URL(req.url, 'https://afterdark.invalid');
     const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
@@ -136,6 +138,57 @@ export default async function handler(req, res) {
       const connections = await database.collection('connections').find({ memberIds: userId, status: 'approved' }).toArray();
       const rows = await Promise.all(connections.map(async c => { const otherId = c.memberIds.find(id => !id.equals(userId)); const other = otherId ? await database.collection('users').findOne({ _id: otherId }, { projection: { email: 1, handle: 1 } }) : null; return { id: c._id.toString(), handle: other?.handle || 'your person' }; }));
       return json(res, 200, { connections: rows });
+    }
+    if (parts[0] === 'connections' && parts[1] && parts[2] === 'date-plan') {
+      let connectionId;
+      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
+      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId, status: 'approved' });
+      if (!connection) return json(res, 403, { error: 'Date planning is only available for an approved connection.' });
+      const plans = database.collection('date_plans');
+      const otherId = connection.memberIds.find(id => !id.equals(userId));
+      const serialize = row => {
+        const choices = row?.choices || {};
+        return row ? { choices, lockedPlaceId: row.lockedPlaceId || null, lockedDateTime: row.lockedDateTime || null, myChoice: choices[userId.toString()] || null, theirChoice: otherId ? choices[otherId.toString()] || null : null } : null;
+      };
+      if (req.method === 'GET') return json(res, 200, { plan: serialize(await plans.findOne({ connectionId })) });
+      if (req.method === 'POST') {
+        const placeId = String(body.placeId || '');
+        const dateTime = String(body.dateTime || '');
+        const allowed = ['necklace-road','durgam-cheruvu','charminar','golconda','chowmahalla','lumbini-park','paradise-biryani','ramoji-film-city'];
+        const parsed = new Date(dateTime);
+        if (!allowed.includes(placeId) || !dateTime || Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) return json(res, 400, { error: 'Choose a listed public place and a future date/time.' });
+        const current = await plans.findOne({ connectionId });
+        if (current?.lockedPlaceId) return json(res, 409, { error: 'This mutual plan is already locked.' });
+        const choices = { ...(current?.choices || {}), [userId.toString()]: { placeId, dateTime } };
+        const otherChoice = otherId ? choices[otherId.toString()] : null;
+        const matches = otherChoice && otherChoice.placeId === placeId && otherChoice.dateTime === dateTime;
+        const update = { connectionId, choices, updatedAt: new Date() };
+        if (matches) { update.lockedPlaceId = placeId; update.lockedDateTime = dateTime; }
+        else { update.lockedPlaceId = null; update.lockedDateTime = null; }
+        await plans.updateOne({ connectionId }, { $set: update }, { upsert: true });
+        return json(res, 200, { plan: serialize(await plans.findOne({ connectionId })) });
+      }
+    }
+    if (parts[0] === 'connections' && parts[1] && parts[2] === 'block' && req.method === 'POST') {
+      let connectionId;
+      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
+      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId, status: 'approved' });
+      if (!connection) return json(res, 404, { error: 'This connection is already closed.' });
+      const otherId = connection.memberIds.find(id => !id.equals(userId));
+      await database.collection('users').updateOne({ _id: userId }, { $addToSet: { blockedUsers: otherId } });
+      await database.collection('connections').updateOne({ _id: connectionId, status: 'approved' }, { $set: { status: 'blocked', blockedBy: userId, blockedAt: new Date() } });
+      return json(res, 200, { ok: true });
+    }
+    if (parts[0] === 'connections' && parts[1] && parts[2] === 'report' && req.method === 'POST') {
+      let connectionId;
+      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
+      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId });
+      if (!connection) return json(res, 404, { error: 'This connection could not be found.' });
+      const reason = String(body.reason || '').trim().slice(0, 1000);
+      if (!reason) return json(res, 400, { error: 'Add a short reason for the report.' });
+      const targetUserId = connection.memberIds.find(id => !id.equals(userId));
+      await database.collection('reports').insertOne({ connectionId, reporterId: userId, targetUserId, reason, createdAt: new Date(), status: 'new' });
+      return json(res, 201, { ok: true });
     }
     if (parts[0] === 'connections' && parts[1] && parts[2] === 'messages') {
       const connection = await database.collection('connections').findOne({ _id: new ObjectId(parts[1]), memberIds: userId, status: 'approved' });
