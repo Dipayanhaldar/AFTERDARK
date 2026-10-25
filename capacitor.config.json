@@ -1,0 +1,12 @@
+{
+  "appId": "com.afterdark.social",
+  "appName": "AFTERDARK",
+  "webDir": "dist",
+  "server": {
+    "url": "https://afterdark-social-universe.vercel.app",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
