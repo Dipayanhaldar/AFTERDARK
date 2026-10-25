@@ -6,6 +6,7 @@ import './style.css';
 const brands = [
   { name: 'Starbucks', note: 'Matcha date?', category: 'Coffee', url: 'https://www.starbucks.in/', keys: ['matcha','coffee','cafe','chai','drink'] },
   { name: 'Zomato', note: 'Send a little craving', category: 'Food', url: 'https://www.zomato.com/', keys: ['food','hungry','eat','dinner','lunch','craving','pizza','biryani'] },
+  { name: 'Cadbury 5 Star', note: 'A tiny treat for a reset', category: 'Chocolate', url: 'https://www.cadburygifting.in/', keys: ['zero civic sense','civic sense','bad take','rude','bad behaviour','bad behavior','5 star','five star','rough day','chocolate'] },
   { name: 'Blinkit', note: 'Little things, delivered', category: 'Little surprises', url: 'https://blinkit.com/', keys: ['snack','chocolate','surprise','midnight','ice cream'] },
   { name: 'District', note: 'Find your next plan', category: 'Things to do', url: 'https://www.district.in/', keys: ['date','plan','event','concert','activity','weekend'] },
   { name: 'BookMyShow', note: 'Movie night, sorted', category: 'Movies', url: 'https://in.bookmyshow.com/', keys: ['movie','film','cinema','pvr','show'] },
@@ -52,6 +53,7 @@ function App() {
   const [chatSuggestionShown, setChatSuggestionShown] = useState({});
   const [dismissedSuggestions, setDismissedSuggestions] = useState({});
   const [installPrompt, setInstallPrompt] = useState(null);
+  const [timedSuggestion, setTimedSuggestion] = useState(null);
   const [datePlan, setDatePlan] = useState(null);
   const [planDateTime, setPlanDateTime] = useState(() => { const d = new Date(Date.now() + 7 * 86400000); d.setHours(17, 0, 0, 0); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); });
   const inviteToken = useMemo(() => window.location.pathname.match(/^\/invite\/([A-Za-z0-9_-]+)\/?$/)?.[1] || '', []);
@@ -94,6 +96,21 @@ function App() {
     }
     setToast('Open your browser menu (⋮) and choose “Install app” or “Add to Home screen”.');
   }
+  useEffect(() => {
+    let timer; let hideTimer;
+    const schedule = () => {
+      timer = window.setTimeout(() => {
+        if (Math.random() > 0.35) {
+          const item = brands[Math.floor(Math.random() * brands.length)];
+          setTimedSuggestion(item);
+          hideTimer = window.setTimeout(() => setTimedSuggestion(null), 12000);
+        }
+        schedule();
+      }, 35000 + Math.random() * 80000);
+    };
+    schedule();
+    return () => { window.clearTimeout(timer); window.clearTimeout(hideTimer); };
+  }, []);
   useEffect(() => { request('me').then(data => { setUser(data.user); if (data.user) loadConnections(); }).catch(() => {}); }, []);
   useEffect(() => {
     if (inviteToken && user) request('invites/' + inviteToken).then(d => setInviteInfo(d.invite)).catch(e => setInviteReply(e.message));
@@ -200,8 +217,9 @@ function App() {
       </section>
       <section className="coming-section"><div className="eyebrow">THE AFTERDARK VIBE</div><h2>Little moments. <em>Big energy.</em></h2><div className="roadmap-grid">{[['01','The invite','A personal link + QR, approve or ignore'],['02','The private space','Messages for approved connections only'],['03','The archive','Memories, milestones, boundaries and shared plans'],['04','The little nudge','Opt-in reminders that never spam your peace']].map(([n,title,desc])=><div className="roadmap-item" key={n}><span>{n}</span><div><strong>{title}</strong><p>{desc}</p></div></div>)}</div></section>
     </main>
-    <footer><a className="wordmark" href="/" onClick={e=>{e.preventDefault();setTab('home')}}><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><span>For adults, by choice. Not by pressure.</span><div className="footer-links"><button onClick={()=>setTab('safety')}>Safety & boundaries</button><button onClick={()=>setTab('privacy')}>Privacy & data</button><span>Keep it mutual ✦</span></div></footer>
+    <footer><a className="wordmark" href="/" onClick={e=>{e.preventDefault();setTab('home')}}><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><span>For adults, by choice. Not by pressure.</span><div className="footer-links"><span className="footer-brands-label">Order & plan with</span><a href="https://www.zomato.com/" target="_blank" rel="noreferrer">Zomato</a><a href="https://www.starbucks.in/" target="_blank" rel="noreferrer">Starbucks</a><a href="https://in.bookmyshow.com/" target="_blank" rel="noreferrer">BookMyShow</a><button onClick={()=>setTab('safety')}>Safety</button><button onClick={()=>setTab('privacy')}>Privacy</button></div></footer>
     {bursts.map(b => <span key={b.id} className="emoji-burst" style={{ left: b.x, top: b.y }}>{b.emoji}</span>)}
+    {timedSuggestion && <aside className="timed-suggestion" aria-label="Brand suggestion"><div><small>BRAND SUGGESTION · EXTERNAL LINK</small><strong>{timedSuggestion.name}</strong><span>{timedSuggestion.note}</span></div><a href={timedSuggestion.url} target="_blank" rel="noreferrer">Open ↗</a><button onClick={() => setTimedSuggestion(null)} aria-label="Dismiss suggestion">×</button></aside>}
     {toast && <div className="toast" role="status">{toast}<button onClick={()=>setToast('')} aria-label="Dismiss">×</button></div>}
   </div>;
 }
