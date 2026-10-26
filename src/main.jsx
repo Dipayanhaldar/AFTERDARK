@@ -128,6 +128,7 @@ function App() {
   const [customQrName, setCustomQrName] = useState('');
   const [customQrTheme, setCustomQrTheme] = useState('rose');
   const [customQrImage, setCustomQrImage] = useState('');
+  const customQrGeneratingRef = useRef(false);
   const [rewardedAdLoading, setRewardedAdLoading] = useState(false);
   const [inviteInfo, setInviteInfo] = useState(null);
   const [connections, setConnections] = useState([]);
@@ -317,8 +318,10 @@ function App() {
     } catch { cleanup(); setToast('Could not start the rewarded ad. Please try again later.'); }
   }
   async function createCustomQr() {
+    if (customQrGeneratingRef.current) return;
     if (!invite || !qr) { setToast('Generate your invite first.'); return; }
     if (customQrCredits < 1) { setToast('Watch one rewarded ad to earn a custom QR credit.'); return; }
+    customQrGeneratingRef.current = true;
     const themes = { rose: { bg: '#170f1b', accent: '#ff8fbe', ink: '#251226' }, violet: { bg: '#171020', accent: '#c9a8ff', ink: '#251a35' }, midnight: { bg: '#0b1018', accent: '#8ed9ff', ink: '#101d2a' }, sunset: { bg: '#21110f', accent: '#ffb16b', ink: '#2a160f' } };
     const theme = themes[customQrTheme] || themes.rose;
     try {
@@ -339,11 +342,12 @@ function App() {
         const image = canvas.toDataURL('image/png');
         setCustomQrImage(image);
         setCustomQrCredits(prev => { const next = Math.max(0, prev - 1); try { localStorage.setItem('afterdark_custom_qr_credits', String(next)); } catch {} return next; });
+        customQrGeneratingRef.current = false;
         setToast('Your one custom QR is ready! Download it or change the design next time you earn another credit. 💌');
       };
-      img.onerror = () => setToast('Could not render the QR design. Try again.');
+      img.onerror = () => { customQrGeneratingRef.current = false; setToast('Could not render the QR design. Try again.'); };
       img.src = qrImage;
-    } catch { setToast('Could not create the custom QR. Try again.'); }
+    } catch { customQrGeneratingRef.current = false; setToast('Could not create the custom QR. Try again.'); }
   }
   async function retryInvitePreview() {
     if (!inviteToken) return;
