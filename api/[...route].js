@@ -13,7 +13,7 @@ function sign(payload) { const secret = process.env.JWT_SECRET; if (!secret) thr
 function verify(value) { try { const [body, sig] = value.split('.'); const expected = createHmac('sha256', process.env.JWT_SECRET).update(body).digest(); const actual = Buffer.from(sig, 'base64url'); if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null; const p = JSON.parse(Buffer.from(body, 'base64url').toString()); return p.exp > Date.now() / 1000 ? p : null; } catch { return null; } }
 function currentUser(req) { const raw = (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1); return raw ? verify(decodeURIComponent(raw)) : null; }
 async function db() { if (!process.env.MONGODB_URI) throw new Error('DB_CONFIG'); if (!clientPromise) { const client = new MongoClient(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 8000 }); clientPromise = client.connect(); } return (await clientPromise).db(process.env.MONGODB_DB || 'afterdark'); }
-function cleanUser(u) { return { id: u._id.toString(), email: u.email, handle: u.handle || 'your-vibe', createdAt: u.createdAt }; }
+function cleanUser(u) { return { id: u._id.toString(), email: u.email || null, handle: u.handle || 'your-vibe', guest: Boolean(u.guest), createdAt: u.createdAt }; }
 async function readBody(req) { let data = ''; for await (const chunk of req) { data += chunk; if (data.length > 20000) throw new Error('BODY_TOO_LARGE'); } return data ? JSON.parse(data) : {}; }
 async function rateLimit(database, key, limit = 20) { const now = new Date(); const bucket = Math.floor(now.getTime() / 60000); const id = key + ':' + bucket; const c = database.collection('rate_limits'); await c.updateOne({ _id: id }, { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date(now.getTime() + 120000) } }, { upsert: true }); const row = await c.findOne({ _id: id }); if (row?.count > limit) return false; return true; }
 
@@ -50,6 +50,19 @@ export default async function handler(req, res) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 10 || password.length > 128 || body.adult !== true || body.consent !== true) return json(res, 400, { error: 'Check your email, use 10+ password characters, and confirm you are 18+.' });
       const salt = randomBytes(16).toString('hex');
       const hash = (await scrypt(password, salt, 64)).toString('hex');
+      const previousSession = currentUser(req);
+      if (previousSession?.guest) {
+        const { ObjectId } = await import('mongodb');
+        const guestId = new ObjectId(previousSession.sub);
+        const guestUser = await database.collection('users').findOne({ _id: guestId, guest: true });
+        if (guestUser) {
+          const chosenHandle = handle || guestUser.handle || 'your-vibe';
+          await database.collection('users').updateOne({ _id: guestId }, { $set: { email, passwordHash: salt + ':' + hash, handle: chosenHandle, guest: false, adultConfirmedAt: new Date(), consentAt: new Date() }, $unset: { guestCreatedAt: '' } });
+          const upgraded = { ...guestUser, email, handle: chosenHandle, guest: false };
+          cookie(res, sign({ sub: guestId.toString(), exp: Math.floor(Date.now()/1000) + DAY*14 }));
+          return json(res, 200, { user: cleanUser(upgraded) });
+        }
+      }
       try { const result = await database.collection('users').insertOne({ email, passwordHash: salt + ':' + hash, handle: handle || 'your-vibe', createdAt: new Date(), adultConfirmedAt: new Date(), blockedUsers: [] }); const user = { _id: result.insertedId, email, handle: handle || 'your-vibe', createdAt: new Date() }; cookie(res, sign({ sub: user._id.toString(), exp: Math.floor(Date.now()/1000) + DAY*14 })); return json(res, 201, { user: cleanUser(user) }); }
       catch (e) { if (e.code === 11000) return json(res, 409, { error: 'That email already has an account. Try signing in instead.' }); throw e; }
     }
@@ -59,6 +72,42 @@ export default async function handler(req, res) {
       if (!user?.passwordHash) return json(res, 401, { error: 'Email or password doesn’t match. Check it and try again.' });
       const [salt, stored] = user.passwordHash.split(':'); const actual = (await scrypt(password, salt, 64)).toString('hex');
       if (stored.length !== actual.length || !timingSafeEqual(Buffer.from(stored), Buffer.from(actual))) return json(res, 401, { error: 'Email or password doesn’t match. Check it and try again.' });
+      const previousSession = currentUser(req);
+      if (previousSession?.guest) {
+        const { ObjectId } = await import('mongodb');
+        const guestId = new ObjectId(previousSession.sub);
+        const connections = database.collection('connections');
+        const guestConnections = await connections.find({ memberIds: guestId }).toArray();
+        for (const c of guestConnections) {
+          const otherId = c.memberIds.find(id => !id.equals(guestId));
+          if (!otherId || otherId.equals(user._id)) continue;
+          const pairKey = [user._id.toString(), otherId.toString()].sort().join(':');
+          const existing = await connections.findOne({ pairKey });
+          if (existing) {
+            await database.collection('messages').updateMany({ connectionId: c._id }, { $set: { connectionId: existing._id } });
+            await database.collection('moments').updateMany({ connectionId: c._id }, { $set: { connectionId: existing._id } });
+            await database.collection('date_plans').deleteOne({ connectionId: c._id });
+            await connections.deleteOne({ _id: c._id });
+          } else {
+            const patch = { pairKey, memberIds: [user._id, otherId] };
+            if (c.creatorId?.equals(guestId)) patch.creatorId = user._id;
+            if (c.recipientId?.equals(guestId)) patch.recipientId = user._id;
+            await connections.updateOne({ _id: c._id }, { $set: patch });
+            await database.collection('moments').updateMany({ connectionId: c._id, userId: guestId }, { $set: { userId: user._id } });
+            const plan = await database.collection('date_plans').findOne({ connectionId: c._id });
+            if (plan?.choices?.[guestId.toString()]) {
+              const choices = { ...plan.choices, [user._id.toString()]: plan.choices[guestId.toString()] };
+              delete choices[guestId.toString()];
+              await database.collection('date_plans').updateOne({ _id: plan._id }, { $set: { choices } });
+            }
+          }
+        }
+        await database.collection('invites').updateMany({ ownerId: guestId }, { $set: { ownerId: user._id } });
+        await database.collection('invites').updateMany({ recipientId: guestId }, { $set: { recipientId: user._id } });
+        await database.collection('reports').updateMany({ reporterId: guestId }, { $set: { reporterId: user._id } });
+        await database.collection('reports').updateMany({ targetUserId: guestId }, { $set: { targetUserId: user._id } });
+        await database.collection('users').deleteOne({ _id: guestId, guest: true });
+      }
       cookie(res, sign({ sub: user._id.toString(), exp: Math.floor(Date.now()/1000) + DAY*14 })); return json(res, 200, { user: cleanUser(user) });
     }
     if (action === 'forgot-password' && req.method === 'POST') {
@@ -108,6 +157,44 @@ export default async function handler(req, res) {
     }
     if (action === 'logout' && req.method === 'POST') { cookie(res, '', 0); return json(res, 200, { ok: true }); }
     const session = currentUser(req);
+    if (parts[0] === 'invites' && parts[1] && req.method === 'GET') {
+      const raw = parts[1]; const hash = createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex');
+      const invite = await database.collection('invites').findOne({ tokenHash: hash, expiresAt: { $gt: new Date() } });
+      if (!invite || invite.status === 'ignored' || invite.status === 'revoked') return json(res, 404, { error: 'This invite has expired or is no longer available.' });
+      const inviteOwner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
+      let ownInvite = false;
+      if (session?.sub) { try { ownInvite = invite.ownerId.equals(new (await import('mongodb')).ObjectId(session.sub)); } catch {} }
+      return json(res, 200, { invite: { status: invite.status, ownInvite, handle: inviteOwner?.handle || 'your person' } });
+    }
+    if (parts[0] === 'invites' && parts[1] && parts[2] && ['approve','ignore'].includes(parts[2]) && req.method === 'POST') {
+      const hash = createHmac('sha256', process.env.JWT_SECRET).update(parts[1]).digest('hex');
+      const invites = database.collection('invites');
+      const invite = await invites.findOne({ tokenHash: hash, expiresAt: { $gt: new Date() } });
+      if (!invite || invite.status !== 'pending') return json(res, 404, { error: 'This invite is no longer available.' });
+      let recipientId = null;
+      if (session?.sub) { try { recipientId = new (await import('mongodb')).ObjectId(session.sub); } catch {} }
+      if (parts[2] === 'ignore') {
+        await invites.updateOne({ _id: invite._id, status: 'pending' }, { $set: { status: 'ignored', ...(recipientId ? { recipientId } : {}), respondedAt: new Date() } });
+        return json(res, 200, { status: 'ignored' });
+      }
+      if (body.adult !== true) return json(res, 400, { error: 'Please confirm you are 18 or older before opening a chat.' });
+      const { ObjectId } = await import('mongodb');
+      if (!recipientId) {
+        const guestHandle = 'guest-' + token(3).slice(0, 5);
+        const created = await database.collection('users').insertOne({ handle: guestHandle, guest: true, createdAt: new Date(), guestCreatedAt: new Date(), adultConfirmedAt: new Date(), blockedUsers: [] });
+        recipientId = created.insertedId;
+        cookie(res, sign({ sub: recipientId.toString(), guest: true, exp: Math.floor(Date.now()/1000) + DAY*14 }));
+      }
+      if (invite.ownerId.equals(recipientId)) return json(res, 403, { error: 'You can’t approve your own invite. Send it to your person.' });
+      const recipient = await database.collection('users').findOne({ _id: recipientId });
+      if (!recipient) return json(res, 401, { error: 'This session has expired. Open the invite again.' });
+      const pair = [invite.ownerId.toString(), recipientId.toString()].sort();
+      const pairKey = pair.join(':');
+      const connection = await database.collection('connections').findOneAndUpdate({ pairKey }, { $setOnInsert: { pairKey, memberIds: pair.map(id => new ObjectId(id)), creatorId: invite.ownerId, recipientId, status: 'approved', createdAt: new Date() } }, { upsert: true, returnDocument: 'after' });
+      if (connection?._id) await database.collection('connections').updateOne({ _id: connection._id, creatorId: { $exists: false } }, { $set: { creatorId: invite.ownerId, recipientId } });
+      await invites.updateOne({ _id: invite._id, status: 'pending' }, { $set: { status: 'approved', recipientId, connectionId: connection?._id, respondedAt: new Date() } });
+      return json(res, 200, { status: 'approved' });
+    }
     if (action === 'me' && req.method === 'GET') { if (!session) return json(res, 200, { user: null }); const user = await database.collection('users').findOne({ _id: new (await import('mongodb')).ObjectId(session.sub) }); return json(res, 200, { user: user ? cleanUser(user) : null }); }
     if (!session) return json(res, 401, { error: 'Sign in to continue.' });
     const { ObjectId } = await import('mongodb'); const userId = new ObjectId(session.sub);
@@ -118,26 +205,6 @@ export default async function handler(req, res) {
       const raw = token(32); const expiresAt = new Date(Date.now() + 7 * DAY * 1000);
       await database.collection('invites').insertOne({ tokenHash: createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex'), ownerId: userId, status: 'pending', createdAt: new Date(), expiresAt });
       return json(res, 201, { invite: raw, expiresAt });
-    }
-    if (parts[0] === 'invites' && parts[1] && req.method === 'GET') {
-      const raw = parts[1]; const hash = createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex');
-      const invite = await database.collection('invites').findOne({ tokenHash: hash, expiresAt: { $gt: new Date() } });
-      if (!invite || invite.status === 'ignored' || invite.status === 'revoked') return json(res, 404, { error: 'This invite has expired or is no longer available.' });
-      const inviteOwner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
-      if (invite.ownerId.equals(userId)) return json(res, 200, { invite: { status: invite.status, ownInvite: true, handle: inviteOwner?.handle || 'your-vibe' } });
-      return json(res, 200, { invite: { status: invite.status, ownInvite: false, handle: inviteOwner?.handle || 'your person' } });
-    }
-    if (parts[0] === 'invites' && parts[1] && parts[2] && ['approve','ignore'].includes(parts[2]) && req.method === 'POST') {
-      const hash = createHmac('sha256', process.env.JWT_SECRET).update(parts[1]).digest('hex');
-      const invites = database.collection('invites'); const invite = await invites.findOne({ tokenHash: hash, expiresAt: { $gt: new Date() } });
-      if (!invite || invite.status !== 'pending') return json(res, 404, { error: 'This invite is no longer available.' });
-      if (invite.ownerId.equals(userId)) return json(res, 403, { error: 'You can’t approve your own invite. Send it to your person.' });
-      if (parts[2] === 'ignore') { await invites.updateOne({ _id: invite._id, status: 'pending' }, { $set: { status: 'ignored', recipientId: userId, respondedAt: new Date() } }); return json(res, 200, { status: 'ignored' }); }
-      const pair = [invite.ownerId.toString(), userId.toString()].sort(); const pairKey = pair.join(':');
-      const connection = await database.collection('connections').findOneAndUpdate({ pairKey }, { $setOnInsert: { pairKey, memberIds: pair.map(id => new ObjectId(id)), creatorId: invite.ownerId, recipientId: userId, status: 'approved', createdAt: new Date() } }, { upsert: true, returnDocument: 'after' });
-      if (connection?._id) await database.collection('connections').updateOne({ _id: connection._id, creatorId: { $exists: false } }, { $set: { creatorId: invite.ownerId, recipientId: userId } });
-      await invites.updateOne({ _id: invite._id, status: 'pending' }, { $set: { status: 'approved', recipientId: userId, connectionId: connection?._id, respondedAt: new Date() } });
-      return json(res, 200, { status: 'approved' });
     }
     if (action === 'connections' && req.method === 'GET') {
       const connections = await database.collection('connections').find({ memberIds: userId, status: 'approved' }).toArray();
