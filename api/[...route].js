@@ -67,7 +67,15 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, service: 'afterdark-api', database: 'connected' });
     }
 
-    await ensureUserEmailIndex(database);
+    // Email-index migration is maintenance, not a prerequisite for reading a public invite.
+    // A legacy/conflicting index must not make invite links fail before their lookup runs.
+    try { await ensureUserEmailIndex(database); }
+    catch (error) {
+      console.error('AFTERDARK email index migration failed:', {
+        requestId, action, code: error?.code || null,
+        codeName: error?.codeName || null, message: error?.message || 'unknown'
+      });
+    }
     // Index maintenance must not take down every API route when one legacy index has
     // conflicting options. Log each failure and keep serving requests; fix the index
     // separately without turning guest invite loads into a generic 500.
