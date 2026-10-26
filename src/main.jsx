@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import './style.css';
 
 const brands = [
-  { name: 'Netflix', slug: 'netflix', category: 'Movie night', url: 'https://www.netflix.com/', keys: ['netflix','binge','netflix and chill','watch together','series'], pitch: 'Movie plan? Netflix & chill bolo, “kal dekhenge” ka season finale kabhi nahi aata 😭🍿', cta: 'Pick the watchlist', logo: 'N', color: '#e50914' },
+  { name: 'Netflix', slug: 'netflix', category: 'Movie night', url: 'https://www.netflix.com/', keys: ['movie','film','watch','netflix','binge','netflix and chill','watch together','series','show'], pitch: 'Movie plan? Netflix & chill bolo, “kal dekhenge” ka season finale kabhi nahi aata 😭🍿', cta: 'Pick the watchlist', logo: 'N', color: '#e50914' },
   { name: 'Zomato', slug: 'zomato', category: 'Food cravings', url: 'https://www.zomato.com/', keys: ['food','hungry','eat','dinner','lunch','craving','pizza','biryani','momos','snack','khana'], pitch: 'Momos cravings aa? Your person ko hint dene se better, order scene set karo 🌶️🤌', cta: 'Order something cute', logo: 'zomato', color: '#e23744' },
   { name: 'BookMyShow', slug: 'bookmyshow', category: 'Movie tickets', url: 'https://in.bookmyshow.com/', keys: ['pvr','cinema','movie','film','screen','tickets','theatre'], pitch: 'Talking stage se theatre stage tak? Tickets book karo, bestie. 👀🎟️', cta: 'Find a show', logo: 'B', color: '#d81f26' },
   { name: 'Starbucks', slug: 'starbucks', category: 'Coffee date', url: 'https://www.starbucks.in/', keys: ['coffee','cafe','matcha','latte','chai','drink'], pitch: '“Quick coffee?” — famous last words before a 3-hour yap session ☕🫶', cta: 'Plan a coffee run', logo: '★', color: '#00754a' },
@@ -31,7 +31,7 @@ const dailyPrompts = [
   { id: 'communication', question: 'What helps you feel safe communicating honestly?' }
 ];
 const dateSpots = [{"id":"necklace-road","name":"Necklace Road","area":"Hussain Sagar","desc":"Sunset walk and city lights"},{"id":"durgam-cheruvu","name":"Durgam Cheruvu","area":"Madhapur","desc":"Lake views and a relaxed evening"},{"id":"charminar","name":"Charminar","area":"Old City","desc":"Historic streets and local snacks"},{"id":"golconda","name":"Golconda Fort","area":"Ibrahim Bagh","desc":"Golden-hour views; check visiting hours"},{"id":"chowmahalla","name":"Chowmahalla Palace","area":"Khilwat","desc":"Architecture and a daytime culture date"},{"id":"lumbini-park","name":"Lumbini Park","area":"Hussain Sagar","desc":"Easy public-park plan"},{"id":"paradise-biryani","name":"Paradise Biryani","area":"Secunderabad","desc":"A classic Hyderabad food date"},{"id":"ramoji-film-city","name":"Ramoji Film City","area":"Abdullapurmet","desc":"Plan a full-day outing"}];
-const suggestionsFor = (text) => { const lower = text.toLowerCase(); return brands.filter(b => b.keys.some(k => lower.includes(k))).slice(0, 1); };
+const suggestionsFor = (text) => { const lower = text.toLowerCase(); if (['tickets','pvr','cinema','theatre','screening'].some(k => lower.includes(k))) return brands.filter(b => b.slug === 'bookmyshow'); return brands.filter(b => b.keys.some(k => lower.includes(k))).slice(0, 1); };
 const toLocalDateTimeInput = value => { const d = new Date(value); return Number.isNaN(d.getTime()) ? '' : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 async function request(path, options = {}) {
   let response;
