@@ -123,8 +123,9 @@ export default async function handler(req, res) {
       const raw = parts[1]; const hash = createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex');
       const invite = await database.collection('invites').findOne({ tokenHash: hash, expiresAt: { $gt: new Date() } });
       if (!invite || invite.status === 'ignored' || invite.status === 'revoked') return json(res, 404, { error: 'This invite has expired or is no longer available.' });
-      if (invite.ownerId.equals(userId)) return json(res, 200, { invite: { status: invite.status, ownInvite: true, handle: user.handle } });
-      return json(res, 200, { invite: { status: invite.status, ownInvite: false, handle: user.handle } });
+      const inviteOwner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
+      if (invite.ownerId.equals(userId)) return json(res, 200, { invite: { status: invite.status, ownInvite: true, handle: inviteOwner?.handle || 'your-vibe' } });
+      return json(res, 200, { invite: { status: invite.status, ownInvite: false, handle: inviteOwner?.handle || 'your person' } });
     }
     if (parts[0] === 'invites' && parts[1] && parts[2] && ['approve','ignore'].includes(parts[2]) && req.method === 'POST') {
       const hash = createHmac('sha256', process.env.JWT_SECRET).update(parts[1]).digest('hex');
