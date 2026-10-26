@@ -307,3 +307,21 @@ footer{border-top:1px solid #f0cadd;padding:26px 0 34px;color:#80677a;gap:18px}
  .ritual-memory-form>div{flex-direction:column}
  .ritual-memory-form .primary-btn{align-self:flex-start}
 }
+
+/* Final contrast and responsive polish */
+.workspace{background:rgba(255,255,255,.72);border:1px solid rgba(191,78,133,.17);box-shadow:0 20px 60px rgba(111,35,77,.07)}
+.panel{background:rgba(255,255,255,.9)}
+.invite-box{background:linear-gradient(145deg,#fff,#fff1f7);border:1px solid #f2c6db;border-radius:22px;padding:22px;color:#35152b}
+.invite-box .muted,.muted{color:#8a6c80}
+.link-symbol{background:#ffe2ef;color:#d91f76}
+.date-card-actions a{display:inline-flex;align-items:center;color:#c12671;font-weight:800;font-size:12px;padding:9px 10px;border-radius:999px;background:#fff0f7}
+.date-card-actions a:hover{background:#ffe0ed}
+.date-card-selected{border-color:#ed5d9d!important;box-shadow:0 0 0 3px rgba(237,93,157,.12)!important}
+.chat-title{background:#fff9fc;border-bottom:1px solid #f1d4e2;padding:15px}
+.chat-title small{color:#8a6c80}
+.message-list{padding:16px}
+.brand-mark{background:linear-gradient(135deg,#ffe0ed,#f0e5ff);color:#b32e70;border:1px solid #f3c5dc}
+.qr-hint{color:#80677a}
+.invite-actions{display:flex;gap:8px;flex-wrap:wrap}
+.invite-actions .secondary-btn{display:inline-flex;align-items:center;justify-content:center}
+@media(max-width:760px){.workspace{padding:20px 14px}.invite-box{padding:16px}.top-actions .ghost-btn{padding:8px 10px;font-size:12px}}
