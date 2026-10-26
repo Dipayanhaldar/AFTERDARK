@@ -56,19 +56,33 @@ export default async function handler(req, res) {
   try {
     database = await db();
     await ensureUserEmailIndex(database);
-    await Promise.all([
-      database.collection('invites').createIndex({ tokenHash: 1 }, { unique: true }),
-      database.collection('invites').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-      database.collection('connections').createIndex({ pairKey: 1 }, { unique: true }),
-      database.collection('messages').createIndex({ connectionId: 1, createdAt: 1 }),
-      database.collection('messages').createIndex({ createdAt: 1 }, { expireAfterSeconds: 30 * DAY }),
-      database.collection('rate_limits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-      database.collection('password_resets').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-      database.collection('date_plans').createIndex({ connectionId: 1 }, { unique: true }),
-      database.collection('moments').createIndex({ connectionId: 1, createdAt: -1 }),
-      database.collection('moments').createIndex({ connectionId: 1, type: 1, dayKey: 1, userId: 1 }, { unique: true, partialFilterExpression: { type: 'answer' } }),
-      database.collection('reports').createIndex({ createdAt: 1 })
-    ]);
+    // Index maintenance must not take down every API route when one legacy index has
+    // conflicting options. Log each failure and keep serving requests; fix the index
+    // separately without turning guest invite loads into a generic 500.
+    const indexTasks = [
+      ['invites.tokenHash', () => database.collection('invites').createIndex({ tokenHash: 1 }, { unique: true })],
+      ['invites.expiresAt', () => database.collection('invites').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })],
+      ['connections.pairKey', () => database.collection('connections').createIndex({ pairKey: 1 }, { unique: true })],
+      ['messages.connectionId_createdAt', () => database.collection('messages').createIndex({ connectionId: 1, createdAt: 1 })],
+      ['messages.createdAt_ttl', () => database.collection('messages').createIndex({ createdAt: 1 }, { expireAfterSeconds: 30 * DAY })],
+      ['rate_limits.expiresAt', () => database.collection('rate_limits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })],
+      ['password_resets.expiresAt', () => database.collection('password_resets').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })],
+      ['date_plans.connectionId', () => database.collection('date_plans').createIndex({ connectionId: 1 }, { unique: true })],
+      ['moments.connectionId_createdAt', () => database.collection('moments').createIndex({ connectionId: 1, createdAt: -1 })],
+      ['moments.answer_unique', () => database.collection('moments').createIndex({ connectionId: 1, type: 1, dayKey: 1, userId: 1 }, { unique: true, partialFilterExpression: { type: 'answer' } })],
+      ['reports.createdAt', () => database.collection('reports').createIndex({ createdAt: 1 })]
+    ];
+    const indexResults = await Promise.allSettled(indexTasks.map(([, create]) => create()));
+    indexResults.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        console.error('AFTERDARK index setup failed:', {
+          index: indexTasks[index][0],
+          code: result.reason?.code || null,
+          codeName: result.reason?.codeName || null,
+          message: result.reason?.message || 'unknown'
+        });
+      }
+    });
     const url = new URL(req.url, 'https://afterdark.invalid');
     const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
     action = parts.join('/') || 'root';
