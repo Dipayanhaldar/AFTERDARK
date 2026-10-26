@@ -4,13 +4,9 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    # The Android shell loads the live website URL, so web/API edits do not need a new APK.
+    # Keep automatic APK builds for wrapper configuration or workflow changes; manual builds remain available.
     paths:
-      - "src/**"
-      - "public/**"
-      - "api/**"
-      - "index.html"
-      - "package.json"
-      - "package-lock.json"
       - "capacitor.config.json"
       - ".github/workflows/android-apk.yml"
 
