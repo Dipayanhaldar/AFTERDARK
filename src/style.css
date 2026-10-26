@@ -382,3 +382,5 @@ footer{border-top:1px solid #f0cadd;padding:26px 0 34px;color:#80677a;gap:18px}
 .invite-landing .hero-actions { position: relative; z-index: 3; pointer-events: auto; }
 .invite-landing .hero-actions button { position: relative; z-index: 4; pointer-events: auto; touch-action: manipulation; }
 .invite-landing .text-btn { color: var(--pink); padding: 12px 14px; cursor: pointer; }
+
+.qr-download-notice{display:flex;flex-direction:column;gap:7px;margin:14px 0;padding:14px 16px;border:1px solid rgba(219,76,148,.35);border-radius:16px;background:linear-gradient(135deg,rgba(255,220,238,.65),rgba(255,246,251,.95));color:#43213a;font-size:.92rem;line-height:1.45}.qr-download-notice strong{font-size:.9rem;letter-spacing:.06em}.qr-download-notice b{font-size:.88rem}.qr-hint{line-height:1.5}
