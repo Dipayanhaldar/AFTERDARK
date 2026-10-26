@@ -94,11 +94,7 @@ function App() {
     return () => { window.removeEventListener('beforeinstallprompt', onInstallPrompt); window.removeEventListener('appinstalled', onInstalled); };
   }, []);
   async function installApp() {
-    if (/android/i.test(navigator.userAgent) && !/; wv\)/i.test(navigator.userAgent) && !window.matchMedia('(display-mode: standalone)').matches) {
-      window.location.href = 'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk';
-      return;
-    }
-    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true || /; wv\)/i.test(navigator.userAgent)) {
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
       setToast('You already have AFTERDARK installed. 💗'); return;
     }
     if (installPrompt) {
@@ -111,6 +107,10 @@ function App() {
     }
     if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
       setToast('On iPhone: tap Share ↑, then “Add to Home Screen”.'); return;
+    }
+    if (/android/i.test(navigator.userAgent)) {
+      window.location.href = 'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk';
+      return;
     }
     setToast('Open your browser menu (⋮) and choose “Install app” or “Add to Home screen”.');
   }
