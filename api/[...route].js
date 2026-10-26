@@ -224,7 +224,7 @@ export default async function handler(req, res) {
         if (type === 'answer') {
           const dayKey = String(body.dayKey || '');
           const promptId = String(body.promptId || '');
-          if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(dayKey) || !/^[a-z0-9-]{1,64}$/.test(promptId) || text.length > 500) return json(res, 400, { error: 'Check your daily answer and try again.' });
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey) || !/^[a-z0-9-]{1,64}$/.test(promptId) || text.length > 500) return json(res, 400, { error: 'Check your daily answer and try again.' });
           await moments.updateOne(
             { connectionId, type: 'answer', dayKey, userId },
             { $set: { text, promptId, updatedAt: new Date() }, $setOnInsert: { connectionId, type: 'answer', dayKey, userId, createdAt: new Date() } },
