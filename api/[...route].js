@@ -53,8 +53,20 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') { res.setHeader('Allow', 'GET,POST,PATCH,DELETE,OPTIONS'); return res.status(204).end(); }
   let database;
   let action = 'initialization';
+  const requestId = randomBytes(6).toString('hex');
   try {
+    const url = new URL(req.url, 'https://afterdark.invalid');
+    const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
+    action = parts.join('/') || 'root';
     database = await db();
+
+    // Lightweight diagnostic route: verify database connectivity without running
+    // schema migrations, rate limits, or other application setup.
+    if (action === 'health' && req.method === 'GET') {
+      await database.command({ ping: 1 });
+      return json(res, 200, { ok: true, service: 'afterdark-api', database: 'connected' });
+    }
+
     await ensureUserEmailIndex(database);
     // Index maintenance must not take down every API route when one legacy index has
     // conflicting options. Log each failure and keep serving requests; fix the index
@@ -83,9 +95,6 @@ export default async function handler(req, res) {
         });
       }
     });
-    const url = new URL(req.url, 'https://afterdark.invalid');
-    const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
-    action = parts.join('/') || 'root';
     const body = ['POST','PATCH','DELETE'].includes(req.method) ? await readBody(req) : {};
     const ip = String(req.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim().slice(0, 80);
     if (!await rateLimit(database, ip, ['login','register','forgot-password','reset-password'].includes(action) ? 8 : 45)) return json(res, 429, { error: 'Too many tries. Take a breath and try again shortly.' });
@@ -381,7 +390,10 @@ export default async function handler(req, res) {
     return json(res, 404, { error: 'That page took a wrong turn. Try again.' });
   } catch (error) {
     const code = error?.message === 'DB_CONFIG' || error?.message === 'AUTH_CONFIG' ? 503 : 500;
-    console.error('AFTERDARK request failed:', { action, method: req.method, code: error?.code || null, codeName: error?.codeName || null, message: error?.message || 'unknown' });
-    return json(res, code, { error: code === 503 ? 'This feature is taking a tiny breather. Try again soon.' : 'Something glitched. Give it another try.' });
+    console.error('AFTERDARK request failed:', { requestId, action, method: req.method, code: error?.code || null, codeName: error?.codeName || null, message: error?.message || 'unknown' });
+    return json(res, code, {
+      error: code === 503 ? 'This feature is temporarily unavailable. Check the API health status and try again.' : 'Something glitched. Please retry once. If it continues, share reference ' + requestId + ' with support.',
+      requestId
+    });
   }
 }
