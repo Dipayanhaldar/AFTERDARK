@@ -65,12 +65,49 @@ const chachiReplyFor = (text) => {
 };
 const toLocalDateTimeInput = value => { const d = new Date(value); return Number.isNaN(d.getTime()) ? '' : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
 async function request(path, options = {}) {
-  let response;
-  try { response = await fetch('/api/' + path, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options }); }
-  catch { throw new Error('Connection hiccup. Check your internet and try again.'); }
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'Something glitched. Try again.');
-  return data;
+  const method = String(options.method || 'GET').toUpperCase();
+  const maxAttempts = method === 'GET' ? 2 : 1;
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let response;
+    try {
+      response = await fetch('/api/' + path, {
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+        ...options
+      });
+    } catch {
+      lastError = new Error('Connection hiccup. Check your internet, then tap retry.');
+      if (attempt < maxAttempts) { await new Promise(resolve => window.setTimeout(resolve, 450)); continue; }
+      throw lastError;
+    }
+    const contentType = response.headers.get('content-type') || '';
+    let data = {};
+    if (contentType.includes('application/json')) {
+      data = await response.json().catch(() => ({}));
+    } else {
+      const textBody = await response.text().catch(() => '');
+      data = { error: textBody.trim().slice(0, 180) };
+    }
+    if (response.ok) return data;
+    const requestId = data.requestId ? ' Reference: ' + data.requestId + '.' : '';
+    const fallback = response.status >= 500
+      ? 'The server had a temporary problem (HTTP ' + response.status + '). Please retry in a moment.'
+      : response.status === 429
+        ? 'Too many attempts in a short time. Wait a minute, then retry.'
+        : response.status === 401
+          ? 'Your session may have expired. Refresh the page or sign in again.'
+          : response.status === 404
+            ? 'This link or item could not be found. Check that the invite link is complete and still valid.'
+            : 'The request could not be completed (HTTP ' + response.status + '). Please retry.';
+    lastError = new Error((data.error && !String(data.error).startsWith('<!DOCTYPE') ? data.error : fallback) + requestId);
+    if (attempt < maxAttempts && (response.status >= 500 || response.status === 429)) {
+      await new Promise(resolve => window.setTimeout(resolve, 450));
+      continue;
+    }
+    throw lastError;
+  }
+  throw lastError || new Error('The request could not be completed. Please retry.');
 }
 function App() {
   const resetToken = useMemo(() => new URLSearchParams(window.location.search).get('token') || '', []);
