@@ -325,3 +325,35 @@ footer{border-top:1px solid #f0cadd;padding:26px 0 34px;color:#80677a;gap:18px}
 .invite-actions{display:flex;gap:8px;flex-wrap:wrap}
 .invite-actions .secondary-btn{display:inline-flex;align-items:center;justify-content:center}
 @media(max-width:760px){.workspace{padding:20px 14px}.invite-box{padding:16px}.top-actions .ghost-btn{padding:8px 10px;font-size:12px}}
+
+
+/* Contextual chat integrations: branded, inline, and never a global pop-up */
+.chat-brand-card{display:flex;align-items:flex-start;gap:12px;max-width:94%;margin:5px 0 12px 10px;padding:13px;border:1px solid #f1d4e2;border-radius:16px;background:#fff;box-shadow:0 8px 22px rgba(111,35,77,.06);animation:brand-in .22s ease-out}
+.chat-brand-logo{flex:0 0 42px;width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:17px;letter-spacing:-.5px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.2)}
+.brand-blinkit .chat-brand-logo,.brand-rapido .chat-brand-logo{color:#1c1720}
+.brand-starbucks .chat-brand-logo{border-radius:50%}
+.brand-zara .chat-brand-logo,.brand-uber .chat-brand-logo{border-radius:5px}
+.chat-brand-copy{min-width:0;display:grid;gap:5px}
+.chat-brand-copy>small{font-size:9px;font-weight:900;letter-spacing:.11em;color:#a17b91}
+.chat-brand-copy p{margin:0;color:#4e3043;font-size:12px;line-height:1.55}
+.chat-brand-copy a{justify-self:start;text-decoration:none;font-size:11px;font-weight:900;color:#9b245d;border-bottom:1px solid currentColor;padding-bottom:2px}
+.brand-netflix{border-left:3px solid #e50914}.brand-netflix .chat-brand-copy a{color:#e50914}
+.brand-zomato{border-left:3px solid #e23744}.brand-zomato .chat-brand-copy a{color:#e23744}
+.brand-bookmyshow{border-left:3px solid #d81f26}.brand-bookmyshow .chat-brand-copy a{color:#d81f26}
+.brand-starbucks{border-left:3px solid #00754a}.brand-starbucks .chat-brand-copy a{color:#00754a}
+.brand-blinkit{border-left:3px solid #f8cb46}.brand-blinkit .chat-brand-copy a{color:#8a6500}
+.brand-uber{border-left:3px solid #111}.brand-uber .chat-brand-copy a{color:#111}
+.brand-district{border-left:3px solid #5b2be0}.brand-district .chat-brand-copy a{color:#5b2be0}
+.brand-igp{border-left:3px solid #7c3f8c}.brand-igp .chat-brand-copy a{color:#7c3f8c}
+.brand-cadbury{border-left:3px solid #4b2678}.brand-cadbury .chat-brand-copy a{color:#4b2678}
+.brand-rapido{border-left:3px solid #ffcb05}.brand-rapido .chat-brand-copy a{color:#795b00}
+.brand-zara{border-left:3px solid #111}.brand-zara .chat-brand-copy a{color:#111}
+.brand-zudio{border-left:3px solid #ed1c24}.brand-zudio .chat-brand-copy a{color:#ed1c24}
+.guest-note{font-size:13px;color:#805b72;background:#fff0f7;border:1px solid #f2c6db;padding:12px 14px;border-radius:14px}
+.guest-account-nudge{display:flex;gap:12px;align-items:flex-start;margin:14px 0;padding:14px;background:linear-gradient(130deg,#fff0f7,#fff);border:1px dashed #eab3ce;border-radius:16px;color:#4e3043}
+.guest-account-nudge>span{font-size:22px}
+.guest-account-nudge strong{font-size:13px;color:#9d1556}
+.guest-account-nudge p{margin:5px 0 7px;font-size:12px;line-height:1.5;color:#80677a}
+.guest-account-nudge .text-btn{display:block;font-size:11px;margin-top:4px}
+@keyframes brand-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+@media(max-width:600px){.chat-brand-card{max-width:100%;margin-left:0}.chat-brand-logo{width:36px;height:36px;flex-basis:36px;font-size:14px}.guest-account-nudge{padding:11px}}
