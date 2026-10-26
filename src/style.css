@@ -357,3 +357,22 @@ footer{border-top:1px solid #f0cadd;padding:26px 0 34px;color:#80677a;gap:18px}
 .guest-account-nudge .text-btn{display:block;font-size:11px;margin-top:4px}
 @keyframes brand-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 @media(max-width:600px){.chat-brand-card{max-width:100%;margin-left:0}.chat-brand-logo{width:36px;height:36px;flex-basis:36px;font-size:14px}.guest-account-nudge{padding:11px}}
+
+/* Chachi's local, key-free chat wingman */
+.chachi-helper{margin:0 0 12px;padding:13px 15px;border:1px solid #efc7dd;border-radius:17px;background:linear-gradient(120deg,#fff0f7 0%,#fffafd 70%);box-shadow:0 8px 24px rgba(123,42,84,.05)}
+.chachi-helper-heading{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.chachi-avatar{display:grid;place-items:center;width:36px;height:36px;border-radius:12px;background:linear-gradient(145deg,#ec83b4,#a64d8c);color:white;font-size:19px}
+.chachi-helper-heading>div{display:grid;gap:3px;flex:1;min-width:135px}
+.chachi-helper-heading strong{font-size:13px;color:#842c5c}
+.chachi-helper-heading small{font-size:10px;color:#97778a}
+.chachi-generate{font-size:11px;padding:9px 12px}
+.chachi-reply{margin:12px 0 0 46px;padding:12px;background:white;border:1px solid #f3d6e5;border-radius:13px}
+.chachi-reply p{margin:0 0 10px;font-size:13px;line-height:1.6;color:#4c2b40}
+.chachi-reply>div{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.chat-brand-copy>small{letter-spacing:.08em}
+.chat-brand-logo{font-size:15px;overflow:hidden;text-overflow:clip;white-space:nowrap}
+.brand-amazon .chat-brand-logo,.brand-blinkit .chat-brand-logo,.brand-fnp .chat-brand-logo,.brand-igp .chat-brand-logo,.brand-ajio .chat-brand-logo,.brand-makemytrip .chat-brand-logo{font-size:10px}
+.brand-amazon .chat-brand-logo{color:#1b1b1b}
+.brand-blinkit .chat-brand-logo{color:#1b1b1b}
+.brand-zomato .chat-brand-logo{font-size:11px}
+@media(max-width:560px){.chachi-helper-heading{align-items:flex-start}.chachi-generate{margin-left:46px}.chachi-reply{margin-left:0}}
