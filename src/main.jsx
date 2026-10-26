@@ -202,9 +202,19 @@ function App() {
     if (action === 'approve' && !ageConfirmed) { setToast('Please confirm you are 18 or older first.'); return; }
     setBusy(true);
     try {
-      await request('invites/' + inviteToken + '/' + action, { method: 'POST', body: JSON.stringify({ adult: ageConfirmed }) });
+      const result = await request('invites/' + inviteToken + '/' + action, { method: 'POST', body: JSON.stringify({ adult: ageConfirmed }) });
       setInviteReply(action === 'approve' ? 'Approved! The vibe is mutual 💗 Your chat is ready — no account needed.' : 'Aiyo bro, ee saari scene set avvaledhu 💔');
-      if (action === 'approve') { setInviteAccepted(true); const me = await request('me'); setUser(me.user); await loadConnections(); setTab('chat'); }
+      if (action === 'approve') {
+        setInviteAccepted(true);
+        if (result.user) setUser(result.user);
+        if (result.connection?.id) {
+          setConnections(previous => [result.connection, ...previous.filter(connection => connection.id !== result.connection.id)]);
+          setActiveConnection(result.connection.id);
+        } else {
+          await loadConnections();
+        }
+        setTab('chat');
+      }
     } catch (e) { setInviteReply(e.message); }
     finally { setBusy(false); }
   }

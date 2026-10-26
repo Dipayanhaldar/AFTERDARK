@@ -204,9 +204,15 @@ export default async function handler(req, res) {
       const pair = [invite.ownerId.toString(), recipientId.toString()].sort();
       const pairKey = pair.join(':');
       const connection = await database.collection('connections').findOneAndUpdate({ pairKey }, { $setOnInsert: { pairKey, memberIds: pair.map(id => new ObjectId(id)), creatorId: invite.ownerId, recipientId, status: 'approved', createdAt: new Date() } }, { upsert: true, returnDocument: 'after' });
-      if (connection?._id) await database.collection('connections').updateOne({ _id: connection._id, creatorId: { $exists: false } }, { $set: { creatorId: invite.ownerId, recipientId } });
-      await invites.updateOne({ _id: invite._id, status: 'pending' }, { $set: { status: 'approved', recipientId, connectionId: connection?._id, respondedAt: new Date() } });
-      return json(res, 200, { status: 'approved' });
+      const connectionDoc = connection?._id ? connection : await database.collection('connections').findOne({ pairKey });
+      if (connectionDoc?._id) await database.collection('connections').updateOne({ _id: connectionDoc._id, creatorId: { $exists: false } }, { $set: { creatorId: invite.ownerId, recipientId } });
+      await invites.updateOne({ _id: invite._id, status: 'pending' }, { $set: { status: 'approved', recipientId, connectionId: connectionDoc?._id, respondedAt: new Date() } });
+      const owner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
+      return json(res, 200, {
+        status: 'approved',
+        user: cleanUser(recipient),
+        connection: connectionDoc?._id ? { id: connectionDoc._id.toString(), handle: owner?.handle || 'your person', role: 'invitee' } : null
+      });
     }
     if (action === 'me' && req.method === 'GET') { if (!session) return json(res, 200, { user: null }); const user = await database.collection('users').findOne({ _id: new (await import('mongodb')).ObjectId(session.sub) }); return json(res, 200, { user: user ? cleanUser(user) : null }); }
     if (!session) return json(res, 401, { error: 'Sign in to continue.' });
