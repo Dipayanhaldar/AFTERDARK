@@ -376,3 +376,9 @@ footer{border-top:1px solid #f0cadd;padding:26px 0 34px;color:#80677a;gap:18px}
 .brand-blinkit .chat-brand-logo{color:#1b1b1b}
 .brand-zomato .chat-brand-logo{font-size:11px}
 @media(max-width:560px){.chachi-helper-heading{align-items:flex-start}.chachi-generate{margin-left:46px}.chachi-reply{margin-left:0}}
+
+/* Keep invite recovery controls above decorative/glass layers and reliably tappable. */
+.invite-landing { position: relative; isolation: isolate; }
+.invite-landing .hero-actions { position: relative; z-index: 3; pointer-events: auto; }
+.invite-landing .hero-actions button { position: relative; z-index: 4; pointer-events: auto; touch-action: manipulation; }
+.invite-landing .text-btn { color: var(--pink); padding: 12px 14px; cursor: pointer; }
