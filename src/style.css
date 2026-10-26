@@ -266,3 +266,44 @@ footer{border-top:1px solid #f0cadd;padding:26px 0 34px;color:#80677a;gap:18px}
 @media(prefers-reduced-motion:reduce){
  *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
 }
+
+
+/* Pair rituals: daily prompt, tiny games and private shared memories */
+.message.mine{background:linear-gradient(135deg,#ff4f9a,#e72b80);color:#fff;border-radius:18px 18px 5px 18px}
+.message.theirs{background:#fff;border:1px solid #f2d5e4;color:#44203a;border-radius:18px 18px 18px 5px}
+.connection-item{width:100%;display:flex;align-items:center;gap:10px;border:1px solid transparent;background:transparent;color:#65415a;text-align:left;padding:12px;border-radius:15px;margin-top:7px}
+.connection-item:hover,.connection-item.selected{background:#fff0f7;border-color:#f5c6dc;color:#9d1556}
+.connection-item .online-dot{margin-left:auto}
+.empty-link,.chat-empty{background:#fff3f8;border:1px dashed #edb6d0;border-radius:16px;color:#805b72;padding:20px}
+.ritual-panel{display:grid;gap:12px;padding:16px;background:linear-gradient(145deg,#fff9fc,#fff0f7);border:1px solid #f2c6db;border-radius:20px;margin:12px 0;max-height:420px;overflow:auto}
+.ritual-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.ritual-date{font-size:11px;color:#a47791}
+.ritual-panel h4{margin:0;color:#35152b;font:700 17px 'Space Grotesk',sans-serif}
+.ritual-question{margin:0;color:#805b72;font-size:13px;line-height:1.6}
+.ritual-answer-form{display:flex;gap:9px;align-items:stretch}
+.ritual-answer-form textarea{flex:1;min-width:0;resize:vertical;border:1px solid #ebc8da;border-radius:13px;background:#fffafd;color:#35152b;padding:12px;outline:none;font:inherit}
+.ritual-answer-form textarea:focus,.ritual-memory-form input:focus{border-color:#f0529a;box-shadow:0 0 0 3px rgba(240,82,154,.1)}
+.ritual-answer-form .primary-btn{white-space:nowrap;padding:12px}
+.ritual-answers{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+.ritual-answer{background:#fff;border:1px solid #f4d5e4;border-radius:13px;padding:11px}
+.ritual-answer strong{font-size:11px;color:#b32e70}
+.ritual-answer p{margin:6px 0 0;color:#604057;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.ritual-games{display:grid;gap:8px}
+.ritual-games>strong,.ritual-memory-form>label{font-size:12px;color:#80506d;font-weight:800}
+.ritual-games>div{display:flex;gap:8px;flex-wrap:wrap}
+.ritual-games .secondary-btn{padding:9px 12px;font-size:11px}
+.ritual-memory-form{display:grid;gap:8px}
+.ritual-memory-form>div{display:flex;gap:8px}
+.ritual-memory-form input{flex:1;min-width:0;border:1px solid #ebc8da;border-radius:13px;background:#fffafd;color:#35152b;padding:12px;outline:none}
+.ritual-memory-form .primary-btn{padding:11px 16px}
+.saved-memory{background:#fff;border:1px solid #f4d5e4;border-radius:14px;padding:12px}
+.saved-memory p{margin:0;color:#503149;font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.saved-memory small{display:block;margin-top:7px;color:#9b7890;font-size:10px}
+.saved-memory .text-btn{font-size:11px}
+@media(max-width:600px){
+ .ritual-answer-form{flex-direction:column}
+ .ritual-answer-form .primary-btn{align-self:flex-start}
+ .ritual-answers{grid-template-columns:1fr}
+ .ritual-memory-form>div{flex-direction:column}
+ .ritual-memory-form .primary-btn{align-self:flex-start}
+}
