@@ -384,3 +384,19 @@ footer{border-top:1px solid #f0cadd;padding:26px 0 34px;color:#80677a;gap:18px}
 .invite-landing .text-btn { color: var(--pink); padding: 12px 14px; cursor: pointer; }
 
 .qr-download-notice{display:flex;flex-direction:column;gap:7px;margin:14px 0;padding:14px 16px;border:1px solid rgba(219,76,148,.35);border-radius:16px;background:linear-gradient(135deg,rgba(255,220,238,.65),rgba(255,246,251,.95));color:#43213a;font-size:.92rem;line-height:1.45}.qr-download-notice strong{font-size:.9rem;letter-spacing:.06em}.qr-download-notice b{font-size:.88rem}.qr-hint{line-height:1.5}
+
+
+/* Rewarded QR download + custom QR studio */
+.custom-qr-studio{margin-top:24px;padding:22px;border:1px solid rgba(255,143,190,.28);border-radius:18px;background:linear-gradient(145deg,rgba(255,143,190,.08),rgba(201,168,255,.04));text-align:left}
+.custom-qr-studio h4{font:600 25px 'Space Grotesk',sans-serif;margin:10px 0}
+.custom-qr-studio>p{line-height:1.7}
+.custom-qr-label{display:flex;flex-direction:column;gap:8px;margin:16px 0;color:#e9d8ed;font-size:12px;font-weight:600}
+.custom-qr-label input,.custom-qr-label select{width:100%;padding:13px 14px;border:1px solid #63475f;border-radius:10px;background:#170f1b;color:#f6eff9;font:inherit}
+.custom-qr-label select option{background:#170f1b}
+.reward-status{padding:12px 14px;margin:14px 0;border:1px solid rgba(255,143,190,.2);border-radius:10px;background:rgba(255,143,190,.06);color:#ffb9d6;font-size:12px}
+.custom-qr-result{display:grid;gap:12px;margin-top:18px}
+.custom-qr-result img{display:block;width:min(100%,380px);margin:0 auto;border:1px solid rgba(255,255,255,.12);border-radius:14px}
+.custom-qr-result .secondary-btn{display:block;text-align:center}
+.invite-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.invite-actions>*{flex:1;min-width:150px;text-align:center}
+@media(max-width:520px){.custom-qr-studio{padding:16px}.invite-actions{flex-direction:column}.invite-actions>*{width:100%}}
