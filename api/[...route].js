@@ -234,7 +234,26 @@ export default async function handler(req, res) {
       const hash = createHmac('sha256', process.env.JWT_SECRET).update(parts[1]).digest('hex');
       const invites = database.collection('invites');
       const invite = await invites.findOne({ tokenHash: hash, expiresAt: { $gt: new Date() } });
-      if (!invite || invite.status !== 'pending') return json(res, 404, { error: 'This invite is no longer available.' });
+      if (!invite) return json(res, 404, { error: 'This invite has expired or is no longer available.' });
+      // Make approval safe to retry when the first response was interrupted.
+      // Only the already-approved recipient session can retrieve the existing connection.
+      if (invite.status === 'approved' && invite.connectionId && session?.sub && invite.recipientId) {
+        let approvedRecipientId = null;
+        try { approvedRecipientId = new ObjectId(session.sub); } catch {}
+        if (approvedRecipientId && invite.recipientId.equals(approvedRecipientId)) {
+          const existingConnection = await database.collection('connections').findOne({
+            _id: invite.connectionId, memberIds: approvedRecipientId, status: 'approved'
+          });
+          const approvedUser = await database.collection('users').findOne({ _id: approvedRecipientId });
+          const owner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
+          if (existingConnection && approvedUser) return json(res, 200, {
+            status: 'approved', user: cleanUser(approvedUser),
+            connection: { id: existingConnection._id.toString(), handle: owner?.handle || 'your person', role: 'invitee' },
+            recovered: true
+          });
+        }
+      }
+      if (invite.status !== 'pending') return json(res, 409, { error: 'This invite has already been answered. Refresh the page to see its current status.' });
       let recipientId = null;
       if (session?.sub) { try { recipientId = new (await import('mongodb')).ObjectId(session.sub); } catch {} }
       if (parts[2] === 'ignore') {
