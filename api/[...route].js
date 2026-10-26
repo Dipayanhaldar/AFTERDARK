@@ -17,11 +17,30 @@ async function db() { if (!process.env.MONGODB_URI) throw new Error('DB_CONFIG')
 async function ensureUserEmailIndex(database) {
   if (!emailIndexMigrationPromise) emailIndexMigrationPromise = (async () => {
     const users = database.collection('users');
-    const indexes = await users.listIndexes().toArray();
+    let indexes = [];
+    try { indexes = await users.listIndexes().toArray(); }
+    catch (error) {
+      // A fresh database may not have created the users collection yet.
+      if (error.code !== 26 && error.codeName !== 'NamespaceNotFound') throw error;
+    }
     // A normal unique index also indexes missing emails as null, which blocks a second guest account.
     const legacy = indexes.find(index => index.name === 'email_1' && index.unique && !index.partialFilterExpression && !index.sparse);
-    if (legacy) await users.dropIndex('email_1').catch(error => { if (error.code !== 27) throw error; });
-    await users.createIndex({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' } }, name: 'users_email_unique' });
+    if (legacy) {
+      await users.dropIndex('email_1').catch(error => {
+        if (error.code !== 27 && error.codeName !== 'IndexNotFound') throw error;
+      });
+    }
+    indexes = indexes.filter(index => index.name !== 'email_1');
+    const desired = indexes.find(index => index.name === 'users_email_unique');
+    const desiredFilter = desired?.partialFilterExpression?.email?.$type === 'string';
+    if (desired && (!desired.unique || !desiredFilter)) {
+      await users.dropIndex('users_email_unique');
+    }
+    await users.createIndex({ email: 1 }, {
+      unique: true,
+      partialFilterExpression: { email: { $type: 'string' } },
+      name: 'users_email_unique'
+    });
   })();
   try { await emailIndexMigrationPromise; }
   catch (error) { emailIndexMigrationPromise = null; throw error; }
@@ -33,6 +52,7 @@ async function rateLimit(database, key, limit = 20) { const now = new Date(); co
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') { res.setHeader('Allow', 'GET,POST,PATCH,DELETE,OPTIONS'); return res.status(204).end(); }
   let database;
+  let action = 'initialization';
   try {
     database = await db();
     await ensureUserEmailIndex(database);
@@ -51,7 +71,7 @@ export default async function handler(req, res) {
     ]);
     const url = new URL(req.url, 'https://afterdark.invalid');
     const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
-    const action = parts.join('/');
+    action = parts.join('/') || 'root';
     const body = ['POST','PATCH','DELETE'].includes(req.method) ? await readBody(req) : {};
     const ip = String(req.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim().slice(0, 80);
     if (!await rateLimit(database, ip, ['login','register','forgot-password','reset-password'].includes(action) ? 8 : 45)) return json(res, 429, { error: 'Too many tries. Take a breath and try again shortly.' });
@@ -347,7 +367,7 @@ export default async function handler(req, res) {
     return json(res, 404, { error: 'That page took a wrong turn. Try again.' });
   } catch (error) {
     const code = error?.message === 'DB_CONFIG' || error?.message === 'AUTH_CONFIG' ? 503 : 500;
-    console.error('AFTERDARK request failed:', error?.message || 'unknown');
+    console.error('AFTERDARK request failed:', { action, method: req.method, code: error?.code || null, codeName: error?.codeName || null, message: error?.message || 'unknown' });
     return json(res, code, { error: code === 503 ? 'This feature is taking a tiny breather. Try again soon.' : 'Something glitched. Give it another try.' });
   }
 }
