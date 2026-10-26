@@ -87,7 +87,7 @@ async function request(path, options = {}) {
       data = await response.json().catch(() => ({}));
     } else {
       const textBody = await response.text().catch(() => '');
-      data = { error: textBody.trim().slice(0, 180) };
+      data = { error: textBody.trim().startsWith('<') ? '' : textBody.trim().slice(0, 180) };
     }
     if (response.ok) return data;
     const requestId = data.requestId ? ' Reference: ' + data.requestId + '.' : '';
