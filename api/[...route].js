@@ -239,7 +239,7 @@ export default async function handler(req, res) {
       // Only the already-approved recipient session can retrieve the existing connection.
       if (invite.status === 'approved' && invite.connectionId && session?.sub && invite.recipientId) {
         let approvedRecipientId = null;
-        try { approvedRecipientId = new ObjectId(session.sub); } catch {}
+        try { approvedRecipientId = new (await import('mongodb')).ObjectId(session.sub); } catch {}
         if (approvedRecipientId && invite.recipientId.equals(approvedRecipientId)) {
           const existingConnection = await database.collection('connections').findOne({
             _id: invite.connectionId, memberIds: approvedRecipientId, status: 'approved'
