@@ -33,6 +33,7 @@ Do not put real values in this repository. Set them in the deployment provider's
 - `POST /api/invites/:token/approve`, `POST /api/invites/:token/ignore`
 - `GET /api/connections`
 - `GET /api/connections/:id/messages`, `POST /api/connections/:id/messages`
+- `GET /api/connections/:id/moments`, `POST /api/connections/:id/moments`, `DELETE /api/connections/:id/moments/:momentId` (daily answers and shared text memories)
 - `POST /api/revoke-invites`, `DELETE /api/delete-account`
 
 ## Local development
@@ -48,7 +49,7 @@ Vite's local development server does not automatically run Vercel serverless fun
 
 ## Release checklist
 
-Before inviting real users, configure the runtime variables, test registration and login, test an invite from a separate account/device, verify approve and ignore paths, verify that an unapproved user cannot read or send messages, and verify account deletion. The Android APK, push notifications, block/report workflows, and deeper relationship features remain separate release work.
+Before inviting real users, configure the runtime variables, test registration and login, test an invite from a separate account/device, verify approve and ignore paths, verify that an unapproved user cannot read or send messages, and verify account deletion, blocking, reporting, date-plan locking, daily answers, and memory deletion. Password-reset email still requires `RESEND_API_KEY` and a verified `FROM_EMAIL`. Push notifications and image uploads are not implemented in this release.
 
 
 ## App install and Android APK
