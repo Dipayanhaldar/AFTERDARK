@@ -269,6 +269,10 @@ export default async function handler(req, res) {
         cookie(res, sign({ sub: recipientId.toString(), guest: true, exp: Math.floor(Date.now()/1000) + DAY*14 }));
       }
       if (invite.ownerId.equals(recipientId)) return json(res, 403, { error: 'You can’t approve your own invite. Send it to your person.' });
+      const existingActiveConnection = await database.collection('connections').findOne({ memberIds: recipientId, status: 'approved' });
+      if (existingActiveConnection && !existingActiveConnection.memberIds.some(id => id.equals(invite.ownerId))) {
+        return json(res, 409, { error: 'Plot twist denied: you already have an active AFTERDARK chat. One connection at a time — no double-dating side quests. 😭🔒' });
+      }
       const recipient = await database.collection('users').findOne({ _id: recipientId });
       if (!recipient) return json(res, 401, { error: 'This session has expired. Open the invite again.' });
       const pair = [invite.ownerId.toString(), recipientId.toString()].sort();
@@ -291,6 +295,11 @@ export default async function handler(req, res) {
     if (!user) return json(res, 401, { error: 'Please sign in again.' });
 
     if (action === 'invites' && req.method === 'POST') {
+      const now = new Date();
+      const activeConnection = await database.collection('connections').findOne({ memberIds: userId, status: 'approved' }, { projection: { _id: 1 } });
+      if (activeConnection) return json(res, 409, { error: 'One situationship at a time, bestie. You already have an active chat — no bonus boo QR codes. 😭🔒' });
+      const pendingInvite = await database.collection('invites').findOne({ ownerId: userId, status: 'pending', expiresAt: { $gt: now } }, { projection: { _id: 1 } });
+      if (pendingInvite) return json(res, 409, { error: 'Your invite is already out in the wild. No second QR until this plot resolves, bestie. 💌⏳' });
       const raw = token(32); const expiresAt = new Date(Date.now() + 7 * DAY * 1000);
       await database.collection('invites').insertOne({ tokenHash: createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex'), ownerId: userId, status: 'pending', createdAt: new Date(), expiresAt });
       return json(res, 201, { invite: raw, expiresAt });
