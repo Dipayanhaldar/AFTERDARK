@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 
 const scrypt = promisify(scryptCallback);
 let clientPromise;
+let emailIndexMigrationPromise;
 const COOKIE = 'afterdark_session';
 const DAY = 86400;
 const json = (res, status, body) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(body)); };
@@ -13,6 +14,18 @@ function sign(payload) { const secret = process.env.JWT_SECRET; if (!secret) thr
 function verify(value) { try { const [body, sig] = value.split('.'); const expected = createHmac('sha256', process.env.JWT_SECRET).update(body).digest(); const actual = Buffer.from(sig, 'base64url'); if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null; const p = JSON.parse(Buffer.from(body, 'base64url').toString()); return p.exp > Date.now() / 1000 ? p : null; } catch { return null; } }
 function currentUser(req) { const raw = (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1); return raw ? verify(decodeURIComponent(raw)) : null; }
 async function db() { if (!process.env.MONGODB_URI) throw new Error('DB_CONFIG'); if (!clientPromise) { const client = new MongoClient(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 8000 }); clientPromise = client.connect(); } return (await clientPromise).db(process.env.MONGODB_DB || 'afterdark'); }
+async function ensureUserEmailIndex(database) {
+  if (!emailIndexMigrationPromise) emailIndexMigrationPromise = (async () => {
+    const users = database.collection('users');
+    const indexes = await users.listIndexes().toArray();
+    // A normal unique index also indexes missing emails as null, which blocks a second guest account.
+    const legacy = indexes.find(index => index.name === 'email_1' && index.unique && !index.partialFilterExpression && !index.sparse);
+    if (legacy) await users.dropIndex('email_1').catch(error => { if (error.code !== 27) throw error; });
+    await users.createIndex({ email: 1 }, { unique: true, partialFilterExpression: { email: { $type: 'string' } }, name: 'users_email_unique' });
+  })();
+  try { await emailIndexMigrationPromise; }
+  catch (error) { emailIndexMigrationPromise = null; throw error; }
+}
 function cleanUser(u) { return { id: u._id.toString(), email: u.email || null, handle: u.handle || 'your-vibe', guest: Boolean(u.guest), createdAt: u.createdAt }; }
 async function readBody(req) { let data = ''; for await (const chunk of req) { data += chunk; if (data.length > 20000) throw new Error('BODY_TOO_LARGE'); } return data ? JSON.parse(data) : {}; }
 async function rateLimit(database, key, limit = 20) { const now = new Date(); const bucket = Math.floor(now.getTime() / 60000); const id = key + ':' + bucket; const c = database.collection('rate_limits'); await c.updateOne({ _id: id }, { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date(now.getTime() + 120000) } }, { upsert: true }); const row = await c.findOne({ _id: id }); if (row?.count > limit) return false; return true; }
@@ -22,8 +35,8 @@ export default async function handler(req, res) {
   let database;
   try {
     database = await db();
+    await ensureUserEmailIndex(database);
     await Promise.all([
-      database.collection('users').createIndex({ email: 1 }, { unique: true }),
       database.collection('invites').createIndex({ tokenHash: 1 }, { unique: true }),
       database.collection('invites').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       database.collection('connections').createIndex({ pairKey: 1 }, { unique: true }),
