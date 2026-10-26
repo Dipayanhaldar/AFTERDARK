@@ -1,5 +1,8 @@
 {
   "rewrites": [
-    { "source": "/invite/:token", "destination": "/" }
+    {
+      "source": "/invite/:token",
+      "destination": "/index.html"
+    }
   ]
 }
