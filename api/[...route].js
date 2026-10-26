@@ -32,6 +32,8 @@ export default async function handler(req, res) {
       database.collection('rate_limits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       database.collection('password_resets').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
       database.collection('date_plans').createIndex({ connectionId: 1 }, { unique: true }),
+      database.collection('moments').createIndex({ connectionId: 1, createdAt: -1 }),
+      database.collection('moments').createIndex({ connectionId: 1, type: 1, dayKey: 1, userId: 1 }, { unique: true, partialFilterExpression: { type: 'answer' } }),
       database.collection('reports').createIndex({ createdAt: 1 })
     ]);
     const url = new URL(req.url, 'https://afterdark.invalid');
@@ -201,6 +203,50 @@ export default async function handler(req, res) {
       const targetUserId = connection.memberIds.find(id => !id.equals(userId));
       await database.collection('reports').insertOne({ connectionId, reporterId: userId, targetUserId, reason, createdAt: new Date(), status: 'new' });
       return json(res, 201, { ok: true });
+    }
+    if (parts[0] === 'connections' && parts[1] && parts[2] === 'moments') {
+      let connectionId;
+      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
+      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId, status: 'approved' });
+      if (!connection) return json(res, 403, { error: 'Shared moments are only available for an approved connection.' });
+      const moments = database.collection('moments');
+      if (parts.length === 3 && req.method === 'GET') {
+        const dayKey = String(url.searchParams.get('dayKey') || '').slice(0, 10);
+        const rows = await moments.find({ connectionId }).sort({ createdAt: -1 }).limit(60).toArray();
+        const answers = dayKey ? await moments.find({ connectionId, type: 'answer', dayKey }).toArray() : [];
+        const serialize = row => ({ id: row._id.toString(), type: row.type, text: row.text, userId: row.userId.toString(), promptId: row.promptId || null, dayKey: row.dayKey || null, createdAt: row.createdAt, updatedAt: row.updatedAt || null });
+        return json(res, 200, { moments: rows.map(serialize), answers: answers.map(serialize), currentUserId: userId.toString() });
+      }
+      if (parts.length === 3 && req.method === 'POST') {
+        const type = String(body.type || '');
+        const text = String(body.text || '').trim().slice(0, 1000);
+        if (!text) return json(res, 400, { error: 'Write a little something first.' });
+        if (type === 'answer') {
+          const dayKey = String(body.dayKey || '');
+          const promptId = String(body.promptId || '');
+          if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(dayKey) || !/^[a-z0-9-]{1,64}$/.test(promptId) || text.length > 500) return json(res, 400, { error: 'Check your daily answer and try again.' });
+          await moments.updateOne(
+            { connectionId, type: 'answer', dayKey, userId },
+            { $set: { text, promptId, updatedAt: new Date() }, $setOnInsert: { connectionId, type: 'answer', dayKey, userId, createdAt: new Date() } },
+            { upsert: true }
+          );
+          const answers = await moments.find({ connectionId, type: 'answer', dayKey }).toArray();
+          return json(res, 200, { answers: answers.map(row => ({ id: row._id.toString(), type: row.type, text: row.text, userId: row.userId.toString(), promptId: row.promptId, dayKey: row.dayKey, createdAt: row.createdAt, updatedAt: row.updatedAt || null })) });
+        }
+        if (type === 'memory') {
+          if (text.length > 1000) return json(res, 400, { error: 'Keep a memory under 1,000 characters.' });
+          const result = await moments.insertOne({ connectionId, type: 'memory', text, userId, createdAt: new Date() });
+          return json(res, 201, { moment: { id: result.insertedId.toString(), type: 'memory', text, userId: userId.toString(), createdAt: new Date() } });
+        }
+        return json(res, 400, { error: 'Choose a supported shared moment.' });
+      }
+      if (parts.length === 4 && req.method === 'DELETE') {
+        let momentId;
+        try { momentId = new ObjectId(parts[3]); } catch { return json(res, 400, { error: 'That memory link is not valid.' }); }
+        const result = await moments.deleteOne({ _id: momentId, connectionId, userId, type: 'memory' });
+        if (!result.deletedCount) return json(res, 404, { error: 'Only your own saved memories can be deleted.' });
+        return json(res, 200, { ok: true });
+      }
     }
     if (parts[0] === 'connections' && parts[1] && parts[2] === 'messages') {
       const connection = await database.collection('connections').findOne({ _id: new ObjectId(parts[1]), memberIds: userId, status: 'approved' });
