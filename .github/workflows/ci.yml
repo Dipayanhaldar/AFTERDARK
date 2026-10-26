@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: 20
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Check serverless API syntax
         run: node --check 'api/[...route].js'
       - name: Build frontend
