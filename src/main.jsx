@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import QRCode from 'qrcode';
 import './style.css';
+import { compressPhotoToDataUrl } from './photo-helper.js';
 
 const brands = [
   { name: 'Netflix', slug: 'netflix', category: 'Movie night', url: 'https://www.netflix.com/', keys: ['movie','film','watch','netflix','binge','series','show','k-drama'], pitch: 'Movie plan? Netflix & chill bolo, “kal dekhenge” ka season finale kabhi nahi aata 😭🍿', cta: 'Pick the watchlist', logo: 'N', color: '#e50914' },
