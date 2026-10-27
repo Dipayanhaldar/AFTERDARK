@@ -253,7 +253,7 @@ function App() {
     setInviteCreating(true); setToast('');
     try {
       const data = await request('invites', { method: 'POST', body: '{}' });
-      const link = 'https://afterdark-private-chat.onrender.com/invite/' + data.invite;
+      const link = 'https://afterdark-guest-connector.onrender.com/invite/' + data.invite;
       const image = await QRCode.toDataURL(link, { width: 600, margin: 2, color: { dark: '#251226', light: '#ffffff' }, errorCorrectionLevel: 'H' });
       setInvite(link);
       setInviteCode(data.inviteCode || '');
