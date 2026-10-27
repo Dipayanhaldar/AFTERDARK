@@ -61,7 +61,7 @@ async function ensureUserEmailIndex(database) {
   catch (error) { emailIndexMigrationPromise = null; throw error; }
 }
 function cleanUser(u) { return { id: u._id.toString(), email: u.email || null, handle: u.handle || 'your-vibe', guest: Boolean(u.guest), createdAt: u.createdAt }; }
-async function readBody(req) { let data = ''; for await (const chunk of req) { data += chunk; if (data.length > 20000) throw new Error('BODY_TOO_LARGE'); } return data ? JSON.parse(data) : {}; }
+async function readBody(req, maxBytes = 20000) { let data = ''; for await (const chunk of req) { data += chunk; if (data.length > maxBytes) throw new Error('BODY_TOO_LARGE'); } return data ? JSON.parse(data) : {}; }
 async function rateLimit(database, key, limit = 20) { const now = new Date(); const bucket = Math.floor(now.getTime() / 60000); const id = key + ':' + bucket; const c = database.collection('rate_limits'); await c.updateOne({ _id: id }, { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date(now.getTime() + 120000) } }, { upsert: true }); const row = await c.findOne({ _id: id }); if (row?.count > limit) return false; return true; }
 
 export default async function handler(req, res) {
@@ -137,7 +137,7 @@ export default async function handler(req, res) {
         });
       }
     });
-    const body = ['POST','PATCH','DELETE'].includes(req.method) ? await readBody(req) : {};
+    const body = ['POST','PATCH','DELETE'].includes(req.method) ? await readBody(req, parts[0] === 'connections' && parts[2] === 'moments' ? 1500000 : 20000) : {};
     const ip = String(req.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim().slice(0, 80);
     if (!await rateLimit(database, ip, ['login','register','forgot-password','reset-password'].includes(action) ? 8 : 45)) return json(res, 429, { error: 'Too many tries. Take a breath and try again shortly.' });
 
@@ -534,7 +534,7 @@ export default async function handler(req, res) {
         const dayKey = String(url.searchParams.get('dayKey') || '').slice(0, 10);
         const rows = await moments.find({ connectionId }).sort({ createdAt: -1 }).limit(60).toArray();
         const answers = dayKey ? await moments.find({ connectionId, type: 'answer', dayKey }).toArray() : [];
-        const serialize = row => ({ id: row._id.toString(), type: row.type, text: row.text, userId: row.userId.toString(), promptId: row.promptId || null, dayKey: row.dayKey || null, createdAt: row.createdAt, updatedAt: row.updatedAt || null });
+        const serialize = row => ({ id: row._id.toString(), type: row.type, text: row.text || '', imageData: row.imageData || null, userId: row.userId.toString(), promptId: row.promptId || null, dayKey: row.dayKey || null, createdAt: row.createdAt, updatedAt: row.updatedAt || null });
         return json(res, 200, { moments: rows.map(serialize), answers: answers.map(serialize), currentUserId: userId.toString() });
       }
       if (parts.length === 3 && req.method === 'POST') {
@@ -553,6 +553,22 @@ export default async function handler(req, res) {
           const answers = await moments.find({ connectionId, type: 'answer', dayKey }).toArray();
           return json(res, 200, { answers: answers.map(row => ({ id: row._id.toString(), type: row.type, text: row.text, userId: row.userId.toString(), promptId: row.promptId, dayKey: row.dayKey, createdAt: row.createdAt, updatedAt: row.updatedAt || null })) });
         }
+        if (type === 'photo') {
+          const imageData = String(body.imageData || '');
+          const caption = String(body.text || '').trim().slice(0, 240);
+          if (imageData.length > 1250000 || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(imageData)) {
+            return json(res, 400, { error: 'Choose a JPEG, PNG, or WebP photo under 900 KB after compression.' });
+          }
+          const [header, encoded] = imageData.split(',');
+          const bytes = Buffer.from(encoded, 'base64');
+          if (!bytes.length || bytes.length > 900000) return json(res, 400, { error: 'Photos must be 900 KB or smaller after compression.' });
+          const validSignature = header.includes('image/jpeg') ? bytes[0] === 0xff && bytes[1] === 0xd8 :
+            header.includes('image/png') ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) :
+            bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP';
+          if (!validSignature) return json(res, 400, { error: 'That image file could not be verified. Try a JPEG or PNG.' });
+          const result = await moments.insertOne({ connectionId, type: 'photo', text: caption, imageData, userId, createdAt: new Date() });
+          return json(res, 201, { moment: { id: result.insertedId.toString(), type: 'photo', text: caption, imageData, userId: userId.toString(), createdAt: new Date() } });
+        }
         if (type === 'memory') {
           if (text.length > 1000) return json(res, 400, { error: 'Keep a memory under 1,000 characters.' });
           const result = await moments.insertOne({ connectionId, type: 'memory', text, userId, createdAt: new Date() });
@@ -563,8 +579,8 @@ export default async function handler(req, res) {
       if (parts.length === 4 && req.method === 'DELETE') {
         let momentId;
         try { momentId = new ObjectId(parts[3]); } catch { return json(res, 400, { error: 'That memory link is not valid.' }); }
-        const result = await moments.deleteOne({ _id: momentId, connectionId, userId, type: 'memory' });
-        if (!result.deletedCount) return json(res, 404, { error: 'Only your own saved memories can be deleted.' });
+        const result = await moments.deleteOne({ _id: momentId, connectionId, userId, type: { $in: ['memory', 'photo'] } });
+        if (!result.deletedCount) return json(res, 404, { error: 'Only your own saved moments or photos can be deleted.' });
         return json(res, 200, { ok: true });
       }
     }
