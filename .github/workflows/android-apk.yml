@@ -50,8 +50,19 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
-      - name: Prepare direct-download APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk afterdark.apk
+      - name: Prepare and verify direct-download APK
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk afterdark.apk
+          test -s afterdark.apk
+          file afterdark.apk
+          sha256sum afterdark.apk
+      - name: Keep a build artifact if release publishing fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: afterdark-android-apk
+          path: afterdark.apk
+          if-no-files-found: error
+          retention-days: 30
       - name: Publish APK release
         uses: softprops/action-gh-release@v2
         with:
