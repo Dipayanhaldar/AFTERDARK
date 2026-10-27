@@ -400,3 +400,10 @@ footer{border-top:1px solid #f0cadd;padding:26px 0 34px;color:#80677a;gap:18px}
 .invite-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
 .invite-actions>*{flex:1;min-width:150px;text-align:center}
 @media(max-width:520px){.custom-qr-studio{padding:16px}.invite-actions{flex-direction:column}.invite-actions>*{width:100%}}
+
+
+/* Private photo sharing */
+.photo-share-form input[type="file"]{min-width:0;max-width:100%;font-size:.78rem;color:var(--muted)}
+.photo-share-form small{display:block;margin-top:8px;color:var(--muted);font-size:.72rem;line-height:1.45}
+.saved-photo img{display:block;max-width:100%;max-height:420px;object-fit:contain;border-radius:14px;margin:10px auto;background:rgba(0,0,0,.15)}
+.saved-photo{overflow:hidden}
