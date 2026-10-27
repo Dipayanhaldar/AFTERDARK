@@ -8,7 +8,7 @@ let emailIndexMigrationPromise;
 const COOKIE = 'afterdark_session';
 const DAY = 86400;
 const json = (res, status, body) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(body)); };
-const GUEST_CHAT_ORIGIN = 'https://afterdark-private-chat.onrender.com';
+const GUEST_CHAT_ORIGIN = 'https://afterdark-guest-connector.onrender.com';
 function setGuestCors(req, res) {
   const origin = req.headers.origin;
   const allowed = origin && (origin === GUEST_CHAT_ORIGIN || origin === process.env.GUEST_CHAT_ORIGIN || origin === 'http://localhost:5173');
