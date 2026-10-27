@@ -71,7 +71,7 @@ export default async function handler(req, res) {
     // A guest should not have to wait for unrelated collection migrations to load a shared invite.
     if (parts[0] === 'invites' && parts[1] && parts.length === 2 && req.method === 'GET') {
       const ip = String(req.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim().slice(0, 80);
-      if (!await rateLimit(database, ip, 45)) return json(res, 429, { error: 'Too many invite checks. Wait a minute, then try again.' });
+      if (!await rateLimit(database, 'invite-preview:' + ip, 60)) return json(res, 429, { error: 'Too many invite checks. Wait a minute, then try again.' });
       if (!process.env.JWT_SECRET) return json(res, 503, { error: 'Invite service is temporarily unavailable. Please try again shortly.' });
       const raw = parts[1];
       const hash = createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex');
