@@ -140,6 +140,7 @@ function App() {
   const [dailyAnswer, setDailyAnswer] = useState('');
   const dailyAnswerDirty = useRef(false);
   const [memoryDraft, setMemoryDraft] = useState('');
+  const [photoFile, setPhotoFile] = useState(null);
   const [inviteReply, setInviteReply] = useState('');
   const [inviteLookupFailed, setInviteLookupFailed] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
