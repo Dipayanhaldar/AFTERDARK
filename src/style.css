@@ -476,3 +476,166 @@ button, input, select, textarea { max-width: 100%; }
   .top-actions { justify-content: flex-start; }
   .invite-code-value { letter-spacing: .14em; }
 }
+
+
+/* AFTERDARK — tighter spacing, clean header fit, honeymoon-at-midnight finish */
+.app-shell { padding-inline: clamp(14px, 4.2vw, 58px); }
+.topbar {
+  gap: clamp(10px, 2vw, 26px);
+  min-width: 0;
+  padding-block: 10px;
+}
+.topbar > .wordmark {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  gap: 7px;
+  letter-spacing: clamp(.5px, .12vw, 1.7px);
+  font-size: clamp(13px, 1.35vw, 18px);
+}
+.topbar > .wordmark .moon { flex: 0 0 32px; width: 32px; height: 32px; }
+.top-actions {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: clamp(5px, .8vw, 12px);
+}
+.top-actions > * { min-width: 0; }
+.top-actions .install-btn { white-space: nowrap; }
+.hero { padding: clamp(52px, 6.5vw, 82px) 0 clamp(42px, 5vw, 62px); }
+.hero h1 { margin: 18px 0 14px; }
+.hero-copy { line-height: 1.68; }
+.hero-actions { margin-top: 23px; }
+.trust-row { margin-top: 22px; }
+.workspace { padding: clamp(16px, 2.3vw, 27px); margin-top: 8px; border-radius: 22px; }
+.section-heading h2 { margin-bottom: 16px; }
+.tabs { margin-bottom: 12px; padding-bottom: 9px; }
+.feature-grid { gap: 12px; padding-top: 14px; }
+.feature-card { padding: 20px; min-height: 0; }
+.card-icon { margin-bottom: 15px; }
+.feature-card h3 { margin: 9px 0; }
+.panel { gap: clamp(16px, 2.2vw, 25px); padding: 22px 6px 8px; }
+.panel-copy { padding: 8px; }
+.panel h3 { margin: 10px 0; }
+.invite-box { padding: clamp(15px, 2vw, 22px); }
+.explore-content { padding: 20px 6px; }
+.brand-grid { margin-top: 17px; }
+.safety-grid { gap: 24px; padding: 25px 8px; }
+.coming-section { padding: 68px 3% 62px; }
+.coming-section h2 { margin: 12px 0 24px; }
+.roadmap-grid { gap: 15px; }
+footer { min-height: 76px; }
+
+/* A soft, cinematic honeymoon mood: candlelight, rose-gold and velvet-night glow. */
+body {
+  background:
+    radial-gradient(ellipse at 50% -8%, rgba(255,153,190,.21), transparent 43%),
+    radial-gradient(ellipse at 8% 42%, rgba(194,113,147,.10), transparent 33%),
+    radial-gradient(ellipse at 95% 72%, rgba(211,174,132,.09), transparent 31%),
+    linear-gradient(180deg, #180e19 0%, #100b15 62%, #140b14 100%);
+}
+.hero { isolation: isolate; }
+.hero::before {
+  content: "";
+  position: absolute;
+  z-index: -2;
+  width: min(62vw, 620px);
+  aspect-ratio: 1;
+  left: 50%; top: 44%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,139,182,.13), rgba(204,154,184,.045) 42%, transparent 70%);
+  filter: blur(8px);
+  pointer-events: none;
+}
+.hero::after {
+  content: "✦";
+  position: absolute;
+  z-index: -1;
+  right: clamp(4%, 10vw, 130px);
+  top: 17%;
+  color: rgba(255,213,191,.48);
+  font-size: clamp(18px, 2vw, 26px);
+  text-shadow: 0 0 22px rgba(255,183,195,.5);
+  animation: afterdarkTwinkle 4.8s ease-in-out infinite;
+  pointer-events: none;
+}
+.hero-flirt span {
+  border-color: rgba(255,199,211,.23);
+  background: linear-gradient(135deg, rgba(255,227,229,.075), rgba(255,255,255,.025));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 8px 24px rgba(0,0,0,.08);
+}
+.primary-btn {
+  background: linear-gradient(115deg, #ff9ebf 0%, #f4c2cf 48%, #d9b8ef 100%);
+  border-color: rgba(255,219,226,.78);
+  box-shadow: 0 8px 28px rgba(255,130,174,.15), inset 0 1px 0 rgba(255,255,255,.45);
+}
+.workspace {
+  background: linear-gradient(145deg, rgba(255,240,246,.085), rgba(255,255,255,.025));
+  border-color: rgba(255,204,220,.18);
+  box-shadow: 0 24px 75px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,230,237,.08);
+}
+.feature-card, .invite-box, .brand-card {
+  box-shadow: inset 0 1px 0 rgba(255,235,241,.055), 0 12px 34px rgba(0,0,0,.10);
+}
+.heart-core { color: #ff91b8; text-shadow: 0 3px 0 #df6697, 0 8px 0 #a94d7b, 0 18px 35px rgba(255,118,170,.32); }
+.heart-3d { opacity: .76; }
+.ritual-panel, .chachi-helper {
+  border-color: rgba(255,190,211,.24);
+  box-shadow: 0 14px 38px rgba(0,0,0,.11), inset 0 1px 0 rgba(255,236,241,.06);
+}
+@keyframes afterdarkTwinkle {
+  0%,100% { opacity: .42; transform: scale(.9) rotate(0deg); }
+  50% { opacity: .95; transform: scale(1.13) rotate(16deg); }
+}
+@media (max-width: 760px) {
+  .app-shell { padding-inline: 16px; }
+  .hero { padding: 48px 0 40px; }
+  .workspace { padding: 18px 15px; }
+  .feature-grid { gap: 10px; }
+  .panel { padding: 18px 0 6px; }
+  .coming-section { padding: 52px 2% 46px; }
+}
+@media (max-width: 560px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 9px;
+    padding-block: 12px;
+  }
+  .topbar > .wordmark {
+    width: max-content;
+    max-width: 100%;
+    overflow: visible;
+    font-size: 15px;
+    letter-spacing: .7px;
+  }
+  .topbar > .wordmark .moon { width: 30px; height: 30px; flex-basis: 30px; }
+  .top-actions {
+    width: 100%;
+    display: flex;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .top-actions .adult-pill { padding: 6px 8px; font-size: 8px; letter-spacing: 1px; }
+  .top-actions .ghost-btn, .top-actions .install-btn { padding: 8px 10px; font-size: 11px; }
+  .top-actions .install-btn span { display: inline; }
+  .hero h1 { font-size: clamp(37px, 10vw, 44px); letter-spacing: -1.7px; }
+  .hero-flirt { gap: 6px; margin-top: 16px; }
+  .hero-flirt span { padding: 7px 9px; font-size: 9px; }
+  .trust-row { gap: 9px 13px; }
+  .section-heading h2 { margin-bottom: 12px; }
+  .feature-card { padding: 17px; }
+  .card-icon { width: 34px; height: 34px; margin-bottom: 12px; }
+  .feature-card h3 { font-size: 21px; }
+  .panel h3 { font-size: 27px; }
+  .invite-landing { margin: 22px auto; padding: 24px 17px; }
+  .coming-section h2 { font-size: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero::after, .hero-flirt span, .heart-3d, .heart-core, .heart-chip,
+  .feature-card, .brand-card { animation: none !important; transition: none !important; }
+}
