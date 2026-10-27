@@ -457,8 +457,9 @@ export default async function handler(req, res) {
       const now = new Date();
       const activeConnection = await database.collection('connections').findOne({ memberIds: userId, status: 'approved' }, { projection: { _id: 1 } });
       if (activeConnection) return json(res, 409, { error: 'One situationship at a time, bestie. You already have an active chat — no bonus boo QR codes. 😭🔒' });
-      const pendingInvite = await database.collection('invites').findOne({ ownerId: userId, status: 'pending', expiresAt: { $gt: now } }, { projection: { _id: 1 } });
-      if (pendingInvite) return json(res, 409, { error: 'Your invite is already out in the wild. No second QR until this plot resolves, bestie. 💌⏳' });
+      const pendingInvite = await database.collection('invites').findOne({ ownerId: userId, status: 'pending', expiresAt: { $gt: now } }, { projection: { _id: 1, codeHash: 1 } });
+      if (pendingInvite?.codeHash) return json(res, 409, { error: 'Your invite is already out in the wild. No second QR until this plot resolves, bestie. 💌⏳' });
+      if (pendingInvite && !pendingInvite.codeHash) await database.collection('invites').updateOne({ _id: pendingInvite._id, status: 'pending' }, { $set: { status: 'revoked', revokedAt: new Date() } });
       const raw = token(32); const inviteCode = String(randomInt(100000, 1000000)); const expiresAt = new Date(Date.now() + 7 * DAY * 1000);
       await database.collection('invites').insertOne({ tokenHash: createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex'), codeHash: createHmac('sha256', process.env.JWT_SECRET).update(inviteCode).digest('hex'), ownerId: userId, status: 'pending', createdAt: new Date(), expiresAt });
       return json(res, 201, { invite: raw, inviteCode, expiresAt });
