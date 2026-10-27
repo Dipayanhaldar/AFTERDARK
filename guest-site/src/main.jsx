@@ -37,8 +37,10 @@ async function api(path, { token = '', method = 'GET', body } = {}) {
 }
 function App() {
   const inviteToken = useMemo(() => {
-    const match = window.location.pathname.match(/^\/invite\/([A-Za-z0-9_-]{12,160})\/?$/);
-    return match?.[1] || '';
+    const pathToken = window.location.pathname.match(/^\/invite\/([A-Za-z0-9_-]{12,160})\/?$/)?.[1] || '';
+    const queryToken = new URLSearchParams(window.location.search).get('invite') || '';
+    const token = pathToken || queryToken;
+    return /^[A-Za-z0-9_-]{12,160}$/.test(token) ? token : '';
   }, []);
   const [stage, setStage] = useState('loading');
   const [inviteInfo, setInviteInfo] = useState(null);

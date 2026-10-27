@@ -11,3 +11,52 @@
 .invite-code-panel>strong{font-size:.78rem;letter-spacing:.1em;color:#f5c2e5}
 .invite-code-panel p{font-size:.82rem;color:var(--muted);line-height:1.5}
 .invite-code-value{font:800 1.7rem/1.3 ui-monospace,monospace;letter-spacing:.3em;color:#fff;text-align:center;padding:8px}
+
+
+/* Guest experience polish: mobile-safe layout and a consistent AFTERDARK brand touch. */
+html, body, #root { max-width: 100%; overflow-x: clip; }
+.center { width: 100%; min-width: 0; padding-inline: clamp(16px, 5vw, 28px); }
+.center h1, .chat-heading h1 { max-width: 100%; overflow-wrap: anywhere; }
+.brand-mark {
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  max-width: 100%; overflow-wrap: anywhere;
+  font: 700 clamp(.9rem, 3vw, 1.18rem)/1.25 'Space Grotesk', 'DM Sans', sans-serif;
+  letter-spacing: .1em;
+}
+.brand-mark span { color: var(--pink); }
+.invite-card { width: 100%; min-width: 0; overflow: hidden; }
+.error, .invite-card, .invite-code-panel, .code-label, .app-shell, .chat-layout,
+.chat-column, .side-column, .side-card { min-width: 0; max-width: 100%; }
+.code-label input {
+  font: 700 clamp(1.05rem, 5vw, 1.3rem)/1.25 'Space Grotesk', 'DM Sans', sans-serif;
+  font-variant-numeric: tabular-nums; letter-spacing: .22em;
+}
+.invite-code-panel { overflow: hidden; }
+.invite-code-value {
+  box-sizing: border-box; width: 100%; border: 1px dashed rgba(255, 142, 190, .62);
+  border-radius: 15px; padding: 13px 10px; margin-top: 10px;
+  background: linear-gradient(135deg, rgba(255, 107, 176, .13), rgba(189, 140, 255, .13));
+  color: #fff5fc;
+  font: 700 clamp(1.25rem, 6vw, 1.75rem)/1.25 'Space Grotesk', 'DM Sans', sans-serif;
+  font-variant-numeric: tabular-nums; letter-spacing: .22em; overflow-wrap: anywhere;
+}
+.topbar { min-width: 0; gap: 12px; }
+.topbar > * { min-width: 0; }
+.chat-layout { grid-template-columns: minmax(0, 1.45fr) minmax(0, .8fr); }
+.chat-heading { flex-wrap: wrap; min-width: 0; }
+.message { overflow-wrap: anywhere; word-break: break-word; }
+img, svg, video { max-width: 100%; }
+@media (max-width: 800px) {
+  .chat-layout { grid-template-columns: minmax(0, 1fr); padding-inline: 14px; }
+  .topbar { height: auto; min-height: 66px; padding-block: 12px; flex-wrap: wrap; }
+  .side-column { display: grid; grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 520px) {
+  .center { padding: 32px 16px; }
+  .center h1 { font-size: clamp(2.15rem, 10vw, 3rem); letter-spacing: -.045em; }
+  .invite-card { padding: 21px 16px; border-radius: 20px; }
+  .brand-mark { letter-spacing: .06em; }
+  .chat-column, .side-card { padding: 16px; }
+  .composer { border-radius: 18px; }
+  .composer input { min-width: 0; }
+}

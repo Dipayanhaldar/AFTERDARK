@@ -193,6 +193,35 @@ function App() {
     }
     setToast('Open your browser menu (⋮) and choose “Install app” or “Add to Home screen”.');
   }
+  // Refresh previously saved QR links to the static-host-safe query route.
+  // This keeps the six-digit access code requirement intact.
+  useEffect(() => {
+    if (!invite || !inviteCode) return;
+    let token = '';
+    try {
+      const saved = new URL(invite, window.location.origin);
+      token = saved.pathname.match(/^\/invite\/([A-Za-z0-9_-]{12,160})\/?$/)?.[1]
+        || saved.searchParams.get('invite')
+        || '';
+    } catch { return; }
+    if (!/^[A-Za-z0-9_-]{12,160}$/.test(token)) return;
+    const nextLink = 'https://afterdark-guest-connector.onrender.com/?invite=' + encodeURIComponent(token);
+    if (invite === nextLink) return;
+    let cancelled = false;
+    QRCode.toDataURL(nextLink, { width: 600, margin: 2, color: { dark: '#251226', light: '#ffffff' }, errorCorrectionLevel: 'H' })
+      .then(image => {
+        if (cancelled) return;
+        setInvite(nextLink);
+        setQr(image);
+        try {
+          localStorage.setItem('afterdark_pending_invite', nextLink);
+          localStorage.setItem('afterdark_pending_qr', image);
+        } catch {}
+        setToast('Your saved invite QR was refreshed. Download the new QR before sharing it. 💌');
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [invite, inviteCode]);
   useEffect(() => { request('me').then(data => { setUser(data.user); if (data.user) loadConnections(); }).catch(() => {}); }, []);
   useEffect(() => {
     if (inviteToken) request('invites/' + inviteToken).then(d => { setInviteInfo(d.invite); setInviteLookupFailed(false); }).catch(e => { setInviteLookupFailed(true); setInviteReply(e.message); });
@@ -253,7 +282,7 @@ function App() {
     setInviteCreating(true); setToast('');
     try {
       const data = await request('invites', { method: 'POST', body: '{}' });
-      const link = 'https://afterdark-guest-connector.onrender.com/invite/' + data.invite;
+      const link = 'https://afterdark-guest-connector.onrender.com/?invite=' + encodeURIComponent(data.invite);
       const image = await QRCode.toDataURL(link, { width: 600, margin: 2, color: { dark: '#251226', light: '#ffffff' }, errorCorrectionLevel: 'H' });
       setInvite(link);
       setInviteCode(data.inviteCode || '');
@@ -339,7 +368,7 @@ function App() {
         ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.strokeStyle = theme.accent; ctx.lineWidth = 4; ctx.beginPath(); ctx.roundRect(22, 22, 856, 1036, 34); ctx.stroke();
         ctx.fillStyle = theme.accent; ctx.textAlign = 'center'; ctx.font = '700 30px Arial'; ctx.fillText('☾ AFTERDARK', 450, 100);
-        ctx.fillStyle = '#fff7fb'; ctx.font = '700 42px Arial'; ctx.fillText((customQrName.trim() || user?.handle || 'YOUR PERSON').slice(0, 26), 450, 170);
+        ctx.fillStyle = '#fff7fb'; ctx.font = '700 42px "Space Grotesk", Arial, sans-serif'; ctx.fillText((customQrName.trim() || user?.handle || 'YOUR PERSON').slice(0, 26), 450, 170);
         ctx.fillStyle = '#cbb9d1'; ctx.font = '24px Arial'; ctx.fillText('ONE LINK. ONE PERSON. ONE PLOTLINE.', 450, 215);
         ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.roundRect(150, 260, 600, 600, 26); ctx.fill(); ctx.drawImage(img, 150, 260, 600, 600);
         ctx.fillStyle = theme.accent; ctx.font = '700 26px Arial'; ctx.fillText('SCAN TO OPEN MY INVITE', 450, 925);
