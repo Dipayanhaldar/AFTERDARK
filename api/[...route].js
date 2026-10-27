@@ -265,6 +265,7 @@ export default async function handler(req, res) {
       const invites = database.collection('invites');
       const invite = await invites.findOne({ tokenHash: inviteHash, expiresAt: { $gt: new Date() }, status: 'pending' });
       if (!invite) return json(res, 409, { error: 'This invite has already been used, expired, or is no longer available. The link alone cannot open a private chat.' });
+      if (!await rateLimit(database, 'invite-code:' + invite._id.toString(), 5)) return json(res, 429, { error: 'Too many private-code attempts for this invite. Wait a minute before trying again.' });
       const suppliedCode = String(body.code || '').replace(/\\s/g, '');
       if (!/^\\d{6}$/.test(suppliedCode) || !invite.codeHash) return json(res, 401, { error: 'Enter the six-digit private code provided separately by the sender. The invitation link alone is not enough.' });
       const expectedCodeHash = createHmac('sha256', process.env.JWT_SECRET).update(suppliedCode).digest('hex');
