@@ -122,8 +122,8 @@ function App() {
   const [toast, setToast] = useState('');
   const [busy, setBusy] = useState(false);
   const [inviteCreating, setInviteCreating] = useState(false);
-  const [invite, setInvite] = useState(() => { try { return localStorage.getItem('afterdark_pending_invite') || ''; } catch { return ''; } });
-  const [qr, setQr] = useState(() => { try { return localStorage.getItem('afterdark_pending_qr') || ''; } catch { return ''; } });
+  const [invite, setInvite] = useState(() => { try { const code = localStorage.getItem('afterdark_pending_invite_code'); if (!code) { localStorage.removeItem('afterdark_pending_invite'); localStorage.removeItem('afterdark_pending_qr'); return ''; } return localStorage.getItem('afterdark_pending_invite') || ''; } catch { return ''; } });
+  const [qr, setQr] = useState(() => { try { if (!localStorage.getItem('afterdark_pending_invite_code')) return ''; return localStorage.getItem('afterdark_pending_qr') || ''; } catch { return ''; } });
   const [inviteCode, setInviteCode] = useState(() => { try { return localStorage.getItem('afterdark_pending_invite_code') || ''; } catch { return ''; } });
   const [qrDownloadUnlocked, setQrDownloadUnlocked] = useState(() => { try { return localStorage.getItem('afterdark_qr_download_unlocked') === 'true'; } catch { return false; } });
   const [customQrCredits, setCustomQrCredits] = useState(() => { try { return Math.max(0, Number(localStorage.getItem('afterdark_custom_qr_credits') || 0)); } catch { return 0; } });
