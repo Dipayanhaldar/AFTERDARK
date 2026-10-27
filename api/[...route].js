@@ -67,6 +67,23 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, service: 'afterdark-api', database: 'connected' });
     }
 
+    // Public invite previews are intentionally served before schema/index maintenance.
+    // A guest should not have to wait for unrelated collection migrations to load a shared invite.
+    if (parts[0] === 'invites' && parts[1] && parts.length === 2 && req.method === 'GET') {
+      const ip = String(req.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim().slice(0, 80);
+      if (!await rateLimit(database, ip, 45)) return json(res, 429, { error: 'Too many invite checks. Wait a minute, then try again.' });
+      if (!process.env.JWT_SECRET) return json(res, 503, { error: 'Invite service is temporarily unavailable. Please try again shortly.' });
+      const raw = parts[1];
+      const hash = createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex');
+      const invite = await database.collection('invites').findOne({ tokenHash: hash, expiresAt: { $gt: new Date() } });
+      if (!invite || invite.status === 'ignored' || invite.status === 'revoked') return json(res, 404, { error: 'This invite has expired or is no longer available.' });
+      const inviteOwner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
+      let ownInvite = false;
+      const session = currentUser(req);
+      if (session?.sub) { try { ownInvite = invite.ownerId.equals(new (await import('mongodb')).ObjectId(session.sub)); } catch {} }
+      return json(res, 200, { invite: { status: invite.status, ownInvite, handle: inviteOwner?.handle || 'your person' } });
+    }
+
     // Email-index migration is maintenance, not a prerequisite for reading a public invite.
     // A legacy/conflicting index must not make invite links fail before their lookup runs.
     try { await ensureUserEmailIndex(database); }
@@ -221,15 +238,6 @@ export default async function handler(req, res) {
     }
     if (action === 'logout' && req.method === 'POST') { cookie(res, '', 0); return json(res, 200, { ok: true }); }
     const session = currentUser(req);
-    if (parts[0] === 'invites' && parts[1] && req.method === 'GET') {
-      const raw = parts[1]; const hash = createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex');
-      const invite = await database.collection('invites').findOne({ tokenHash: hash, expiresAt: { $gt: new Date() } });
-      if (!invite || invite.status === 'ignored' || invite.status === 'revoked') return json(res, 404, { error: 'This invite has expired or is no longer available.' });
-      const inviteOwner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
-      let ownInvite = false;
-      if (session?.sub) { try { ownInvite = invite.ownerId.equals(new (await import('mongodb')).ObjectId(session.sub)); } catch {} }
-      return json(res, 200, { invite: { status: invite.status, ownInvite, handle: inviteOwner?.handle || 'your person' } });
-    }
     if (parts[0] === 'invites' && parts[1] && parts[2] && ['approve','ignore'].includes(parts[2]) && req.method === 'POST') {
       const hash = createHmac('sha256', process.env.JWT_SECRET).update(parts[1]).digest('hex');
       const invites = database.collection('invites');
