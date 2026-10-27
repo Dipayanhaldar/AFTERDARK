@@ -8,6 +8,21 @@ let emailIndexMigrationPromise;
 const COOKIE = 'afterdark_session';
 const DAY = 86400;
 const json = (res, status, body) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(body)); };
+const GUEST_CHAT_ORIGIN = 'https://afterdark-chat-guest.vercel.app';
+function setGuestCors(req, res) {
+  const origin = req.headers.origin;
+  const allowed = origin && (origin === GUEST_CHAT_ORIGIN || origin === process.env.GUEST_CHAT_ORIGIN || origin === 'http://localhost:5173');
+  if (!allowed) return;
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400');
+  res.setHeader('Vary', 'Origin');
+}
+function hashGuestToken(value) {
+  if (!process.env.JWT_SECRET) throw new Error('AUTH_CONFIG');
+  return createHmac('sha256', process.env.JWT_SECRET).update(value).digest('hex');
+}
 const token = (n = 32) => randomBytes(n).toString('base64url');
 function cookie(res, value, maxAge = DAY * 14) { res.setHeader('Set-Cookie', `${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`); }
 function sign(payload) { const secret = process.env.JWT_SECRET; if (!secret) throw new Error('AUTH_CONFIG'); const body = Buffer.from(JSON.stringify(payload)).toString('base64url'); return body + '.' + createHmac('sha256', secret).update(body).digest('base64url'); }
@@ -50,6 +65,7 @@ async function readBody(req) { let data = ''; for await (const chunk of req) { d
 async function rateLimit(database, key, limit = 20) { const now = new Date(); const bucket = Math.floor(now.getTime() / 60000); const id = key + ':' + bucket; const c = database.collection('rate_limits'); await c.updateOne({ _id: id }, { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date(now.getTime() + 120000) } }, { upsert: true }); const row = await c.findOne({ _id: id }); if (row?.count > limit) return false; return true; }
 
 export default async function handler(req, res) {
+  setGuestCors(req, res);
   if (req.method === 'OPTIONS') { res.setHeader('Allow', 'GET,POST,PATCH,DELETE,OPTIONS'); return res.status(204).end(); }
   let database;
   let action = 'initialization';
@@ -107,7 +123,8 @@ export default async function handler(req, res) {
       ['date_plans.connectionId', () => database.collection('date_plans').createIndex({ connectionId: 1 }, { unique: true })],
       ['moments.connectionId_createdAt', () => database.collection('moments').createIndex({ connectionId: 1, createdAt: -1 })],
       ['moments.answer_unique', () => database.collection('moments').createIndex({ connectionId: 1, type: 1, dayKey: 1, userId: 1 }, { unique: true, partialFilterExpression: { type: 'answer' } })],
-      ['reports.createdAt', () => database.collection('reports').createIndex({ createdAt: 1 })]
+      ['reports.createdAt', () => database.collection('reports').createIndex({ createdAt: 1 })],
+      ['guest_sessions.expiresAt', () => database.collection('guest_sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })]
     ];
     const indexResults = await Promise.allSettled(indexTasks.map(([, create]) => create()));
     indexResults.forEach((result, index) => {
@@ -238,6 +255,135 @@ export default async function handler(req, res) {
     }
     if (action === 'logout' && req.method === 'POST') { cookie(res, '', 0); return json(res, 200, { ok: true }); }
     const session = currentUser(req);
+
+    // The invite URL alone never authorizes access to a chat after approval.
+    if (parts[0] === 'guest' && parts[1] === 'invites' && parts[2] && parts[3] === 'approve' && req.method === 'POST') {
+      if (body.adult !== true) return json(res, 400, { error: 'Please confirm you are 18 or older before opening a chat.' });
+      if (!process.env.JWT_SECRET) return json(res, 503, { error: 'Invite service is temporarily unavailable.' });
+      const rawInvite = parts[2];
+      const inviteHash = hashGuestToken(rawInvite);
+      const invites = database.collection('invites');
+      const invite = await invites.findOne({ tokenHash: inviteHash, expiresAt: { $gt: new Date() }, status: 'pending' });
+      if (!invite) return json(res, 409, { error: 'This invite has already been used, expired, or is no longer available. The link alone cannot open a private chat.' });
+      const ownerActive = await database.collection('connections').findOne({ memberIds: invite.ownerId, status: 'approved' }, { projection: { _id: 1 } });
+      if (ownerActive) return json(res, 409, { error: 'This person already has an active AFTERDARK chat. One connection at a time.' });
+      const reserved = await invites.updateOne(
+        { _id: invite._id, status: 'pending', expiresAt: { $gt: new Date() } },
+        { $set: { status: 'approving', approvalStartedAt: new Date() } }
+      );
+      if (!reserved.modifiedCount) return json(res, 409, { error: 'This invite has just been accepted or is no longer available.' });
+      let guestId = null;
+      let connectionId = null;
+      let guestSessionToken = null;
+      try {
+        const { ObjectId } = await import('mongodb');
+        const guestHandle = 'guest-' + token(3).slice(0, 5);
+        const created = await database.collection('users').insertOne({
+          handle: guestHandle, guest: true, createdAt: new Date(), guestCreatedAt: new Date(),
+          adultConfirmedAt: new Date(), blockedUsers: []
+        });
+        guestId = created.insertedId;
+        const pair = [invite.ownerId.toString(), guestId.toString()].sort();
+        const pairKey = pair.join(':');
+        const existing = await database.collection('connections').findOne({ pairKey, status: 'approved' });
+        if (existing) throw new Error('ACTIVE_CONNECTION_EXISTS');
+        const createdConnection = await database.collection('connections').insertOne({
+          pairKey, memberIds: pair.map(id => new ObjectId(id)), creatorId: invite.ownerId,
+          recipientId: guestId, status: 'approved', createdAt: new Date()
+        });
+        connectionId = createdConnection.insertedId;
+        guestSessionToken = token(32);
+        const expiresAt = new Date(Date.now() + 30 * DAY * 1000);
+        await database.collection('guest_sessions').insertOne({
+          tokenHash: hashGuestToken(guestSessionToken), userId: guestId, connectionId,
+          createdAt: new Date(), expiresAt
+        });
+        const changed = await invites.updateOne(
+          { _id: invite._id, status: 'approving' },
+          { $set: { status: 'approved', recipientId: guestId, connectionId, respondedAt: new Date() }, $unset: { approvalStartedAt: '' } }
+        );
+        if (!changed.modifiedCount) throw new Error('INVITE_RESERVATION_LOST');
+        const owner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
+        return json(res, 200, {
+          status: 'approved', guestSessionToken, expiresAt,
+          user: { id: guestId.toString(), handle: guestHandle, guest: true },
+          connection: { id: connectionId.toString(), handle: owner?.handle || 'your person', role: 'invitee' }
+        });
+      } catch (error) {
+        if (guestSessionToken) await database.collection('guest_sessions').deleteOne({ tokenHash: hashGuestToken(guestSessionToken) }).catch(() => {});
+        if (connectionId) await database.collection('connections').deleteOne({ _id: connectionId }).catch(() => {});
+        if (guestId) await database.collection('users').deleteOne({ _id: guestId }).catch(() => {});
+        await invites.updateOne({ _id: invite._id, status: 'approving' }, { $set: { status: 'pending' }, $unset: { approvalStartedAt: '' } }).catch(() => {});
+        if (error?.message === 'ACTIVE_CONNECTION_EXISTS') return json(res, 409, { error: 'This person already has an active AFTERDARK chat. One connection at a time.' });
+        throw error;
+      }
+    }
+
+    if (parts[0] === 'guest' && parts[1] === 'session' && req.method === 'GET') {
+      const suppliedToken = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+      if (!suppliedToken) return json(res, 401, { error: 'This private chat session is missing. Reopen your invite on the device where you accepted it.' });
+      const guestSession = await database.collection('guest_sessions').findOne({ tokenHash: hashGuestToken(suppliedToken), expiresAt: { $gt: new Date() } });
+      if (!guestSession) return json(res, 401, { error: 'This private chat session has expired. Ask the sender for a fresh invite.' });
+      const { ObjectId } = await import('mongodb');
+      const guestId = guestSession.userId instanceof ObjectId ? guestSession.userId : new ObjectId(guestSession.userId);
+      const connectionId = guestSession.connectionId instanceof ObjectId ? guestSession.connectionId : new ObjectId(guestSession.connectionId);
+      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: guestId, status: 'approved' });
+      if (!connection) return json(res, 403, { error: 'This private chat is no longer available.' });
+      const guestUser = await database.collection('users').findOne({ _id: guestId });
+      const ownerId = connection.memberIds.find(id => !id.equals(guestId));
+      const owner = ownerId ? await database.collection('users').findOne({ _id: ownerId }, { projection: { handle: 1 } }) : null;
+      return json(res, 200, {
+        user: guestUser ? cleanUser(guestUser) : { id: guestId.toString(), handle: 'guest', guest: true },
+        connection: { id: connectionId.toString(), handle: owner?.handle || 'your person', role: 'invitee' },
+        expiresAt: guestSession.expiresAt
+      });
+    }
+
+    if (parts[0] === 'guest' && parts[1] === 'connections' && parts[2] && parts[3]) {
+      const suppliedToken = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
+      if (!suppliedToken) return json(res, 401, { error: 'This private chat session is missing.' });
+      const { ObjectId } = await import('mongodb');
+      let connectionId;
+      try { connectionId = new ObjectId(parts[2]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
+      const guestSession = await database.collection('guest_sessions').findOne({
+        tokenHash: hashGuestToken(suppliedToken), connectionId, expiresAt: { $gt: new Date() }
+      });
+      if (!guestSession) return json(res, 403, { error: 'This session cannot access that private chat.' });
+      const guestId = guestSession.userId instanceof ObjectId ? guestSession.userId : new ObjectId(guestSession.userId);
+      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: guestId, status: 'approved' });
+      if (!connection) return json(res, 403, { error: 'This chat is not available.' });
+      const route = parts[3];
+      if (route === 'messages') {
+        const messages = database.collection('messages');
+        if (req.method === 'GET') {
+          const rows = await messages.find({ connectionId }).sort({ createdAt: 1 }).limit(100).toArray();
+          return json(res, 200, { messages: rows.map(m => ({ id: m._id.toString(), text: m.text, senderId: m.senderId.toString(), createdAt: m.createdAt })) });
+        }
+        if (req.method === 'POST') {
+          const text = String(body.text || '').trim();
+          if (!text || text.length > 2000) return json(res, 400, { error: 'Keep your message between 1 and 2,000 characters.' });
+          const result = await messages.insertOne({ connectionId, senderId: guestId, text, createdAt: new Date() });
+          return json(res, 201, { message: { id: result.insertedId.toString(), text, senderId: guestId.toString(), createdAt: new Date() } });
+        }
+        return json(res, 405, { error: 'This action is not available to guest users.' });
+      }
+      if (route === 'moments' && req.method === 'GET') {
+        const rows = await database.collection('moments').find({ connectionId }).sort({ createdAt: -1 }).limit(60).toArray();
+        const dayKey = String(url.searchParams.get('dayKey') || '').slice(0, 10);
+        const answers = dayKey ? await database.collection('moments').find({ connectionId, type: 'answer', dayKey }).toArray() : [];
+        const serialize = row => ({ id: row._id.toString(), type: row.type, text: row.text || '', imageData: row.imageData || null, userId: row.userId.toString(), promptId: row.promptId || null, dayKey: row.dayKey || null, createdAt: row.createdAt, updatedAt: row.updatedAt || null });
+        return json(res, 200, { moments: rows.map(serialize), answers: answers.map(serialize), currentUserId: guestId.toString() });
+      }
+      if (route === 'date-plan' && req.method === 'GET') {
+        const plan = await database.collection('date_plans').findOne({ connectionId });
+        const otherId = connection.memberIds.find(id => !id.equals(guestId));
+        const choices = plan?.choices || {};
+        const serialize = row => row ? { choices, lockedPlaceId: row.lockedPlaceId || null, lockedDateTime: row.lockedDateTime || null, myChoice: choices[guestId.toString()] || null, theirChoice: otherId ? choices[otherId.toString()] || null : null } : null;
+        return json(res, 200, { plan: serialize(plan) });
+      }
+      return json(res, 403, { error: 'Guest access is read-only for this section.' });
+    }
+
     if (parts[0] === 'invites' && parts[1] && parts[2] && ['approve','ignore'].includes(parts[2]) && req.method === 'POST') {
       const hash = createHmac('sha256', process.env.JWT_SECRET).update(parts[1]).digest('hex');
       const invites = database.collection('invites');
