@@ -1,5 +1,5 @@
 import { MongoClient } from 'mongodb';
-import { randomBytes, scrypt as scryptCallback, timingSafeEqual, createHmac } from 'node:crypto';
+import { randomBytes, randomInt, scrypt as scryptCallback, timingSafeEqual, createHmac } from 'node:crypto';
 import { promisify } from 'node:util';
 
 const scrypt = promisify(scryptCallback);
@@ -8,7 +8,7 @@ let emailIndexMigrationPromise;
 const COOKIE = 'afterdark_session';
 const DAY = 86400;
 const json = (res, status, body) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(body)); };
-const GUEST_CHAT_ORIGIN = 'https://afterdark-chat-guest.vercel.app';
+const GUEST_CHAT_ORIGIN = 'https://afterdark-private-chat.onrender.com';
 function setGuestCors(req, res) {
   const origin = req.headers.origin;
   const allowed = origin && (origin === GUEST_CHAT_ORIGIN || origin === process.env.GUEST_CHAT_ORIGIN || origin === 'http://localhost:5173');
@@ -265,6 +265,10 @@ export default async function handler(req, res) {
       const invites = database.collection('invites');
       const invite = await invites.findOne({ tokenHash: inviteHash, expiresAt: { $gt: new Date() }, status: 'pending' });
       if (!invite) return json(res, 409, { error: 'This invite has already been used, expired, or is no longer available. The link alone cannot open a private chat.' });
+      const suppliedCode = String(body.code || '').replace(/\\s/g, '');
+      if (!/^\\d{6}$/.test(suppliedCode) || !invite.codeHash) return json(res, 401, { error: 'Enter the six-digit private code provided separately by the sender. The invitation link alone is not enough.' });
+      const expectedCodeHash = createHmac('sha256', process.env.JWT_SECRET).update(suppliedCode).digest('hex');
+      if (!timingSafeEqual(Buffer.from(expectedCodeHash), Buffer.from(invite.codeHash))) return json(res, 401, { error: 'That private code does not match. Ask the sender for the code again.' });
       const ownerActive = await database.collection('connections').findOne({ memberIds: invite.ownerId, status: 'approved' }, { projection: { _id: 1 } });
       if (ownerActive) return json(res, 409, { error: 'This person already has an active AFTERDARK chat. One connection at a time.' });
       const reserved = await invites.updateOne(
@@ -454,9 +458,9 @@ export default async function handler(req, res) {
       if (activeConnection) return json(res, 409, { error: 'One situationship at a time, bestie. You already have an active chat — no bonus boo QR codes. 😭🔒' });
       const pendingInvite = await database.collection('invites').findOne({ ownerId: userId, status: 'pending', expiresAt: { $gt: now } }, { projection: { _id: 1 } });
       if (pendingInvite) return json(res, 409, { error: 'Your invite is already out in the wild. No second QR until this plot resolves, bestie. 💌⏳' });
-      const raw = token(32); const expiresAt = new Date(Date.now() + 7 * DAY * 1000);
-      await database.collection('invites').insertOne({ tokenHash: createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex'), ownerId: userId, status: 'pending', createdAt: new Date(), expiresAt });
-      return json(res, 201, { invite: raw, expiresAt });
+      const raw = token(32); const inviteCode = String(randomInt(100000, 1000000)); const expiresAt = new Date(Date.now() + 7 * DAY * 1000);
+      await database.collection('invites').insertOne({ tokenHash: createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex'), codeHash: createHmac('sha256', process.env.JWT_SECRET).update(inviteCode).digest('hex'), ownerId: userId, status: 'pending', createdAt: new Date(), expiresAt });
+      return json(res, 201, { invite: raw, inviteCode, expiresAt });
     }
     if (action === 'connections' && req.method === 'GET') {
       const connections = await database.collection('connections').find({ memberIds: userId, status: 'approved' }).toArray();
