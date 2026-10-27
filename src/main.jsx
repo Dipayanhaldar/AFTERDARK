@@ -406,6 +406,21 @@ function App() {
       setMoments(prev => [data.moment, ...prev]); setMemoryDraft(''); setToast('Memory saved in your private space ✨');
     } catch (e) { setToast(e.message); }
   }
+  async function saveSharedPhoto(e) {
+    e.preventDefault();
+    if (!activeConnection || !photoFile) return;
+    try {
+      setBusy(true);
+      const imageData = await compressPhotoToDataUrl(photoFile);
+      const data = await request('connections/' + activeConnection + '/moments', { method: 'POST', body: JSON.stringify({ type: 'photo', imageData, text: '' }) });
+      setMoments(prev => [data.moment, ...prev]);
+      setPhotoFile(null);
+      const input = document.getElementById('shared-photo-file');
+      if (input) input.value = '';
+      setToast('Photo shared inside your private space ✨');
+    } catch (e) { setToast(e.message); }
+    finally { setBusy(false); }
+  }
   async function deleteSharedMemory(id) {
     if (!confirm('Delete this memory from your private space?')) return;
     try { await request('connections/' + activeConnection + '/moments/' + id, { method: 'DELETE' }); setMoments(prev => prev.filter(m => m.id !== id)); setToast('Memory deleted.'); }
