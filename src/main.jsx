@@ -250,7 +250,7 @@ function App() {
     setInviteCreating(true); setToast('');
     try {
       const data = await request('invites', { method: 'POST', body: '{}' });
-      const link = location.origin + '/invite/' + data.invite;
+      const link = 'https://afterdark-chat-guest.vercel.app/invite/' + data.invite;
       const image = await QRCode.toDataURL(link, { width: 600, margin: 2, color: { dark: '#251226', light: '#ffffff' }, errorCorrectionLevel: 'H' });
       setInvite(link);
       setQr(image);
