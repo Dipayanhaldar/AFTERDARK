@@ -14,7 +14,12 @@ const GUEST_CHAT_ORIGINS = new Set([
 ]);
 function setGuestCors(req, res) {
   const origin = req.headers.origin;
-  const allowed = origin && (GUEST_CHAT_ORIGINS.has(origin) || origin === process.env.GUEST_CHAT_ORIGIN || origin === 'http://localhost:5173');
+  // Render static-site domains can vary as services are recreated or renamed.
+  // CORS is not an authorization boundary: invite tokens and guest sessions are
+  // validated by the API itself. Permit HTTPS Render origins for the guest flow,
+  // while retaining the explicit known origins and local development origin.
+  const renderGuestOrigin = typeof origin === 'string' && /^https:\/\/[a-z0-9-]+\.onrender\.com$/i.test(origin);
+  const allowed = origin && (GUEST_CHAT_ORIGINS.has(origin) || renderGuestOrigin || origin === process.env.GUEST_CHAT_ORIGIN || origin === 'http://localhost:5173');
   if (!allowed) return;
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
