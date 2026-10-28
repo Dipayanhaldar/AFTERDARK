@@ -297,31 +297,101 @@ function App() {
     if (customQrGeneratingRef.current) return;
     if (!invite || !qr) { setToast('Generate your invite first.'); return; }
     customQrGeneratingRef.current = true;
-    const themes = { rose: { bg: '#fff0f6', accent: '#ed77a8', ink: '#51263f' }, violet: { bg: '#f5efff', accent: '#a78be8', ink: '#3e315f' }, midnight: { bg: '#edf7ff', accent: '#70a9d9', ink: '#243f5b' }, sunset: { bg: '#fff3e8', accent: '#e89a62', ink: '#5b3526' } };
-    const theme = themes[customQrTheme] || themes.rose;
+    const palettes = {
+      rose: [
+        { bg1: '#4b1234', bg2: '#a91e61', accent: '#ff8fbd', ink: '#5b1239', paper: '#ffd0e3', petal: '#ff4f91', leaf: '#2b9b68' },
+        { bg1: '#64123e', bg2: '#d13c83', accent: '#ffc0d9', ink: '#581235', paper: '#ffe0ed', petal: '#ec367c', leaf: '#23865a' },
+        { bg1: '#35102e', bg2: '#9d286e', accent: '#ffb0d0', ink: '#45102d', paper: '#f9bfd9', petal: '#ff659e', leaf: '#2b9664' },
+        { bg1: '#741843', bg2: '#e45b98', accent: '#ffe0ec', ink: '#62143d', paper: '#ffd5e6', petal: '#e82d78', leaf: '#23865a' }
+      ],
+      violet: [
+        { bg1: '#3b1647', bg2: '#a43f8a', accent: '#f5a9df', ink: '#4d174b', paper: '#f7cbed', petal: '#ff5b9c', leaf: '#26885c' },
+        { bg1: '#50134e', bg2: '#bb4a9b', accent: '#ffc3ed', ink: '#481344', paper: '#f8d9f3', petal: '#ec4c9a', leaf: '#2d9665' }
+      ],
+      midnight: [
+        { bg1: '#41132e', bg2: '#a72f69', accent: '#ffa8d0', ink: '#4e1235', paper: '#f8c9df', petal: '#ff4e91', leaf: '#26885c' },
+        { bg1: '#2e1738', bg2: '#8e3d7c', accent: '#f5b8e3', ink: '#401335', paper: '#f6d6e9', petal: '#f45b9b', leaf: '#26885c' }
+      ],
+      sunset: [
+        { bg1: '#57162f', bg2: '#cb4b73', accent: '#ffd0bb', ink: '#591b34', paper: '#ffdfd8', petal: '#f34b82', leaf: '#25885b' },
+        { bg1: '#6c1b40', bg2: '#d64f82', accent: '#ffe0d4', ink: '#5a1737', paper: '#ffe6e6', petal: '#ed3e7d', leaf: '#27895c' }
+      ]
+    };
+    const choices = palettes[customQrTheme] || palettes.rose;
+    const theme = choices[Math.floor(Math.random() * choices.length)];
+    const seed = Math.random().toString(36).slice(2, 10).toUpperCase();
     try {
-      const qrImage = await QRCode.toDataURL(invite, { width: 600, margin: 2, color: { dark: theme.ink, light: '#ffffff' }, errorCorrectionLevel: 'H' });
+      const qrImage = await QRCode.toDataURL(invite, {
+        width: 600, margin: 2,
+        color: { dark: theme.ink, light: theme.paper },
+        errorCorrectionLevel: 'H'
+      });
       const img = new Image();
       img.onload = () => {
-        const canvas = document.createElement('canvas'); canvas.width = 900; canvas.height = 1080;
-        const ctx = canvas.getContext('2d');
-        const bg = ctx.createLinearGradient(0, 0, 900, 1080); bg.addColorStop(0, theme.bg); bg.addColorStop(1, '#fff8fb');
-        ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.strokeStyle = theme.accent; ctx.lineWidth = 4; ctx.beginPath(); ctx.roundRect(22, 22, 856, 1036, 34); ctx.stroke();
-        ctx.fillStyle = theme.accent; ctx.textAlign = 'center'; ctx.font = '700 30px Arial'; ctx.fillText('☾ AFTERDARK', 450, 100);
-        ctx.fillStyle = '#51263f'; ctx.font = '700 42px "Space Grotesk", Arial, sans-serif'; ctx.fillText((customQrName.trim() || user?.handle || 'YOUR PERSON').slice(0, 26), 450, 170);
-        ctx.fillStyle = '#80566c'; ctx.font = '24px Arial'; ctx.fillText('ONE LINK. ONE PERSON. ONE PLOTLINE.', 450, 215);
-        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.roundRect(150, 260, 600, 600, 26); ctx.fill(); ctx.drawImage(img, 150, 260, 600, 600);
-        ctx.fillStyle = theme.accent; ctx.font = '700 26px Arial'; ctx.fillText('SCAN TO OPEN MY INVITE', 450, 925);
-        ctx.fillStyle = '#80566c'; ctx.font = '20px Arial'; ctx.fillText('Keep it mutual. Keep it AFTERDARK.', 450, 975);
-        const image = canvas.toDataURL('image/png');
-        setCustomQrImage(image);
-        customQrGeneratingRef.current = false;
-        setToast('Your custom QR is ready — download it and share your invite. 💌');
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 900; canvas.height = 1080;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) throw new Error('Canvas is unavailable');
+          const bg = ctx.createLinearGradient(0, 0, 900, 1080);
+          bg.addColorStop(0, theme.bg1); bg.addColorStop(0.52, theme.bg2); bg.addColorStop(1, theme.bg1);
+          ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
+          const glow = ctx.createRadialGradient(450, 510, 50, 450, 510, 500);
+          glow.addColorStop(0, 'rgba(255,190,220,.24)'); glow.addColorStop(1, 'rgba(255,190,220,0)');
+          ctx.fillStyle = glow; ctx.fillRect(0, 0, 900, 1080);
+          ctx.strokeStyle = theme.accent; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.roundRect(22, 22, 856, 1036, 38); ctx.stroke();
+          ctx.globalAlpha = .45; ctx.lineWidth = 1.5;
+          ctx.beginPath(); ctx.roundRect(34, 34, 832, 1012, 30); ctx.stroke(); ctx.globalAlpha = 1;
+          for (let i = 0; i < 34; i++) {
+            const x = 58 + Math.random() * 784, y = 55 + Math.random() * 965;
+            const radius = 1.5 + Math.random() * 3.5;
+            ctx.globalAlpha = .25 + Math.random() * .55;
+            ctx.fillStyle = i % 3 === 0 ? '#fff0f7' : theme.accent;
+            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+          }
+          ctx.globalAlpha = 1; ctx.textAlign = 'center';
+          ctx.fillStyle = theme.accent; ctx.font = '700 29px Arial'; ctx.fillText('✦ AFTERDARK ✦', 450, 100);
+          ctx.fillStyle = '#fff1f7'; ctx.font = '700 43px "Space Grotesk", Arial, sans-serif';
+          ctx.fillText((customQrName.trim() || user?.handle || 'YOUR PERSON').slice(0, 26), 450, 166);
+          ctx.fillStyle = '#ffe0ec'; ctx.font = '19px Arial';
+          ctx.fillText('ONE LINK  ·  ONE PERSON  ·  ONE PLOTLINE', 450, 207);
+          // Blush QR panel — deliberately not white.
+          ctx.shadowColor = 'rgba(25,0,15,.25)'; ctx.shadowBlur = 24;
+          ctx.fillStyle = theme.paper; ctx.beginPath(); ctx.roundRect(143, 235, 614, 614, 28); ctx.fill();
+          ctx.shadowBlur = 0; ctx.drawImage(img, 150, 242, 600, 600);
+          // Rose emblem in the centre; H-level correction preserves scan reliability.
+          const cx = 450, cy = 542;
+          ctx.fillStyle = theme.paper; ctx.strokeStyle = theme.accent; ctx.lineWidth = 5;
+          ctx.beginPath(); ctx.arc(cx, cy, 57, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+          ctx.save(); ctx.translate(cx, cy);
+          const petalColors = [theme.petal, '#ff8ab5', '#f52f80', '#ffb2d0', '#d91f6a'];
+          for (let i = 0; i < 7; i++) {
+            ctx.save(); ctx.rotate((Math.PI * 2 * i) / 7);
+            ctx.fillStyle = petalColors[i % petalColors.length];
+            ctx.beginPath(); ctx.ellipse(0, -19, 12, 21, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.restore();
+          }
+          ctx.fillStyle = '#7f1747'; ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = theme.leaf;
+          ctx.beginPath(); ctx.ellipse(-19, 25, 8, 15, -.85, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.ellipse(19, 25, 8, 15, .85, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+          ctx.fillStyle = theme.accent; ctx.font = '700 25px Arial'; ctx.fillText('SCAN FOR YOUR LITTLE LOVE STORY', 450, 910);
+          ctx.fillStyle = '#fff0f7'; ctx.font = '20px Arial'; ctx.fillText('Keep it mutual. Keep it AFTERDARK. ♥', 450, 954);
+          ctx.globalAlpha = .78; ctx.font = '12px Arial'; ctx.fillText('EDITION ' + seed, 450, 1000); ctx.globalAlpha = 1;
+          setCustomQrImage(canvas.toDataURL('image/png'));
+          setToast('A one-of-a-kind rose QR is ready 🌹 Each generation gets its own colourway and design.');
+        } catch {
+          setToast('Could not render this QR design. Please try generating it again.');
+        } finally { customQrGeneratingRef.current = false; }
       };
       img.onerror = () => { customQrGeneratingRef.current = false; setToast('Could not render the QR design. Try again.'); };
       img.src = qrImage;
-    } catch { customQrGeneratingRef.current = false; setToast('Could not create the custom QR. Try again.'); }
+    } catch {
+      customQrGeneratingRef.current = false;
+      setToast('Could not create the custom QR. Try again.');
+    }
   }
   async function retryInvitePreview() {
     if (!inviteToken) return;
