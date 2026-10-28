@@ -2,7 +2,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
-const API = 'https://afterdark-social-universe.vercel.app/api';
+// Try the stable production domain first, then the last known-good production
+// deployment URL. This fallback helps if the custom production alias has a routing
+// or edge-cache issue; both endpoints run the same authenticated API handlers.
+const API_BASES = [
+  'https://afterdark-social-universe.vercel.app/api',
+  'https://afterdark-social-universe-hsc5s7glx-dipayan-verse.vercel.app/api'
+];
 const SESSION_KEY = 'afterdark_guest_session_v1';
 const brands = [
   { name: 'Zudio', keys: ['zudio','outfit','clothes','fit','fashion'], line: 'Cute fit, budget intact. Paisa bachao, aura badhao. ✨', url: 'https://www.zudio.com/' },
@@ -25,15 +31,34 @@ const places = {
   'ramoji-film-city': 'Ramoji Film City · Abdullapurmet'
 };
 async function api(path, { token = '', method = 'GET', body } = {}) {
-  const response = await fetch(API + path, {
-    method,
-    headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    cache: 'no-store'
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || 'The connection flickered. Try again.');
-  return data;
+  let lastNetworkError;
+  for (const base of API_BASES) {
+    try {
+      const response = await fetch(base + path, {
+        method,
+        headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        cache: 'no-store',
+        mode: 'cors',
+        credentials: 'omit',
+        signal: AbortSignal.timeout(12000)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        // An API response is authoritative; don't hide useful 4xx/5xx messages
+        // by retrying the same request against another host.
+        throw new Error(data.error || 'The connection flickered. Try again.');
+      }
+      return data;
+    } catch (error) {
+      if (error instanceof TypeError || error?.name === 'TimeoutError' || error?.name === 'AbortError') {
+        lastNetworkError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Could not reach the AFTERDARK API from this guest page. Both API routes failed to connect. Please retry in a moment.');
 }
 function App() {
   const inviteToken = useMemo(() => {
