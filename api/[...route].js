@@ -8,24 +8,15 @@ let emailIndexMigrationPromise;
 const COOKIE = 'afterdark_session';
 const DAY = 86400;
 const json = (res, status, body) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(body)); };
-const GUEST_CHAT_ORIGINS = new Set([
-  'https://afterdark-guest-connector.onrender.com',
-  'https://afterdark-private-chat.onrender.com'
-]);
+// Public guest invitation endpoints are consumed by static guest sites hosted
+// on Render. CORS is a browser access policy, not authentication; invite tokens
+// and guest sessions are validated in the route handlers. No cookies are used
+// for cross-origin guest API calls, so a wildcard origin is appropriate here.
 function setGuestCors(req, res) {
-  const origin = req.headers.origin;
-  // Render static-site domains can vary as services are recreated or renamed.
-  // CORS is not an authorization boundary: invite tokens and guest sessions are
-  // validated by the API itself. Permit HTTPS Render origins for the guest flow,
-  // while retaining the explicit known origins and local development origin.
-  const renderGuestOrigin = typeof origin === 'string' && /^https:\/\/[a-z0-9-]+\.onrender\.com$/i.test(origin);
-  const allowed = origin && (GUEST_CHAT_ORIGINS.has(origin) || renderGuestOrigin || origin === process.env.GUEST_CHAT_ORIGIN || origin === 'http://localhost:5173');
-  if (!allowed) return;
-  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Max-Age', '86400');
-  res.setHeader('Vary', 'Origin');
 }
 function hashGuestToken(value) {
   if (!process.env.JWT_SECRET) throw new Error('AUTH_CONFIG');
