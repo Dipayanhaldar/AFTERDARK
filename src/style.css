@@ -883,3 +883,198 @@ footer .wordmark{min-width:0;max-width:100%;overflow-wrap:anywhere}
  .top-actions .adult-pill{display:none}
  .install-btn{font-size:9px;padding:8px}
 }
+
+
+/* AFTERDARK: restore the original light/pink theme; keep existing app features intact. */
+:root {
+  color-scheme: light;
+  --bg: #fff9fc;
+  --panel: #ffffff;
+  --muted: #766575;
+  --pink: #d94d8b;
+  --lilac: #8860bd;
+  --line: rgba(91, 45, 76, .13);
+  --glass: rgba(255,255,255,.82);
+  --glass-edge: rgba(160, 91, 132, .18);
+  --rose-glow: rgba(255,105,170,.12);
+  --rose-line: rgba(255,166,207,.26);
+  font-family: 'DM Sans', sans-serif;
+  color: #382338;
+  background: #fff9fc;
+}
+html, body, #root {
+  color-scheme: light;
+  background: #fff9fc !important;
+  color: #382338;
+}
+body {
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255,213,231,.55), transparent 44%),
+    radial-gradient(ellipse at 95% 20%, rgba(230,216,255,.28), transparent 32%),
+    linear-gradient(180deg, #fffafd 0%, #fff5fa 55%, #fffafd 100%) !important;
+  color: #382338;
+}
+body::before, body::after { content: none !important; animation: none !important; display: none !important; }
+.app-shell { color: #382338; }
+.topbar {
+  background: rgba(255,255,255,.82);
+  border-bottom-color: rgba(124,66,101,.12);
+  backdrop-filter: blur(18px);
+}
+.wordmark { color: #4a2944; }
+.moon { color: #c94f8b; }
+.adult-pill, .preview-tag {
+  background: #fff3f8;
+  border-color: #f0c6d9;
+  color: #9b3d70;
+}
+.ghost-btn { color: #614c61; }
+.hero h1, .section-heading h2, .coming-section h2 { color: #3a263a; }
+.hero h1 em, .panel h3 em, .explore-intro h3 em, .safety-grid h3 em,
+.coming-section h2 em { color: #c94f8b; }
+.gradient-text {
+  background: linear-gradient(100deg,#d94d8b,#8c68c5 78%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+.eyebrow { color: #9b5a80; }
+.hero-copy, .feature-card p, .panel p, .explore-intro p,
+.safety-grid>div>p, .roadmap-item p { color: #786778; }
+.trust-row { color: #826e80; }
+.pulse { background: #e56a9e; box-shadow: 0 0 13px rgba(229,106,158,.45); }
+.orb { opacity: .10; }
+.primary-btn {
+  color: #fff;
+  background: linear-gradient(120deg,#df5d98,#b88add);
+  border-color: #e8a5c4;
+  box-shadow: 0 8px 28px rgba(210,80,142,.18);
+}
+.secondary-btn {
+  background: #fff;
+  border-color: #e8ccdc;
+  color: #704765;
+}
+.age-note {
+  background: #fff;
+  border-color: #eed5e2;
+  box-shadow: 0 8px 28px rgba(107,49,82,.06);
+}
+.age-note p, .muted { color: #786778; }
+.workspace {
+  background: rgba(255,255,255,.92) !important;
+  border-color: #efd8e5 !important;
+  box-shadow: 0 20px 60px rgba(117,65,96,.08), inset 0 1px 0 #fff !important;
+}
+.feature-card, .invite-box, .brand-card, .invite-landing, .auth-form,
+.chat-sidebar, .chat-main, .ritual-panel, .chachi-helper {
+  background: #fff !important;
+  border-color: #efd8e5 !important;
+  box-shadow: 0 10px 28px rgba(117,65,96,.07), inset 0 1px 0 #fff !important;
+  color: #382338;
+}
+.feature-card:hover, .brand-card:hover {
+  background: #fff8fc !important;
+  border-color: #e7b7d0 !important;
+}
+.invite-card { background: linear-gradient(145deg,#fff0f7,#fbf5ff) !important; }
+.card-icon { background: #fff0f7; border-color: #f0c2d9; color: #c94f8b; }
+.card-icon.pink { color: #c94f8b; }
+.card-icon.lilac { color: #8860bd; background: #f5efff; border-color: #d9c7f2; }
+.card-kicker, .text-btn, .tab.active { color: #c94f8b; }
+.tabs { border-bottom-color: #f0dce7; }
+.tab { color: #786778; }
+.tab.active { border-bottom-color: #d94d8b; }
+.panel h3, .feature-card h3, .explore-intro h3, .safety-grid h3 { color: #3a263a; }
+.invite-box { background: #fff8fc !important; }
+.invite-box>strong { color: #4a2944; }
+.empty-link { border-color: #e8c7d9; color: #8a7588; }
+.generated-link { background: #fff0f7; color: #9b3d70; }
+.invite-box small, .qr-hint { color: #8a7588 !important; }
+.state-row { color: #786778; }
+.brand-card { background: #fff !important; }
+.brand-mark { background: #fff0f7; color: #b7477e; }
+.mark-1 { background: #fff1ed; color: #b75c49; }
+.mark-2 { background: #f5efff; color: #8860bd; }
+.mark-3 { background: #f0f2ff; color: #626ec1; }
+.mark-4 { background: #fff0ee; color: #ba6555; }
+.mark-5 { background: #eff7ff; color: #4d83ad; }
+.brand-meta small, .brand-meta span { color: #786778; }
+.external { color: #c94f8b; }
+.disclosure { color: #8a7588 !important; }
+.safety-list li { border-bottom-color: #f0dce7; }
+.safety-list li>span { background: #fff0f7; color: #c94f8b; }
+.safety-list strong { color: #493447; }
+.safety-list p { color: #786778; }
+.roadmap-item { border-top-color: #e8c6d9; }
+.roadmap-item>span { color: #c94f8b; }
+footer { border-top-color: #eed9e5; color: #806d7e; }
+footer .wordmark { color: #4a2944; }
+.footer-status i { background: #d9a35e; }
+.invite-landing h1, .auth-layout h3 { color: #3a263a; }
+.invite-landing h1 em { color: #c94f8b; }
+.invite-landing>p, .auth-layout p { color: #786778; }
+.auth-form>label { color: #594459; }
+.auth-form input:not([type=checkbox]), .chat-composer input {
+  background: #fffafd;
+  border-color: #e8ccdc;
+  color: #382338;
+}
+.auth-form input:focus, .chat-composer input:focus {
+  border-color: #d86a9d;
+  box-shadow: 0 0 0 3px rgba(216,106,157,.12);
+}
+.check { color: #786778; }
+.check input { accent-color: #d94d8b; }
+.form-error { color: #b12f4d !important; background: #fff1f3; }
+.form-success { color: #207a54 !important; background: #effbf4; }
+.invite-actions .secondary-btn { background: #fff; color: #704765; }
+.chat-sidebar, .chat-main { color: #382338; }
+.connection-item { color: #493447; }
+.connection-item.selected { background: #fff0f7; border-color: #edc1d6; }
+.avatar-dot { background: linear-gradient(135deg,#f6bfd6,#d7c2f3); color: #542844; }
+.chat-title { border-bottom-color: #f0dce7; }
+.chat-title strong { color: #493447; }
+.chat-title small, .chat-empty { color: #786778; }
+.chat-empty strong { color: #493447; }
+.message.mine { background: linear-gradient(135deg,#ffeaf3,#f3eaff); border-color: #edc1d6; }
+.message.theirs { background: #f8f3f8; border-color: #eee2ed; }
+.message small { color: #8a7588; }
+.suggestion-strip { background: #fff4f9; border-color: #efd4e2; }
+.suggestion-strip>span { color: #b7477e; }
+.suggestion-strip a { color: #6b4562; border-color: #e8ccdc; background: #fff; }
+.suggestion-strip button { color: #786778; }
+.danger-btn { background: #fff2f3; color: #b12f4d; border-color: #f0c6cc; }
+.footer-links button, .footer-links a { color: #705b70; }
+.toast { background: #fff; color: #382338; border: 1px solid #efd8e5; }
+.toast button { color: #9b3d70; }
+.invite-code-value {
+  background: linear-gradient(135deg,#fff0f7,#f4edff);
+  color: #9d1556;
+  border-color: #ef9ec2;
+}
+.hero::before {
+  background: radial-gradient(circle, rgba(255,139,182,.16), rgba(204,154,184,.055) 42%, transparent 70%);
+}
+.hero::after { color: rgba(198,118,151,.65); text-shadow: 0 0 22px rgba(255,183,195,.35); }
+.hero-flirt span {
+  color: #7a5a72;
+  background: linear-gradient(135deg,rgba(255,255,255,.95),rgba(255,241,248,.88));
+  border-color: #efd6e4;
+  box-shadow: 0 8px 24px rgba(117,65,96,.06);
+}
+.heart-core { color: #ee82ad; text-shadow: 0 3px 0 #d65c91, 0 8px 0 #bb477f, 0 18px 35px rgba(255,118,170,.22); }
+.heart-3d { opacity: .28; }
+.ritual-panel, .chachi-helper { color: #493447; }
+.topbar .wordmark, .topbar a.wordmark, .topbar .brand-lockup { color: #4a2944; }
+.top-actions .ghost-btn { color: #705b70; }
+.top-actions .adult-pill { background: #fff3f8; color: #9b3d70; }
+.topbar .install-btn { color: #704765; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid #d94d8b;
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero::after, .hero-flirt span, .heart-3d, .heart-core, .heart-chip,
+  .feature-card, .brand-card { animation: none !important; transition: none !important; }
+}
