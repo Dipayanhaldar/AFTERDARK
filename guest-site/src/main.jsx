@@ -48,7 +48,7 @@ async function api(path, { token = '', method = 'GET', body } = {}) {
       if (!response.ok) {
         // An API response is authoritative; don't hide useful 4xx/5xx messages
         // by retrying the same request against another host.
-        throw new Error(data.error || 'The connection flickered. Try again.');
+        throw new Error(data.error || ('API returned HTTP ' + response.status + ' from ' + new URL(base).host + ' for ' + path + '. This is an HTTP response, not a network failure.'));
       }
       return data;
     } catch (error) {
@@ -58,7 +58,7 @@ async function api(path, { token = '', method = 'GET', body } = {}) {
       throw error;
     }
   }
-  throw new Error('Could not reach the AFTERDARK API from this guest page. Both API routes failed to connect. Please retry in a moment.');
+  throw new Error('Could not reach any configured AFTERDARK API endpoint. The browser could not complete a network request to the configured API hosts.');
 }
 function App() {
   const inviteToken = useMemo(() => {
