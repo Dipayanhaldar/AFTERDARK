@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import QRCode from 'qrcode';
+import { Analytics } from '@vercel/analytics/react';
 import './style.css';
 import { compressPhotoToDataUrl } from './photo-helper.js';
 
@@ -539,6 +540,7 @@ function App() {
     {!inviteToken && <footer><a className="wordmark" href="/" onClick={e=>{e.preventDefault();setTab('home')}}><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><span>For adults, by choice. Not by pressure.</span><div className="footer-links"><button onClick={()=>setTab('safety')}>Safety</button><button onClick={()=>setTab('privacy')}>Privacy</button></div></footer>}
     {bursts.map(b => <span key={b.id} className="emoji-burst" style={{ left: b.x, top: b.y }}>{b.emoji}</span>)}
     {toast && <div className="toast" role="status">{toast}<button onClick={()=>setToast('')} aria-label="Dismiss">×</button></div>}
+    <Analytics />
   </div>;
 }
 createRoot(document.getElementById('root')).render(<App />);
