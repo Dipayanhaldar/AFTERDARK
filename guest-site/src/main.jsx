@@ -64,7 +64,8 @@ async function api(path, { token = '', method = 'GET', body } = {}) {
       throw error;
     }
   }
-  if (lastHttpError) throw new Error('No configured AFTERDARK API host served this route. Last response: ' + lastHttpError + '. The API deployment or routing needs correction.');\n  throw new Error('Could not reach any configured AFTERDARK API endpoint. The browser could not complete a network request to the configured API hosts.');
+  if (lastHttpError) throw new Error('No configured AFTERDARK API host served this route. Last response: ' + lastHttpError + '. The API deployment or routing needs correction.');
+  throw new Error('Could not reach any configured AFTERDARK API endpoint. The browser could not complete a network request to the configured API hosts.');
 }
 function App() {
   const inviteToken = useMemo(() => {
