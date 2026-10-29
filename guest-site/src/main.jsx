@@ -32,7 +32,7 @@ const places = {
   'paradise-biryani': 'Paradise Biryani · Secunderabad',
   'ramoji-film-city': 'Ramoji Film City · Abdullapurmet'
 };
-async function api(path, { token = '', method = 'GET', body } = {}) {
+async function api(path, { token = '', method = 'GET', body } = {}) {\n  let lastHttpError = '';
   for (const base of API_BASES) {
     try {
       const response = await fetch(base + path, {
@@ -46,8 +46,13 @@ async function api(path, { token = '', method = 'GET', body } = {}) {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        // An API response is authoritative; don't hide useful 4xx/5xx messages
-        // by retrying the same request against another host.
+        // A platform-level 404 with no JSON API error usually means this alias
+        // does not have the API route. Try the next configured production alias.
+        // A JSON error from our API (for example, an expired invite) is authoritative.
+        if (response.status === 404 && !data.error) {
+          lastHttpError = 'HTTP 404 from ' + new URL(base).host + ' for ' + path;
+          continue;
+        }
         throw new Error(data.error || ('API returned HTTP ' + response.status + ' from ' + new URL(base).host + ' for ' + path + '. This is an HTTP response, not a network failure.'));
       }
       return data;
@@ -58,7 +63,7 @@ async function api(path, { token = '', method = 'GET', body } = {}) {
       throw error;
     }
   }
-  throw new Error('Could not reach any configured AFTERDARK API endpoint. The browser could not complete a network request to the configured API hosts.');
+  if (lastHttpError) throw new Error('No configured AFTERDARK API host served this route. Last response: ' + lastHttpError + '. The API deployment or routing needs correction.');\n  throw new Error('Could not reach any configured AFTERDARK API endpoint. The browser could not complete a network request to the configured API hosts.');
 }
 function App() {
   const inviteToken = useMemo(() => {
