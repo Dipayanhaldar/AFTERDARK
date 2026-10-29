@@ -32,7 +32,8 @@ const places = {
   'paradise-biryani': 'Paradise Biryani · Secunderabad',
   'ramoji-film-city': 'Ramoji Film City · Abdullapurmet'
 };
-async function api(path, { token = '', method = 'GET', body } = {}) {\n  let lastHttpError = '';
+async function api(path, { token = '', method = 'GET', body } = {}) {
+  let lastHttpError = '';
   for (const base of API_BASES) {
     try {
       const response = await fetch(base + path, {
