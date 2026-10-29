@@ -7,7 +7,9 @@ import './style.css';
 // or edge-cache issue; both endpoints run the same authenticated API handlers.
 const API_BASES = [
   'https://afterdark-social-universe.vercel.app/api',
-  'https://afterdark-social-universe-hsc5s7glx-dipayan-verse.vercel.app/api'
+  // Stable production alias confirmed on the current Vercel deployment.
+  'https://afterdark-social-universe-dipayan-verse.vercel.app/api',
+  'https://afterdark-social-universe-git-main-dipayan-verse.vercel.app/api'
 ];
 const SESSION_KEY = 'afterdark_guest_session_v1';
 const brands = [
@@ -31,7 +33,6 @@ const places = {
   'ramoji-film-city': 'Ramoji Film City · Abdullapurmet'
 };
 async function api(path, { token = '', method = 'GET', body } = {}) {
-  let lastNetworkError;
   for (const base of API_BASES) {
     try {
       const response = await fetch(base + path, {
@@ -52,7 +53,6 @@ async function api(path, { token = '', method = 'GET', body } = {}) {
       return data;
     } catch (error) {
       if (error instanceof TypeError || error?.name === 'TimeoutError' || error?.name === 'AbortError') {
-        lastNetworkError = error;
         continue;
       }
       throw error;
