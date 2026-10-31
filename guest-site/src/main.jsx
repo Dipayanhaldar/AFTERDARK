@@ -113,6 +113,7 @@ function App() {
   }, [guestToken, connection?.id]);
 
   useEffect(() => {
+    if (stage === 'chat') return;
     let alive = true;
     (async () => {
       try {
@@ -137,7 +138,7 @@ function App() {
       } catch (e) { if (alive) { setError(e.message); setStage('invite'); } }
     })();
     return () => { alive = false; };
-  }, [inviteToken, guestToken]);
+  }, [inviteToken, guestToken, stage]);
 
   useEffect(() => {
     if (stage !== 'chat' || !connection?.id || !guestToken) return;
