@@ -547,6 +547,18 @@ export default async function handler(req, res) {
         return json(res, 200, { plan: serialize(await plans.findOne({ connectionId })) });
       }
     }
+    if (parts[0] === 'connections' && parts[1] && parts[2] === 'end' && req.method === 'POST') {
+      let connectionId;
+      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
+      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId, status: 'approved' });
+      if (!connection) return json(res, 404, { error: 'This connection is already closed.' });
+      await database.collection('connections').updateOne(
+        { _id: connectionId, memberIds: userId, status: 'approved' },
+        { $set: { status: 'ended', endedBy: userId, endedAt: new Date() } }
+      );
+      await database.collection('date_plans').deleteOne({ connectionId });
+      return json(res, 200, { ok: true, status: 'ended' });
+    }
     if (parts[0] === 'connections' && parts[1] && parts[2] === 'block' && req.method === 'POST') {
       let connectionId;
       try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
