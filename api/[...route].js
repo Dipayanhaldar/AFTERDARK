@@ -1,5 +1,5 @@
 import { MongoClient } from 'mongodb';
-import { randomBytes, randomInt, scrypt as scryptCallback, timingSafeEqual, createHmac } from 'node:crypto';
+import { randomBytes, randomInt, scrypt as scryptCallback, timingSafeEqual, createHmac, createHash, createCipheriv, createDecipheriv } from 'node:crypto';
 import { promisify } from 'node:util';
 
 const scrypt = promisify(scryptCallback);
@@ -21,6 +21,21 @@ function setGuestCors(req, res) {
 function hashGuestToken(value) {
   if (!process.env.JWT_SECRET) throw new Error('AUTH_CONFIG');
   return createHmac('sha256', process.env.JWT_SECRET).update(value).digest('hex');
+}
+function sealGuestSession(value) {
+  const key = createHash('sha256').update(process.env.JWT_SECRET || 'AUTH_CONFIG').digest();
+  const iv = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  return [iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), encrypted.toString('base64url')].join('.');
+}
+function openGuestSession(value) {
+  const [iv, tag, encrypted] = String(value || '').split('.');
+  if (!iv || !tag || !encrypted) throw new Error('GUEST_SESSION_RECOVERY_UNAVAILABLE');
+  const key = createHash('sha256').update(process.env.JWT_SECRET || 'AUTH_CONFIG').digest();
+  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64url'));
+  decipher.setAuthTag(Buffer.from(tag, 'base64url'));
+  return Buffer.concat([decipher.update(Buffer.from(encrypted, 'base64url')), decipher.final()]).toString('utf8');
 }
 const token = (n = 32) => randomBytes(n).toString('base64url');
 function cookie(res, value, maxAge = DAY * 14) { res.setHeader('Set-Cookie', `${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`); }
@@ -262,13 +277,38 @@ export default async function handler(req, res) {
       const rawInvite = parts[2];
       const inviteHash = hashGuestToken(rawInvite);
       const invites = database.collection('invites');
-      const invite = await invites.findOne({ tokenHash: inviteHash, expiresAt: { $gt: new Date() }, status: 'pending' });
-      if (!invite) return json(res, 409, { error: 'This invite has already been used, expired, or is no longer available. The link alone cannot open a private chat.' });
+      const invite = await invites.findOne({ tokenHash: inviteHash, expiresAt: { $gt: new Date() }, status: { $in: ['pending', 'approved'] } });
+      if (!invite) return json(res, 409, { error: 'This invite has expired or is no longer available. Ask the sender for a fresh invitation.' });
       if (!await rateLimit(database, 'invite-code:' + invite._id.toString(), 5)) return json(res, 429, { error: 'Too many private-code attempts for this invite. Wait a minute before trying again.' });
       const suppliedCode = String(body.code || '').replace(/\s/g, '');
       if (!/^\d{6}$/.test(suppliedCode) || !invite.codeHash) return json(res, 401, { error: 'Enter the six-digit private code provided separately by the sender. The invitation link alone is not enough.' });
       const expectedCodeHash = createHmac('sha256', process.env.JWT_SECRET).update(suppliedCode).digest('hex');
       if (!timingSafeEqual(Buffer.from(expectedCodeHash), Buffer.from(invite.codeHash))) return json(res, 401, { error: 'That private code does not match. Ask the sender for the code again.' });
+      if (invite.status === 'approved' && invite.connectionId && invite.recipientId && invite.guestSessionCiphertext) {
+        try {
+          const recoveredToken = openGuestSession(invite.guestSessionCiphertext);
+          const recoveredSession = await database.collection('guest_sessions').findOne({
+            tokenHash: hashGuestToken(recoveredToken), connectionId: invite.connectionId,
+            userId: invite.recipientId, expiresAt: { $gt: new Date() }
+          });
+          const recoveredConnection = await database.collection('connections').findOne({
+            _id: invite.connectionId, memberIds: invite.recipientId, status: 'approved'
+          });
+          if (recoveredSession && recoveredConnection) {
+            const recoveredUser = await database.collection('users').findOne({ _id: invite.recipientId });
+            const owner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
+            return json(res, 200, {
+              status: 'approved', guestSessionToken: recoveredToken, expiresAt: recoveredSession.expiresAt,
+              user: recoveredUser ? cleanUser(recoveredUser) : { id: invite.recipientId.toString(), handle: 'guest', guest: true },
+              connection: { id: invite.connectionId.toString(), handle: owner?.handle || 'your person', role: 'invitee' }
+            });
+          }
+        } catch (recoveryError) {
+          console.error('AFTERDARK guest session recovery failed:', recoveryError?.message || 'unknown');
+        }
+        return json(res, 409, { error: 'This invitation was accepted, but its private session cannot be recovered. Contact the sender to reset the invitation.' });
+      }
+      if (invite.status !== 'pending') return json(res, 409, { error: 'This invite is already being accepted. Please wait a moment and reopen the invitation.' });
       const ownerActive = await database.collection('connections').findOne({ memberIds: invite.ownerId, status: 'approved' }, { projection: { _id: 1 } });
       if (ownerActive) return json(res, 409, { error: 'This person already has an active AFTERDARK chat. One connection at a time.' });
       const reserved = await invites.updateOne(
@@ -304,7 +344,7 @@ export default async function handler(req, res) {
         });
         const changed = await invites.updateOne(
           { _id: invite._id, status: 'approving' },
-          { $set: { status: 'approved', recipientId: guestId, connectionId, respondedAt: new Date() }, $unset: { approvalStartedAt: '' } }
+          { $set: { status: 'approved', recipientId: guestId, connectionId, guestSessionCiphertext: sealGuestSession(guestSessionToken), respondedAt: new Date() }, $unset: { approvalStartedAt: '' } }
         );
         if (!changed.modifiedCount) throw new Error('INVITE_RESERVATION_LOST');
         const owner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
