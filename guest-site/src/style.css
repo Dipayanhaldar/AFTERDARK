@@ -60,3 +60,49 @@ img, svg, video { max-width: 100%; }
   .composer { border-radius: 18px; }
   .composer input { min-width: 0; }
 }
+
+
+/* AFTERDARK guest connector interaction refresh */
+.button, button, a.button, .send-button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color .18s ease, color .18s ease, border-color .18s ease,
+    box-shadow .18s ease, transform .18s ease;
+}
+.button.primary {
+  min-height: 50px;
+  border: 1px solid #d91f76;
+  background: linear-gradient(135deg, #e52f83, #bd1d70);
+  color: #fff;
+  font-weight: 850;
+  box-shadow: 0 8px 22px rgba(197,30,112,.25), inset 0 1px 0 rgba(255,255,255,.2);
+}
+.button.primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #f04b99, #a9145b);
+  box-shadow: 0 12px 28px rgba(197,30,112,.32);
+  transform: translateY(-2px);
+}
+.button.secondary {
+  min-height: 44px;
+  border: 1.5px solid #d98aaf;
+  background: #fff;
+  color: #941653;
+  font-weight: 800;
+}
+.button.secondary:hover:not(:disabled) { background: #fff0f7; border-color: #c51e70; }
+.button:disabled, button:disabled {
+  opacity: .48;
+  filter: grayscale(.35);
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 3px solid #e94d98;
+  outline-offset: 3px;
+}
+.send-button { background: linear-gradient(135deg,#e52f83,#bd1d70); color: #fff; box-shadow: 0 5px 14px rgba(197,30,112,.22); }
+.send-button:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.06); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
