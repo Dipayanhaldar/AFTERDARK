@@ -47,11 +47,11 @@ async function api(path, { token = '', method = 'GET', body } = {}) {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        // A platform-level 404 with no JSON API error usually means this alias
-        // does not have the API route. Try the next configured production alias.
-        // A JSON error from our API (for example, an expired invite) is authoritative.
-        if (response.status === 404 && !data.error) {
-          lastHttpError = 'HTTP 404 from ' + new URL(base).host + ' for ' + path;
+        // A missing function on one production alias must not mask a working
+        // API on another alias. Try every configured host for 404s, then report
+        // the last response if none serves this route.
+        if (response.status === 404) {
+          lastHttpError = (data.error || 'HTTP 404') + ' from ' + new URL(base).host + ' for ' + path;
           continue;
         }
         throw new Error(data.error || ('API returned HTTP ' + response.status + ' from ' + new URL(base).host + ' for ' + path + '. This is an HTTP response, not a network failure.'));
@@ -133,8 +133,9 @@ function App() {
         if (!alive) return;
         setInviteInfo(data.invite);
         setStage('invite');
-        if (data.invite?.status === 'approved') setError('This invite has already been accepted. The link alone cannot open the private chat. If you accepted it on another browser, return to that browser.');
-        else if (data.invite?.ownInvite) setError('This is your own invite. Send it to your person instead.');
+        // Approved invites can recover the same private session when the
+        // invitee re-enters the separate six-digit code on a new browser.
+        if (data.invite?.ownInvite) setError('This is your own invite. Send it to your person instead.');
       } catch (e) { if (alive) { setError(e.message); setStage('invite'); } }
     })();
     return () => { alive = false; };
@@ -180,6 +181,10 @@ function App() {
 
   const latestText = messages[messages.length - 1]?.text || '';
   const activeBrand = brands.find(b => b.keys.some(k => latestText.toLowerCase().includes(k)));
+  const suggestionsFor = message => {
+    const lower = String(message || '').toLowerCase();
+    return brands.filter(b => b.keys.some(k => lower.includes(k)));
+  };
   const lockedPlace = plan?.lockedPlaceId ? places[plan.lockedPlaceId] || plan.lockedPlaceId : '';
   const lockedDate = plan?.lockedDateTime ? new Date(plan.lockedDateTime) : null;
 
@@ -187,7 +192,7 @@ function App() {
 
   if (stage === 'landing') return <main className="center"><div className="eyebrow">18+ · INVITE ONLY</div><div className="brand-mark">☾ AFTERDARK<span>.</span></div><h1>Some things are<br/><em>just between two.</em></h1><p className="muted">Open the personal invite link shared with you. This site doesn't expose chats through a public profile or directory.</p><a className="button secondary" href="https://afterdark-social-universe.vercel.app/">Back to AFTERDARK</a></main>;
 
-  if (stage === 'invite') return <main className="center invite-screen"><div className="brand-mark">☾ AFTERDARK<span>.</span></div><div className="eyebrow">A PRIVATE INVITATION · 18+</div><h1>Your next chapter<br/><em>starts with a choice.</em></h1><div className="invite-card"><div className="orb">✦</div><p>{inviteInfo?.handle ? '@' + inviteInfo.handle + ' sent you a little invitation.' : 'Someone sent you a little invitation.'}</p><p className="muted small">Accept only if you know who shared this link and genuinely want to connect. Your chat will be private to the two approved participants.</p><label className="code-label">Six-digit private code<input inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" value={inviteCode} onChange={e => setInviteCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Ask the sender for the separate code"/></label><p className="muted tiny">The sender should share this code separately from the QR/link. If you only have the link, you cannot enter the chat.</p><label className="check-row"><input type="checkbox" checked={adult} onChange={e => setAdult(e.target.checked)}/><span>I confirm I am 18 or older and choose to open this chat.</span></label><button className="button primary" disabled={sending || inviteCode.length !== 6 || inviteInfo?.status !== 'pending' || Boolean(error && /already been accepted|own invite/.test(error))} onClick={acceptInvite}>{sending ? 'Opening your chat…' : 'Accept & enter private chat'} <span>↗</span></button></div>{error && <div className="error">{error}</div>}<p className="muted small">The invitation link is single-use and requires a separate private code. Once accepted, the link alone cannot reopen the chat on another device.</p></main>;
+  if (stage === 'invite') return <main className="center invite-screen"><div className="brand-mark">☾ AFTERDARK<span>.</span></div><div className="eyebrow">A PRIVATE INVITATION · 18+</div><h1>Your next chapter<br/><em>starts with a choice.</em></h1><div className="invite-card"><div className="orb">✦</div><p>{inviteInfo?.handle ? '@' + inviteInfo.handle + ' sent you a little invitation.' : 'Someone sent you a little invitation.'}</p><p className="muted small">Accept only if you know who shared this link and genuinely want to connect. Your chat will be private to the two approved participants.</p><label className="code-label">Six-digit private code<input inputMode="numeric" autoComplete="one-time-code" maxLength={6} pattern="[0-9]{6}" value={inviteCode} onChange={e => setInviteCode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Ask the sender for the separate code"/></label><p className="muted tiny">The sender should share this code separately from the QR/link. If you only have the link, you cannot enter the chat.</p><label className="check-row"><input type="checkbox" checked={adult} onChange={e => setAdult(e.target.checked)}/><span>I confirm I am 18 or older and choose to open this chat.</span></label><button className="button primary" disabled={sending || inviteCode.length !== 6 || !['pending','approved'].includes(inviteInfo?.status) || Boolean(error && /own invite/.test(error))} onClick={acceptInvite}>{sending ? 'Opening your chat…' : 'Accept & enter private chat'} <span>↗</span></button></div>{error && <div className="error">{error}</div>}<p className="muted small">The invitation link is single-use and requires a separate private code. Once accepted, the link alone cannot reopen the chat on another device.</p></main>;
 
   if (stage !== 'chat' || !connection) return <main className="center"><div className="brand-mark">☾ AFTERDARK<span>.</span></div><h1>We hit a small plot twist.</h1><p className="muted">{error || 'This private chat is unavailable.'}</p><a className="button secondary" href="https://afterdark-social-universe.vercel.app/">Return to AFTERDARK</a></main>;
 
@@ -198,7 +203,7 @@ function App() {
         <div className="chat-heading"><div><div className="eyebrow">YOUR PRIVATE UNIVERSE</div><h1>Hey, <em>{connection.handle}</em></h1><p className="muted">No public profile. No searchable room. Just this conversation.</p></div><div className="lock-icon">⌁</div></div>
         <div className="messages" aria-live="polite">
           {messages.length === 0 && <div className="empty-chat"><span>✦</span><p>This is the first page of your story.</p><small>Say hi when you're ready. No pressure.</small></div>}
-          {messages.map(m => <article key={m.id} className={'message ' + (m.senderId === user?.id ? 'mine' : 'theirs')}><div>{m.text}</div><time>{new Date(m.createdAt).toLocaleString([], { hour:'numeric', minute:'2-digit', month:'short', day:'numeric' })}</time></article>)}
+          {messages.map(m => <React.Fragment key={m.id}><article className={'message ' + (m.senderId === user?.id ? 'mine' : 'theirs')}><div>{m.text}</div><time>{new Date(m.createdAt).toLocaleString([], { hour:'numeric', minute:'2-digit', month:'short', day:'numeric' })}</time></article>{suggestionsFor(m.text).map(b => <article className="chat-brand-card" key={m.id + '-' + b.name}><span className="eyebrow">A LITTLE IDEA · {b.name.toUpperCase()}</span><p>{b.line}</p><a href={b.url} target="_blank" rel="noreferrer">Explore {b.name} ↗</a></article>)}</React.Fragment>)}
           <div ref={bottomRef}/>
         </div>
         <form className="composer" onSubmit={sendMessage}><input value={draft} onChange={e => setDraft(e.target.value)} maxLength={2000} placeholder="Say something real…" aria-label="Your message"/><button className="send-button" disabled={sending || !draft.trim()} aria-label="Send message">↗</button></form>
@@ -208,7 +213,7 @@ function App() {
       <aside className="side-column">
         <section className="side-card"><div className="eyebrow">SHARED MOMENTS</div><h2>Little things, kept.</h2>{moments.length === 0 ? <p className="muted small">When your person saves a shared moment, it will show up here.</p> : <div className="moment-list">{moments.map(m => <article className="moment" key={m.id}><div className="moment-kind">{m.type === 'answer' ? 'DAILY ANSWER' : m.type === 'photo' ? 'PHOTO' : 'MEMORY'}</div>{m.imageData && <img className="moment-photo" src={m.imageData} alt="A shared private photo"/>}{m.text && <p>{m.text}</p>}<time>{new Date(m.createdAt).toLocaleDateString()}</time></article>)}</div>}</section>
         <section className="side-card"><div className="eyebrow">DATE PLAN</div><h2>Out of the group chat.</h2>{lockedPlace && lockedDate ? <><p className="plan-place">{lockedPlace}</p><p className="muted small">{lockedDate.toLocaleString([], { dateStyle:'medium', timeStyle:'short' })}</p><p className="muted tiny">This plan was agreed in AFTERDARK.</p></> : <p className="muted small">When a plan is agreed and shared, the details will appear here.</p>}</section>
-        {activeBrand && <a className="brand-card" href={activeBrand.url} target="_blank" rel="noreferrer"><span className="eyebrow">A LITTLE IDEA · {activeBrand.name.toUpperCase()}</span><p>{activeBrand.line}</p><span className="brand-link">Explore {activeBrand.name} ↗</span></a>}
+        {activeBrand && <a className="brand-card" href={activeBrand.url} target="_blank" rel="noreferrer"><span className="eyebrow">CURRENT CHAT IDEA · {activeBrand.name.toUpperCase()}</span><p>{activeBrand.line}</p><span className="brand-link">Explore {activeBrand.name} ↗</span></a>}
         <div className="floating-note">“Good communication is the real green flag.” <span>— Chachi 🌙</span></div>
         <div className="brand-cloud">{brands.slice(0,4).map(b => <a href={b.url} target="_blank" rel="noreferrer" key={b.name}>{b.name}</a>)}</div>
       </aside>
