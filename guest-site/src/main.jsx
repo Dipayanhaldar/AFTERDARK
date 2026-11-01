@@ -2,14 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
-// Try the stable production domain first, then the last known-good production
-// deployment URL. This fallback helps if the custom production alias has a routing
-// or edge-cache issue; both endpoints run the same authenticated API handlers.
+// Pin guest traffic to the verified Vercel deployment host. The older
+// project/branch aliases were not consistently routing browser CORS requests.
 const API_BASES = [
-  'https://afterdark-social-universe.vercel.app/api',
-  // Stable production alias confirmed on the current Vercel deployment.
-  'https://afterdark-social-universe-dipayan-verse.vercel.app/api',
-  'https://afterdark-social-universe-git-main-dipayan-verse.vercel.app/api'
+  'https://afterdark-social-universe-26tummv3w-dipayan-verse.vercel.app/api'
 ];
 const SESSION_KEY = 'afterdark_guest_session_v1';
 const brands = [
