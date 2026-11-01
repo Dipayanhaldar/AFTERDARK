@@ -547,6 +547,18 @@ export default async function handler(req, res) {
         return json(res, 200, { plan: serialize(await plans.findOne({ connectionId })) });
       }
     }
+    if (parts[0] === 'connections' && parts[1] && parts[2] === 'end' && req.method === 'POST') {
+      let connectionId;
+      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
+      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId, status: 'approved' });
+      if (!connection) return json(res, 404, { error: 'This connection is already closed.' });
+      await database.collection('connections').updateOne(
+        { _id: connectionId, memberIds: userId, status: 'approved' },
+        { $set: { status: 'ended', endedBy: userId, endedAt: new Date() } }
+      );
+      // Keep message and memory records for history; ended connections no longer authorize access.
+      return json(res, 200, { ok: true, status: 'ended' });
+    }
     if (parts[0] === 'connections' && parts[1] && parts[2] === 'block' && req.method === 'POST') {
       let connectionId;
       try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
@@ -636,7 +648,13 @@ export default async function handler(req, res) {
       if (req.method === 'GET') { const rows = await messages.find({ connectionId: connection._id }).sort({ createdAt: 1 }).limit(100).toArray(); return json(res, 200, { messages: rows.map(m => ({ id: m._id.toString(), text: m.text, senderId: m.senderId.toString(), createdAt: m.createdAt })) }); }
       if (req.method === 'POST') { const text = String(body.text || '').trim(); if (!text || text.length > 2000) return json(res, 400, { error: 'Keep your message between 1 and 2,000 characters.' }); const result = await messages.insertOne({ connectionId: connection._id, senderId: userId, text, createdAt: new Date() }); return json(res, 201, { message: { id: result.insertedId.toString(), text, senderId: userId.toString(), createdAt: new Date() } }); }
     }
-    if (action === 'revoke-invites' && req.method === 'POST') { await database.collection('invites').updateMany({ ownerId: userId, status: 'pending' }, { $set: { status: 'revoked' } }); return json(res, 200, { ok: true }); }
+    if (action === 'revoke-invites' && req.method === 'POST') {
+      const result = await database.collection('invites').updateMany(
+        { ownerId: userId, status: 'pending' },
+        { $set: { status: 'revoked', revokedAt: new Date() } }
+      );
+      return json(res, 200, { ok: true, revokedCount: result.modifiedCount || 0 });
+    }
     if (action === 'delete-account' && req.method === 'DELETE') { const connections = await database.collection('connections').find({ memberIds: userId }).toArray(); await database.collection('messages').deleteMany({ connectionId: { $in: connections.map(c => c._id) } }); await database.collection('date_plans').deleteMany({ connectionId: { $in: connections.map(c => c._id) } }); await database.collection('connections').deleteMany({ memberIds: userId }); await database.collection('invites').deleteMany({ $or: [{ ownerId: userId }, { recipientId: userId }] }); await database.collection('users').deleteOne({ _id: userId }); cookie(res, '', 0); return json(res, 200, { ok: true }); }
     return json(res, 404, { error: 'That page took a wrong turn. Try again.' });
   } catch (error) {
