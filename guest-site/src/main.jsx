@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
-// Pin guest traffic to the verified Vercel deployment host. The older
-// project/branch aliases were not consistently routing browser CORS requests.
+// Use the current READY production deployment host. Keep this aligned with
+// the deployment URL from Vercel; stale deployment aliases can return NOT_FOUND.
 const API_BASES = [
-  'https://afterdark-social-universe-26tummv3w-dipayan-verse.vercel.app/api'
+  'https://afterdark-social-universe-gdl1rczwk-dipayan-verse.vercel.app/api'
 ];
 const SESSION_KEY = 'afterdark_guest_session_v1';
 const brands = [
