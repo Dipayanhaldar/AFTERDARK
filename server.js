@@ -4,10 +4,14 @@ import { fileURLToPath } from 'node:url';
 import apiHandler from './api/[...route].js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 async function startServer() {
   const app = express();
+
+  app.get('/healthz', (_req, res) => {
+    res.status(200).json({ ok: true, service: 'afterdark' });
+  });
 
   // Route all /api/* requests to the unified serverless handler (Express 5 compatible)
   app.use('/api', async (req, res) => {
@@ -49,7 +53,7 @@ async function startServer() {
     const distPath = path.join(__dirname, 'dist');
     app.use(express.static(distPath));
     app.use((_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
+      res.status(200).sendFile(path.join(distPath, 'index.html'));
     });
   }
 

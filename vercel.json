@@ -1,11 +1,11 @@
 {
   "rewrites": [
     {
-      "source": "/guest",
-      "destination": "/index.html"
+      "source": "/api/(.*)",
+      "destination": "/api/[...route]"
     },
     {
-      "source": "/guest/",
+      "source": "/guest",
       "destination": "/index.html"
     },
     {
@@ -21,7 +21,7 @@
       "destination": "/index.html"
     },
     {
-      "source": "/((?!api/|assets/|icon-|manifest\\.webmanifest|sw\\.js).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ],

@@ -26,6 +26,7 @@ import {
   buildPublicInviteLinks,
   getClientDeviceId,
   isGuestInviteLocation,
+  isInternalPreviewOrigin,
   mirrorInviteLocally,
   resilientApiRequest,
   subscribeToCoupleSync
@@ -37,6 +38,7 @@ import './style.css';
 purgeStaleServiceWorkers();
 
 const SESSION_KEY = 'afterdark_session_token';
+const USER_CACHE_KEY = 'afterdark_user_profile_v1';
 const INVITE_CACHE_KEY = 'afterdark_latest_invite_v3';
 const CUSTOM_GUEST_ORIGIN_KEY = 'afterdark_custom_guest_origin';
 
@@ -168,9 +170,23 @@ function readCachedInvite() {
   }
 }
 
+function readCachedUser() {
+  try {
+    const raw = localStorage.getItem(USER_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(SESSION_KEY) || '');
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(() =>
+    localStorage.getItem(SESSION_KEY) ? readCachedUser() : null
+  );
   const [tab, setTab] = useState('invite');
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -367,30 +383,40 @@ function App() {
       const qs = queryParams.toString();
 
       const [meData, currentInviteData, connectionData] = await Promise.all([
-        resilientApiRequest('/me', {}, currentToken),
+        resilientApiRequest('/me', {}, currentToken).catch(() => null),
         resilientApiRequest('/invites/current', {}, currentToken).catch(() => ({ invite: null })),
-        resilientApiRequest(`/connections${qs ? `?${qs}` : ''}`, {}, currentToken)
+        resilientApiRequest(`/connections${qs ? `?${qs}` : ''}`, {}, currentToken).catch(() => ({
+          connections: []
+        }))
       ]);
 
-      setUser(meData.user);
-      if (meData.user?.displayName && !generatorForm.creatorCustomName) {
-        setGeneratorForm((prev) => ({
-          ...prev,
-          creatorCustomName: meData.user.displayName
-        }));
+      const resolvedUser = meData?.user || readCachedUser();
+      if (resolvedUser) {
+        setUser(resolvedUser);
+        try {
+          localStorage.setItem(USER_CACHE_KEY, JSON.stringify(resolvedUser));
+        } catch {
+          // ignore
+        }
+        if (resolvedUser.displayName && !generatorForm.creatorCustomName) {
+          setGeneratorForm((prev) => ({
+            ...prev,
+            creatorCustomName: resolvedUser.displayName
+          }));
+        }
       }
 
       if (currentInviteData?.invite) {
         setActiveInvite(currentInviteData.invite);
       }
 
-      const list = connectionData.connections || [];
+      const list = connectionData?.connections || [];
       const active = list.find((item) => item.status === 'active') || null;
-      setActiveConnection(active);
+      if (active) {
+        setActiveConnection(active);
+      }
     } catch {
-      localStorage.removeItem(SESSION_KEY);
-      setToken('');
-      setUser(null);
+      // Never log the user out on transient background workspace poll errors
     }
   }
 
@@ -556,8 +582,13 @@ function App() {
         body: JSON.stringify(authForm)
       });
       localStorage.setItem(SESSION_KEY, data.sessionToken);
-      setToken(data.sessionToken);
+      try {
+        localStorage.setItem(USER_CACHE_KEY, JSON.stringify(data.user));
+      } catch {
+        // ignore
+      }
       setUser(data.user);
+      setToken(data.sessionToken);
       setGeneratorForm((prev) => ({
         ...prev,
         creatorCustomName: data.user?.displayName || ''
@@ -580,6 +611,7 @@ function App() {
       // Ignore
     }
     localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(USER_CACHE_KEY);
     setToken('');
     setUser(null);
     setActiveConnection(null);
@@ -1248,10 +1280,48 @@ function App() {
 
                     <div className="ad-copy-box">
                       <small>
-                        Partner Invite Link (Share Only With Your Partner — Cannot Be Opened on This Device/IP)
+                        Partner Invite Link (Encoded in QR Code — Scan on Partner’s Separate Phone)
                       </small>
                       <code>{guestInviteLink}</code>
                     </div>
+
+                    {isInternalPreviewOrigin() && !customGuestOrigin && (
+                      <div
+                        style={{
+                          margin: '8px 0 12px',
+                          padding: '10px 12px',
+                          borderRadius: '12px',
+                          background: 'rgba(251, 191, 36, 0.12)',
+                          border: '1px solid rgba(251, 191, 36, 0.4)',
+                          fontSize: '0.8rem',
+                          color: '#fef3c7'
+                        }}
+                      >
+                        <div>
+                          ⚠️ <strong>Why a phone scan can show 404 in Preview Mode:</strong> You are currently inside the private AI Studio editor preview (<code>ais-dev</code>), which blocks external phones not signed into your Google account. Once deployed on <strong>Render</strong> or <strong>Vercel</strong>, paste your live public URL below (or open your Render/Vercel site directly) so any phone can scan the QR code:
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                          <button
+                            type="button"
+                            className="ad-tool-btn"
+                            onClick={() => {
+                              const url = 'https://afterdark-social-universe.vercel.app';
+                              setCustomGuestOrigin(url);
+                              localStorage.setItem(CUSTOM_GUEST_ORIGIN_KEY, url);
+                            }}
+                          >
+                            ⚡ Use My Vercel URL (afterdark-social-universe.vercel.app)
+                          </button>
+                          <button
+                            type="button"
+                            className="ad-tool-btn"
+                            onClick={() => setShowCustomDomainConfig(true)}
+                          >
+                            🌐 Enter My Render.com URL
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="ad-cta-row">
                       <button

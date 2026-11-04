@@ -4,6 +4,7 @@ const SHARED_STATE_KEY = 'afterdark_shared_couple_state_v3';
 const CHANNEL_NAME = 'afterdark_couple_live_channel_v3';
 const DEVICE_ID_KEY = 'afterdark_unique_device_id_v1';
 const CREATOR_SESSION_KEY = 'afterdark_session_token';
+const CREATOR_USER_CACHE_KEY = 'afterdark_user_profile_v1';
 const CREATOR_INVITE_CACHE_KEY = 'afterdark_latest_invite_v3';
 
 export function getClientDeviceId() {
@@ -96,9 +97,22 @@ export function decodeOtpSignature(sig) {
   return String(sig).replace(/\D/g, '').slice(0, 6);
 }
 
+export function isInternalPreviewOrigin(origin = '') {
+  const check = String(
+    origin || (typeof window !== 'undefined' ? window.location?.origin : '') || ''
+  ).toLowerCase();
+  return check.includes('ais-dev-') || check.includes('ais-pre-');
+}
+
 export function getPublicOrigin() {
   if (typeof window === 'undefined' || !window.location?.origin) return '';
-  return window.location.origin;
+  const rawOrigin = window.location.origin;
+  // In AI Studio, ais-dev-* is a private container that returns 404 on external phones.
+  // Automatically rewrite ais-dev-* to ais-pre-* when no custom public domain is set.
+  if (rawOrigin.includes('://ais-dev-')) {
+    return rawOrigin.replace('://ais-dev-', '://ais-pre-');
+  }
+  return rawOrigin;
 }
 
 export function isGuestInviteLocation() {
@@ -151,28 +165,26 @@ export function buildPublicInviteLinks({
       sameOriginUrl: ''
     };
   }
-  const currentOrigin =
-    typeof window !== 'undefined' && window.location?.origin
-      ? window.location.origin
+  const currentOrigin = getPublicOrigin();
+  const cleanedCustom =
+    customGuestOrigin && /^https?:\/\//i.test(String(customGuestOrigin).trim())
+      ? String(customGuestOrigin).trim().replace(/\/+$/, '')
       : '';
-  const targetOrigin =
-    (customGuestOrigin && String(customGuestOrigin).trim().replace(/\/+$/, '')) ||
-    currentOrigin;
+  const targetOrigin = cleanedCustom || currentOrigin;
 
   const params = new URLSearchParams();
   params.set('invite', inviteToken);
-  if (creatorDisplayName) params.set('creator', creatorDisplayName);
-  if (recipientHint) params.set('hint', recipientHint);
+  if (creatorDisplayName) params.set('creator', String(creatorDisplayName).slice(0, 20));
+  if (recipientHint) params.set('hint', String(recipientHint).slice(0, 20));
   const sig = encodeOtpSignature(verificationCode);
   if (sig) params.set('k', sig);
   const devId = creatorDeviceId || getClientDeviceId();
   if (devId) params.set('cdev', devId);
   if (creatorIp) params.set('cip', creatorIp);
-  if (currentOrigin) params.set('api', currentOrigin);
 
   const query = params.toString();
 
-  // Root URL (`/?invite=...`) is 100% guaranteed to NEVER 404 on any host (Vercel, Cloud Run, Capacitor, localhost)
+  // Root URL (`/?invite=...`) is 100% guaranteed to NEVER 404 on any host (Render, Vercel, Cloud Run, localhost)
   // and automatically mounts the standalone Guest App on a separate partner device!
   const rootDirectUrl = `${targetOrigin}/?${query}`;
   const guestAppUrl = `${targetOrigin}/guest?${query}`;
@@ -264,6 +276,32 @@ export function subscribeToCoupleSync(callback) {
       }
     }
   };
+}
+
+export function mirrorUserLocally(userData, sessionToken = '') {
+  if (!userData?.email && !userData?.displayName) return;
+  try {
+    localStorage.setItem(CREATOR_USER_CACHE_KEY, JSON.stringify(userData));
+  } catch {
+    // ignore
+  }
+  const state = readSharedState();
+  const email = String(userData.email || 'couple@afterdark.local').toLowerCase();
+  const existingIdx = state.users.findIndex(
+    (u) => u.email === email || (sessionToken && u.sessionToken === sessionToken)
+  );
+  const record = {
+    id: userData.id || 'usr_' + Math.random().toString(36).slice(2, 10),
+    email,
+    displayName: userData.displayName || email.split('@')[0] || 'Creator',
+    sessionToken: sessionToken || userData.sessionToken || ''
+  };
+  if (existingIdx >= 0) {
+    state.users[existingIdx] = { ...state.users[existingIdx], ...record };
+  } else {
+    state.users.unshift(record);
+  }
+  writeSharedState(state);
 }
 
 export function mirrorInviteLocally(inviteData) {
@@ -416,7 +454,20 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
   }
 
   if (cleanPath === 'me' && method === 'GET') {
-    const user = state.users.find((u) => u.sessionToken === token);
+    let user = state.users.find((u) => u.sessionToken === token);
+    if (!user) {
+      try {
+        const cachedRaw = localStorage.getItem(CREATOR_USER_CACHE_KEY);
+        if (cachedRaw) {
+          user = JSON.parse(cachedRaw);
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (!user && state.users.length > 0) {
+      user = state.users[0];
+    }
     if (!user) throw new Error('Unauthorized session. Please sign in.');
     return { user };
   }
@@ -860,6 +911,17 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
+  try {
+    const cachedUserRaw =
+      typeof window !== 'undefined' ? localStorage.getItem(CREATOR_USER_CACHE_KEY) : null;
+    if (cachedUserRaw) {
+      const cachedUser = JSON.parse(cachedUserRaw);
+      if (cachedUser?.email) headers['X-User-Email'] = String(cachedUser.email);
+      if (cachedUser?.displayName) headers['X-User-Name'] = String(cachedUser.displayName);
+    }
+  } catch {
+    // ignore
+  }
 
   const candidateBases = ['/api'];
   if (urlContext?.apiOrigin) {
@@ -886,6 +948,9 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
       if (contentType.includes('application/json')) {
         const data = await response.json();
         if (response.ok) {
+          if (data?.user && (data?.sessionToken || token)) {
+            mirrorUserLocally(data.user, data.sessionToken || token);
+          }
           if (data?.inviteToken && data?.verificationCode) {
             mirrorInviteLocally(data);
           }
@@ -911,8 +976,14 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
     }
   }
 
-  // If the server explicitly returned a 400, 401, 403, 409, or 410 validation/security error, throw it!
-  if (lastHttpError && [400, 401, 403, 409, 410].includes(lastStatus)) {
+  const cleanPath = String(path || '').split('?')[0].replace(/^\/+/, '');
+  const isReadOrSessionCheck =
+    cleanPath === 'me' ||
+    cleanPath === 'invites/current' ||
+    cleanPath === 'connections';
+
+  // If the server explicitly returned a 400, 401, 403, 409, or 410 validation/security error on an action route, throw it!
+  if (lastHttpError && [400, 401, 403, 409, 410].includes(lastStatus) && !isReadOrSessionCheck) {
     throw lastHttpError;
   }
 

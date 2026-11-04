@@ -351,7 +351,27 @@ class LocalDatabase {
 }
 
 let singletonDb = null;
-export function getLocalDatabase() {
+let mongoClientPromise = null;
+
+export async function getLocalDatabase() {
+  const mongoUri = String(process.env.MONGODB_URI || '').trim();
+  if (mongoUri) {
+    try {
+      if (!mongoClientPromise) {
+        const client = new MongoClient(mongoUri, {
+          serverSelectionTimeoutMS: 5000
+        });
+        mongoClientPromise = client.connect();
+      }
+      const connectedClient = await mongoClientPromise;
+      const dbName = String(process.env.MONGODB_DB || 'afterdark').trim() || 'afterdark';
+      return connectedClient.db(dbName);
+    } catch (err) {
+      console.warn('MongoDB connection failed, falling back to built-in LocalDatabase:', err?.message);
+      mongoClientPromise = null;
+    }
+  }
+
   if (!singletonDb) singletonDb = new LocalDatabase();
   singletonDb.load();
   return singletonDb;

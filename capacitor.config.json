@@ -3,7 +3,7 @@
   "appName": "AFTERDARK",
   "webDir": "dist",
   "server": {
-    "url": "https://ais-pre-uuczndxexn3f2ryx5z3t2o-857545814266.asia-southeast1.run.app",
+    "url": "https://afterdark-social-universe.vercel.app",
     "cleartext": false
   },
   "android": {
