@@ -105,6 +105,7 @@ export function isInternalPreviewOrigin(origin = '') {
 }
 
 const STABLE_PUBLIC_ORIGIN = 'https://afterdark-social-universe.vercel.app';
+const STABLE_GUEST_ORIGIN = 'https://afterdark-guest-connector.onrender.com';
 
 export function getPublicOrigin() {
   if (typeof window === 'undefined' || !window.location?.origin) {
@@ -179,7 +180,9 @@ export function buildPublicInviteLinks({
     customGuestOrigin && /^https?:\/\//i.test(String(customGuestOrigin).trim())
       ? String(customGuestOrigin).trim().replace(/\/+$/, '')
       : '';
-  const targetOrigin = cleanedCustom || currentOrigin;
+  // Keep the guest experience on its dedicated Render static site; its API is
+  // served by the stable AFTERDARK Social Universe Vercel project.
+  const targetOrigin = cleanedCustom || STABLE_GUEST_ORIGIN;
 
   const params = new URLSearchParams();
   params.set('invite', inviteToken);
@@ -191,6 +194,7 @@ export function buildPublicInviteLinks({
   if (devId) params.set('cdev', devId);
   if (creatorIp) params.set('cip', creatorIp);
 
+  params.set('api', STABLE_PUBLIC_ORIGIN);
   const query = params.toString();
 
   // Use the explicit /guest route so the app mounts GuestApp before the
@@ -933,7 +937,7 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
     // ignore
   }
 
-  const candidateBases = ['/api'];
+  const candidateBases = [];
   if (urlContext?.apiOrigin) {
     const cleanOrigin = String(urlContext.apiOrigin).replace(/\/+$/, '');
     if (
@@ -944,6 +948,12 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
       candidateBases.push(`${cleanOrigin}/api`);
     }
   }
+  // The Render guest connector is a static site and has no /api backend.
+  // Route guest requests to the shared Vercel Social Universe API instead.
+  if (typeof window !== 'undefined' && /(^|\\.)afterdark-guest-connector\\.onrender\\.com$/i.test(window.location.hostname)) {
+    candidateBases.push(`${STABLE_PUBLIC_ORIGIN}/api`);
+  }
+  candidateBases.push('/api');
 
   let lastHttpError = null;
   let lastStatus = 0;
