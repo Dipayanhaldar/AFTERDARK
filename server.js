@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import apiHandler from './api/[...route].js';
@@ -25,7 +26,11 @@ async function startServer() {
     }
   });
 
-  if (process.env.NODE_ENV !== 'production') {
+  const distPath = path.join(__dirname, 'dist');
+  const distIndex = path.join(distPath, 'index.html');
+  const useStaticDist = process.env.NODE_ENV === 'production' && fs.existsSync(distIndex);
+
+  if (!useStaticDist) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -50,10 +55,9 @@ async function startServer() {
 
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(__dirname, 'dist');
     app.use(express.static(distPath));
     app.use((_req, res) => {
-      res.status(200).sendFile(path.join(distPath, 'index.html'));
+      res.status(200).sendFile(distIndex);
     });
   }
 

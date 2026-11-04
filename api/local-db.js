@@ -1,11 +1,32 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { ObjectId } from 'mongodb';
+import { MongoClient, ObjectId } from 'mongodb';
 
 export { ObjectId };
 
-const DATA_DIR = path.resolve(process.cwd(), '.data');
-const DB_FILE = path.join(DATA_DIR, 'afterdark-db.json');
+function resolveWritableDbFile() {
+  const localDir = path.resolve(process.cwd(), '.data');
+  try {
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+    fs.accessSync(localDir, fs.constants.W_OK);
+    return { dir: localDir, file: path.join(localDir, 'afterdark-db.json') };
+  } catch {
+    const tmpDir = path.join(os.tmpdir(), 'afterdark-data');
+    try {
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+    } catch {
+      // ignore
+    }
+    return { dir: tmpDir, file: path.join(tmpDir, 'afterdark-db.json') };
+  }
+}
+
+const { dir: DATA_DIR, file: DB_FILE } = resolveWritableDbFile();
 
 function serializeValue(val) {
   if (val instanceof ObjectId) return { __type: 'ObjectId', value: val.toString() };
@@ -352,22 +373,33 @@ class LocalDatabase {
 
 let singletonDb = null;
 let mongoClientPromise = null;
+let mongoUnavailable = false;
+
+function isValidMongoUri(uri) {
+  if (!uri) return false;
+  if (!/^mongodb(\+srv)?:\/\//i.test(uri)) return false;
+  if (uri.includes('<') || uri.includes('>') || uri.includes('your-') || uri.includes('example')) {
+    return false;
+  }
+  return true;
+}
 
 export async function getLocalDatabase() {
   const mongoUri = String(process.env.MONGODB_URI || '').trim();
-  if (mongoUri) {
+  if (!mongoUnavailable && isValidMongoUri(mongoUri)) {
     try {
       if (!mongoClientPromise) {
         const client = new MongoClient(mongoUri, {
-          serverSelectionTimeoutMS: 5000
+          serverSelectionTimeoutMS: 3500,
+          connectTimeoutMS: 3500
         });
         mongoClientPromise = client.connect();
       }
       const connectedClient = await mongoClientPromise;
       const dbName = String(process.env.MONGODB_DB || 'afterdark').trim() || 'afterdark';
       return connectedClient.db(dbName);
-    } catch (err) {
-      console.warn('MongoDB connection failed, falling back to built-in LocalDatabase:', err?.message);
+    } catch {
+      mongoUnavailable = true;
       mongoClientPromise = null;
     }
   }
@@ -375,4 +407,10 @@ export async function getLocalDatabase() {
   if (!singletonDb) singletonDb = new LocalDatabase();
   singletonDb.load();
   return singletonDb;
+}
+
+export default function localDbNoopHandler(_req, res) {
+  res.statusCode = 200;
+  res.setHeader('Content-Type', 'application/json');
+  res.end(JSON.stringify({ ok: true }));
 }
