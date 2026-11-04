@@ -197,17 +197,17 @@ export function buildPublicInviteLinks({
   params.set('api', STABLE_PUBLIC_ORIGIN);
   const query = params.toString();
 
-  // Use the explicit /guest route so the app mounts GuestApp before the
-  // main dashboard. Vercel rewrites /guest to index.html; src/main.jsx
-  // detects the pathname and renders the standalone guest experience.
-  const guestAppUrl = `${targetOrigin}/guest?${query}`;
+  // The dedicated Render guest connector is a standalone static app whose
+  // root entrypoint always mounts GuestApp. Use / (not /guest) so Render's
+  // static host serves index.html without needing a rewrite rule.
   const rootDirectUrl = `${targetOrigin}/?${query}`;
+  const guestAppUrl = rootDirectUrl;
 
   return {
-    primaryUrl: guestAppUrl,
+    primaryUrl: rootDirectUrl,
     guestAppUrl,
     rootDirectUrl,
-    sameOriginUrl: guestAppUrl
+    sameOriginUrl: rootDirectUrl
   };
 }
 
