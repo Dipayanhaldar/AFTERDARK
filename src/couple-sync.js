@@ -104,14 +104,23 @@ export function isInternalPreviewOrigin(origin = '') {
   return check.includes('ais-dev-') || check.includes('ais-pre-');
 }
 
+const STABLE_PUBLIC_ORIGIN = 'https://afterdark-social-universe.vercel.app';
+
 export function getPublicOrigin() {
-  if (typeof window === 'undefined' || !window.location?.origin) return '';
+  if (typeof window === 'undefined' || !window.location?.origin) {
+    return STABLE_PUBLIC_ORIGIN;
+  }
   const rawOrigin = window.location.origin;
-  // In AI Studio, ais-dev-* is a private container that returns 404 on external phones.
-  // Automatically rewrite ais-dev-* to ais-pre-* when no custom public domain is set.
+  // AI Studio development containers are private and cannot be opened by invitees.
   if (rawOrigin.includes('://ais-dev-')) {
     return rawOrigin.replace('://ais-dev-', '://ais-pre-');
   }
+  // Vercel deployment URLs are immutable per build. Always use the verified
+  // project domain for shareable invitations so new deployments do not stale links.
+  if (/\.vercel\.app$/i.test(new URL(rawOrigin).hostname)) {
+    return STABLE_PUBLIC_ORIGIN;
+  }
+  // Keep user-configured custom domains and local development origins intact.
   return rawOrigin;
 }
 
