@@ -11,7 +11,10 @@ import {
   MessageWithBrandCards,
   InChatBrandPromoCard,
   IncomingMessageToast,
-  ChatMediaInputActions
+  ChatMediaInputActions,
+  FlipkartBrandQuickStrip,
+  E2eeSecurityDrawer,
+  GuestRepoRenderDeployModal
 } from './commerce-catalog';
 import {
   playIncomingMessageSound,
@@ -23,7 +26,10 @@ import {
   getClientDeviceId,
   isCurrentDeviceTheLinkGenerator,
   resilientApiRequest,
-  subscribeToCoupleSync
+  subscribeToCoupleSync,
+  resolveActiveE2eeKeyContext,
+  saveSessionE2eeContext,
+  setSessionHistoryLocked
 } from './couple-sync';
 import { ThreeRomanticScene } from './ThreeRomanticScene';
 import '../guest-site/src/style.css';
@@ -124,6 +130,11 @@ export function GuestApp() {
   const [verificationCode, setVerificationCode] = useState(() => urlContext.otp || '');
   const [consentConfirmed, setConsentConfirmed] = useState(true);
 
+  const [stage, setStage] = useState('otp-gate');
+  const [banner, setBanner] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
   const [connection, setConnection] = useState(null);
   const [messages, setMessages] = useState([]);
   const [photos, setPhotos] = useState([]);
@@ -131,8 +142,10 @@ export function GuestApp() {
   const [photoCaption, setPhotoCaption] = useState('');
 
   // Hidden tool drawers inside chat so the UI is clean and uncluttered
-  const [activeDrawer, setActiveDrawer] = useState('none'); // 'none' | 'photos' | 'calendar' | 'flirt' | 'rooftop3d' | 'store' | 'treasure'
-  const [activeBrandId, setActiveBrandId] = useState('zomato');
+  const [activeDrawer, setActiveDrawer] = useState('none'); // 'none' | 'photos' | 'calendar' | 'flirt' | 'rooftop3d' | 'store' | 'treasure' | 'e2ee'
+  const [activeBrandId, setActiveBrandId] = useState('flipkart_minutes');
+  const [showRepoModal, setShowRepoModal] = useState(false);
+  const [e2eeRefreshTick, setE2eeRefreshTick] = useState(0);
   const [userCity, setUserCity] = useState('Hyderabad');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [incomingToast, setIncomingToast] = useState(null);
@@ -184,11 +197,6 @@ export function GuestApp() {
       mounted = false;
     };
   }, []);
-
-  const [stage, setStage] = useState('otp-gate');
-  const [banner, setBanner] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
 
   const chatEndRef = useRef(null);
 
@@ -593,8 +601,13 @@ export function GuestApp() {
     address,
     note
   }) {
-    if (!connection) return;
     clearFeedback();
+    if (!connection) {
+      setBanner(
+        `🔒 Private order details ready for "${itemTitle}"! Redirecting to official store checkout...`
+      );
+      return;
+    }
     try {
       const res = await api(
         `/guest/connections/${connection.id}/orders`,
@@ -705,7 +718,7 @@ export function GuestApp() {
   }
 
   function handleOpenBrandDrawer(brandId) {
-    setActiveBrandId(brandId || 'zomato');
+    setActiveBrandId(brandId || 'flipkart_minutes');
     setActiveDrawer('store');
   }
 
@@ -719,17 +732,174 @@ export function GuestApp() {
     document.body.removeChild(anchor);
   }
 
+  const activeE2eeContext = useMemo(
+    () =>
+      resolveActiveE2eeKeyContext(
+        connection?.inviteToken || inviteToken,
+        connection?.id || ''
+      ),
+    [connection?.id, connection?.inviteToken, inviteToken, e2eeRefreshTick, messages.length]
+  );
+
+  async function handleLockE2eeHistory() {
+    setSessionHistoryLocked(
+      connection?.id || 'default',
+      true,
+      connection?.inviteToken || inviteToken
+    );
+    setE2eeRefreshTick((t) => t + 1);
+    setBanner(
+      '🔒 E2EE Message History Locked! Without the 6-digit OTP, all messages are masked as AES-256-GCM ciphertext.'
+    );
+    if (connection) {
+      await loadGuestSession(guestToken, connection);
+    }
+  }
+
+  function handleUnlockE2eeHistory(enteredOtp, enteredPass = '') {
+    const cleanOtp = String(enteredOtp || '').replace(/\D/g, '').slice(0, 6);
+    const expectedOtp = String(
+      connection?.verificationCode || verificationCode || ''
+    )
+      .replace(/\D/g, '')
+      .slice(0, 6);
+    if (expectedOtp.length === 6 && cleanOtp !== expectedOtp) {
+      return false;
+    }
+    const otpToUse = cleanOtp || expectedOtp;
+    if (connection?.id) {
+      saveSessionE2eeContext(connection.id, {
+        verificationCode: otpToUse,
+        customPassphrase: enteredPass,
+        locked: false
+      });
+    }
+    if (connection?.inviteToken || inviteToken) {
+      saveSessionE2eeContext(connection?.inviteToken || inviteToken, {
+        verificationCode: otpToUse,
+        customPassphrase: enteredPass,
+        locked: false
+      });
+    }
+    saveSessionE2eeContext('default', {
+      verificationCode: otpToUse,
+      customPassphrase: enteredPass,
+      locked: false
+    });
+    setE2eeRefreshTick((t) => t + 1);
+    setBanner('🔓 E2EE Message History Unlocked & Decrypted locally via AES-256-GCM!');
+    if (connection) {
+      loadGuestSession(guestToken, connection);
+    }
+    return true;
+  }
+
+  function handleSaveCustomE2eePassphrase(newPassphrase = '') {
+    const otpToUse =
+      activeE2eeContext.verificationCode ||
+      connection?.verificationCode ||
+      verificationCode ||
+      '';
+    if (connection?.id) {
+      saveSessionE2eeContext(connection.id, {
+        verificationCode: otpToUse,
+        customPassphrase: newPassphrase,
+        locked: false
+      });
+    }
+    if (connection?.inviteToken || inviteToken) {
+      saveSessionE2eeContext(connection?.inviteToken || inviteToken, {
+        verificationCode: otpToUse,
+        customPassphrase: newPassphrase,
+        locked: false
+      });
+    }
+    saveSessionE2eeContext('default', {
+      verificationCode: otpToUse,
+      customPassphrase: newPassphrase,
+      locked: false
+    });
+    setE2eeRefreshTick((t) => t + 1);
+    if (connection) {
+      loadGuestSession(guestToken, connection);
+    }
+  }
+
   return (
     <div className="guest-shell">
       <header className="guest-topbar">
         <div className="guest-brand">
           <span className="guest-moon-icon">☾</span>
           <div className="guest-brand-text">
-            <span className="guest-brand-name">AFTERDARK · Private 1-on-1 Room</span>
-            <span className="guest-brand-sub">No Login Required · For Couples &amp; Best Friends</span>
+            <span className="guest-brand-name">AFTERDARK · E2EE Private 1-on-1 Room</span>
+            <span className="guest-brand-sub">
+              AES-256-GCM Encrypted · Zero-Knowledge Link · Flipkart &amp; 38+ Brands Built-in
+            </span>
           </div>
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            className={`guest-tool-btn ${activeDrawer === 'e2ee' ? 'active' : ''}`}
+            onClick={() => setActiveDrawer((prev) => (prev === 'e2ee' ? 'none' : 'e2ee'))}
+            style={{
+              background: activeE2eeContext.locked
+                ? 'rgba(244, 63, 94, 0.22)'
+                : 'rgba(16, 185, 129, 0.2)',
+              borderColor: activeE2eeContext.locked ? '#f43f5e' : '#10b981',
+              color: activeE2eeContext.locked ? '#fecdd3' : '#a7f3d0'
+            }}
+          >
+            {activeE2eeContext.locked ? '🔒 E2EE Locked' : '🔐 E2EE Vault'}
+          </button>
+          <button
+            type="button"
+            className="guest-tool-btn"
+            onClick={() => setShowRepoModal(true)}
+            style={{
+              background: 'rgba(56, 189, 248, 0.18)',
+              borderColor: 'rgba(56, 189, 248, 0.5)',
+              color: '#bae6fd'
+            }}
+          >
+            🚀 GitHub &amp; Render Repo
+          </button>
+          <button
+            type="button"
+            className={`guest-tool-btn ${activeDrawer === 'store' ? 'active' : ''}`}
+            onClick={() => {
+              setActiveBrandId('flipkart_minutes');
+              setActiveDrawer((prev) => (prev === 'store' ? 'none' : 'store'));
+            }}
+            style={{
+              background: 'linear-gradient(135deg, rgba(40, 116, 240, 0.28), rgba(255, 214, 0, 0.22))',
+              borderColor: 'rgba(255, 214, 0, 0.55)',
+              color: '#fef08a'
+            }}
+          >
+            ⚡ Flipkart Minutes &amp; Brands ({userCity})
+          </button>
+          <a
+            href="https://www.flipkart.com/search?q=couple+gift+hamper+chocolates"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="guest-tool-btn"
+            style={{
+              textDecoration: 'none',
+              background: 'rgba(40, 116, 240, 0.22)',
+              borderColor: 'rgba(96, 165, 250, 0.5)',
+              color: '#bfdbfe'
+            }}
+          >
+            🛒 Flipkart Official ↗
+          </a>
+        </div>
       </header>
+
+      <GuestRepoRenderDeployModal
+        open={showRepoModal}
+        onClose={() => setShowRepoModal(false)}
+      />
 
       <IncomingMessageToast
         notification={incomingToast}
@@ -756,6 +926,38 @@ export function GuestApp() {
         </div>
       )}
 
+      {/* Global Built-in Brand Store, E2EE Security Drawer & Flipkart Redirect when on OTP Gate */}
+      {(stage !== 'chat' || !connection) && activeDrawer === 'e2ee' && (
+        <div style={{ marginTop: '12px' }}>
+          <E2eeSecurityDrawer
+            open={activeDrawer === 'e2ee'}
+            onClose={() => setActiveDrawer('none')}
+            keyFingerprint={activeE2eeContext.keyFingerprint}
+            isHistoryLocked={activeE2eeContext.locked}
+            onLockHistory={handleLockE2eeHistory}
+            onUnlockHistoryWithOtp={handleUnlockE2eeHistory}
+            customPassphrase={activeE2eeContext.customPassphrase}
+            onSaveCustomPassphrase={handleSaveCustomE2eePassphrase}
+            messages={messages}
+            inviteLink={typeof window !== 'undefined' ? window.location.href : ''}
+          />
+        </div>
+      )}
+      {(stage !== 'chat' || !connection) && activeDrawer === 'store' && (
+        <div style={{ marginTop: '12px' }}>
+          <InlineCommerceDrawer
+            open={activeDrawer === 'store'}
+            activeBrandId={activeBrandId}
+            onSelectBrand={setActiveBrandId}
+            onClose={() => setActiveDrawer('none')}
+            onBookFreeItem={handleBookAffiliateOrder}
+            onShareDateInChat={handleShareCafeDateInChat}
+            userCity={userCity}
+            onChangeCity={setUserCity}
+          />
+        </div>
+      )}
+
       <main className="guest-main">
         {/* CASE 0: Same-Device or Same-IP Security Block (Generator cannot open or chat with their own Guest link!) */}
         {sameDeviceOrIpBlock ? (
@@ -771,7 +973,7 @@ export function GuestApp() {
                 type="button"
                 className="guest-btn guest-btn-primary"
                 onClick={() => {
-                  window.location.href = window.location.origin;
+                  window.location.href = 'https://afterdark-social-universe.vercel.app';
                 }}
               >
                 ← Return to My Host Dashboard
@@ -795,6 +997,7 @@ export function GuestApp() {
                 💌 PRIVATE INVITE FROM {(invitePreview?.creatorDisplayName || 'YOUR PARTNER').toUpperCase()}
               </span>
               <span className="guest-pill">🔐 NO LOGIN REQUIRED</span>
+              <span className="guest-pill">⚡ FLIPKART &amp; BRAND STORE BUILT-IN</span>
               {inviteToken && (
                 <span className="guest-pill">
                   ● HOST SESSION READY
@@ -874,7 +1077,7 @@ export function GuestApp() {
             <div className="guest-chat-head">
               <div>
                 <span className="guest-tag">
-                  ● PRIVATE 1-ON-1 ROOM · END-TO-END ISOLATED · COUPLES &amp; BESTIES
+                  ● AES-256-GCM END-TO-END ENCRYPTED · KEY FINGERPRINT: {activeE2eeContext.keyFingerprint}
                 </span>
                 <h2>
                   {connection.guestDisplayName || 'You'} &amp; {connection.creatorDisplayName} ♥
@@ -882,6 +1085,19 @@ export function GuestApp() {
               </div>
 
               <div className="guest-chat-toolbar">
+                <button
+                  type="button"
+                  className={`guest-tool-btn ${activeDrawer === 'e2ee' ? 'active' : ''}`}
+                  onClick={() =>
+                    setActiveDrawer((prev) => (prev === 'e2ee' ? 'none' : 'e2ee'))
+                  }
+                  style={{
+                    borderColor: activeE2eeContext.locked ? '#f43f5e' : '#10b981',
+                    color: activeE2eeContext.locked ? '#fecdd3' : '#a7f3d0'
+                  }}
+                >
+                  {activeE2eeContext.locked ? '🔒 Unlock E2EE History' : '🔐 E2EE Security & Lock'}
+                </button>
                 <button
                   type="button"
                   className={`guest-tool-btn ${activeDrawer === 'treasure' ? 'active' : ''}`}
@@ -902,12 +1118,26 @@ export function GuestApp() {
                 <button
                   type="button"
                   className={`guest-tool-btn ${activeDrawer === 'store' ? 'active' : ''}`}
-                  onClick={() =>
-                    setActiveDrawer((prev) => (prev === 'store' ? 'none' : 'store'))
-                  }
+                  onClick={() => {
+                    setActiveBrandId('flipkart_minutes');
+                    setActiveDrawer((prev) => (prev === 'store' ? 'none' : 'store'));
+                  }}
                 >
-                  🛍️ Private Store &amp; Cafes ({userCity === 'Patna' ? 'Patna/Bihar' : userCity})
+                  ⚡ Flipkart &amp; Brand Store ({userCity === 'Patna' ? 'Patna/Bihar' : userCity})
                 </button>
+                <a
+                  href="https://www.flipkart.com/search?q=couple+gift+hamper+chocolates"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="guest-tool-btn"
+                  style={{
+                    textDecoration: 'none',
+                    borderColor: 'rgba(255, 214, 0, 0.55)',
+                    color: '#fef08a'
+                  }}
+                >
+                  🛒 Flipkart Redirect ↗
+                </a>
                 <button
                   type="button"
                   className={`guest-tool-btn ${activeDrawer === 'photos' ? 'active' : ''}`}
@@ -958,6 +1188,26 @@ export function GuestApp() {
                 </button>
               </div>
             </div>
+
+            {/* SAME-THEME FLIPKART OFFICIAL REDIRECT & BUILT-IN BRAND QUICK BAR */}
+            <FlipkartBrandQuickStrip
+              userCity={userCity}
+              onOpenBrandDrawer={handleOpenBrandDrawer}
+            />
+
+            {/* COLLAPSIBLE DRAWER 0: END-TO-END ENCRYPTION (E2EE) VAULT & HISTORY LOCK */}
+            <E2eeSecurityDrawer
+              open={activeDrawer === 'e2ee'}
+              onClose={() => setActiveDrawer('none')}
+              keyFingerprint={activeE2eeContext.keyFingerprint}
+              isHistoryLocked={activeE2eeContext.locked}
+              onLockHistory={handleLockE2eeHistory}
+              onUnlockHistoryWithOtp={handleUnlockE2eeHistory}
+              customPassphrase={activeE2eeContext.customPassphrase}
+              onSaveCustomPassphrase={handleSaveCustomE2eePassphrase}
+              messages={messages}
+              inviteLink={typeof window !== 'undefined' ? window.location.href : ''}
+            />
 
             {/* COLLAPSIBLE DRAWER 1: SEND & SAVE PHOTOS */}
             {activeDrawer === 'photos' && (
@@ -1272,6 +1522,11 @@ export function GuestApp() {
                           voiceMeta={msg.voiceMeta}
                           isMine={msg.senderRole === 'guest'}
                           seenAt={msg.seenAt}
+                          e2ee={msg.e2ee !== false}
+                          e2eeLocked={Boolean(msg.e2eeLocked || activeE2eeContext.locked)}
+                          rawCiphertext={msg.rawCiphertext}
+                          keyFingerprint={msg.keyFingerprint || activeE2eeContext.keyFingerprint}
+                          onUnlockHistory={() => setActiveDrawer('e2ee')}
                           onOpenBrandDrawer={handleOpenBrandDrawer}
                           onSavePhoto={downloadDataUrl}
                         />

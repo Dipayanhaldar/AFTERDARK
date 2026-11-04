@@ -14,7 +14,10 @@ import {
   MessageWithBrandCards,
   InChatBrandPromoCard,
   IncomingMessageToast,
-  ChatMediaInputActions
+  ChatMediaInputActions,
+  FlipkartBrandQuickStrip,
+  E2eeSecurityDrawer,
+  GuestRepoRenderDeployModal
 } from './commerce-catalog';
 import {
   playIncomingMessageSound,
@@ -29,7 +32,11 @@ import {
   isInternalPreviewOrigin,
   mirrorInviteLocally,
   resilientApiRequest,
-  subscribeToCoupleSync
+  subscribeToCoupleSync,
+  resolveActiveE2eeKeyContext,
+  saveSessionE2eeContext,
+  setSessionHistoryLocked,
+  deriveE2eeFingerprint
 } from './couple-sync';
 import { GuestApp } from './GuestApp';
 import { ThreeRomanticScene } from './ThreeRomanticScene';
@@ -203,9 +210,17 @@ function App() {
   const [activeConnection, setActiveConnection] = useState(null);
   const [activeInvite, setActiveInvite] = useState(() => readCachedInvite());
 
-  const [customGuestOrigin, setCustomGuestOrigin] = useState(
-    () => localStorage.getItem(CUSTOM_GUEST_ORIGIN_KEY) || ''
-  );
+  const [customGuestOrigin, setCustomGuestOrigin] = useState(() => {
+    const saved = localStorage.getItem(CUSTOM_GUEST_ORIGIN_KEY) || '';
+    if (
+      isInternalPreviewOrigin(saved) ||
+      saved.includes('afterdark-social-universe.vercel.app')
+    ) {
+      localStorage.removeItem(CUSTOM_GUEST_ORIGIN_KEY);
+      return 'https://afterdark-guest-connector.onrender.com';
+    }
+    return saved || 'https://afterdark-guest-connector.onrender.com';
+  });
   const [showCustomDomainConfig, setShowCustomDomainConfig] = useState(false);
 
   // Single-Invite Generator Form (only accessible when NO invite is active)
@@ -228,8 +243,10 @@ function App() {
   const [photoCaption, setPhotoCaption] = useState('');
 
   // Collapsible drawers inside chat so nothing is clumsy or expanded unnecessarily
-  const [activeChatDrawer, setActiveChatDrawer] = useState('none'); // 'none' | 'photos' | 'calendar' | 'rooftop3d' | 'flirt' | 'store' | 'treasure'
+  const [activeChatDrawer, setActiveChatDrawer] = useState('none'); // 'none' | 'photos' | 'calendar' | 'rooftop3d' | 'flirt' | 'store' | 'treasure' | 'e2ee'
   const [activeBrandId, setActiveBrandId] = useState('flipkart_minutes');
+  const [showRepoModal, setShowRepoModal] = useState(false);
+  const [e2eeRefreshTick, setE2eeRefreshTick] = useState(0);
   const [userCity, setUserCity] = useState('Hyderabad');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [incomingToast, setIncomingToast] = useState(null);
@@ -947,6 +964,106 @@ function App() {
     document.body.appendChild && document.body.removeChild(anchor);
   }
 
+  const activeE2eeContext = useMemo(
+    () =>
+      resolveActiveE2eeKeyContext(
+        activeInvite?.inviteToken || activeConnection?.inviteToken || '',
+        activeConnection?.id || ''
+      ),
+    [
+      activeInvite?.inviteToken,
+      activeInvite?.verificationCode,
+      activeConnection?.id,
+      activeConnection?.inviteToken,
+      e2eeRefreshTick,
+      messages.length
+    ]
+  );
+
+  async function handleLockE2eeHistory() {
+    setSessionHistoryLocked(
+      activeConnection?.id || 'default',
+      true,
+      activeInvite?.inviteToken || activeConnection?.inviteToken || ''
+    );
+    setE2eeRefreshTick((t) => t + 1);
+    setStatusMessage(
+      '🔒 E2EE Message History Locked! Without the 6-digit OTP, all messages are masked as AES-256-GCM ciphertext.'
+    );
+    if (activeConnection) {
+      await loadConnectionDetails(activeConnection, token);
+    }
+  }
+
+  function handleUnlockE2eeHistory(enteredOtp, enteredPass = '') {
+    const cleanOtp = String(enteredOtp || '').replace(/\D/g, '').slice(0, 6);
+    const expectedOtp = String(
+      activeInvite?.verificationCode || activeConnection?.verificationCode || ''
+    )
+      .replace(/\D/g, '')
+      .slice(0, 6);
+    if (expectedOtp.length === 6 && cleanOtp !== expectedOtp) {
+      return false;
+    }
+    const otpToUse = cleanOtp || expectedOtp;
+    if (activeConnection?.id) {
+      saveSessionE2eeContext(activeConnection.id, {
+        verificationCode: otpToUse,
+        customPassphrase: enteredPass,
+        locked: false
+      });
+    }
+    if (activeInvite?.inviteToken || activeConnection?.inviteToken) {
+      saveSessionE2eeContext(activeInvite?.inviteToken || activeConnection?.inviteToken, {
+        verificationCode: otpToUse,
+        customPassphrase: enteredPass,
+        locked: false
+      });
+    }
+    saveSessionE2eeContext('default', {
+      verificationCode: otpToUse,
+      customPassphrase: enteredPass,
+      locked: false
+    });
+    setE2eeRefreshTick((t) => t + 1);
+    setStatusMessage('🔓 E2EE Message History Unlocked & Decrypted locally via AES-256-GCM!');
+    if (activeConnection) {
+      loadConnectionDetails(activeConnection, token);
+    }
+    return true;
+  }
+
+  function handleSaveCustomE2eePassphrase(newPassphrase = '') {
+    const otpToUse =
+      activeE2eeContext.verificationCode ||
+      activeInvite?.verificationCode ||
+      activeConnection?.verificationCode ||
+      '';
+    if (activeConnection?.id) {
+      saveSessionE2eeContext(activeConnection.id, {
+        verificationCode: otpToUse,
+        customPassphrase: newPassphrase,
+        locked: false
+      });
+    }
+    if (activeInvite?.inviteToken || activeConnection?.inviteToken) {
+      saveSessionE2eeContext(activeInvite?.inviteToken || activeConnection?.inviteToken, {
+        verificationCode: otpToUse,
+        customPassphrase: newPassphrase,
+        locked: false
+      });
+    }
+    saveSessionE2eeContext('default', {
+      verificationCode: otpToUse,
+      customPassphrase: newPassphrase,
+      locked: false
+    });
+    setE2eeRefreshTick((t) => t + 1);
+    if (activeConnection) {
+      loadConnectionDetails(activeConnection, token);
+    }
+  }
+
   return (
     <div className="ad-shell">
       <div className="ad-ambient ad-ambient-one" />
@@ -958,13 +1075,24 @@ function App() {
           <div>
             <p className="ad-brand-title">AFTERDARK</p>
             <p className="ad-brand-subtitle">
-              One-to-One Private Couple Link · Encrypted OTP &amp; QR Room
+              AES-256-GCM E2EE Couple Room · Zero-Knowledge Guest Link · Render Auto-Deploy Ready
             </p>
           </div>
         </div>
 
         {/* Clean Navigation: Once signed in, never show Sign-In again, and never mix the Guest Site into the Main Site */}
         <nav className="ad-nav" aria-label="Creator Workspace Navigation">
+          <button
+            type="button"
+            onClick={() => setShowRepoModal(true)}
+            style={{
+              background: 'rgba(56, 189, 248, 0.16)',
+              border: '1px solid rgba(56, 189, 248, 0.5)',
+              color: '#bae6fd'
+            }}
+          >
+            🚀 Separate GitHub &amp; Render Repo
+          </button>
           {user && (
             <>
               <button
@@ -993,6 +1121,11 @@ function App() {
           )}
         </nav>
       </header>
+
+      <GuestRepoRenderDeployModal
+        open={showRepoModal}
+        onClose={() => setShowRepoModal(false)}
+      />
 
       <IncomingMessageToast
         notification={incomingToast}
@@ -1280,7 +1413,8 @@ function App() {
 
                     <div className="ad-copy-box">
                       <small>
-                        Partner Invite Link (Encoded in QR Code — Scan on Partner’s Separate Phone)
+                        Zero-Knowledge E2EE Partner Invite Link (SHA-256 Commitment <code>k=ad1_...</code> · Key Fingerprint:{' '}
+                        <strong>{deriveE2eeFingerprint(activeInvite.verificationCode)}</strong>)
                       </small>
                       <code>{guestInviteLink}</code>
                     </div>
@@ -1298,26 +1432,26 @@ function App() {
                         }}
                       >
                         <div>
-                          ⚠️ <strong>Why a phone scan can show 404 in Preview Mode:</strong> You are currently inside the private AI Studio editor preview (<code>ais-dev</code>), which blocks external phones not signed into your Google account. Once deployed on <strong>Render</strong> or <strong>Vercel</strong>, paste your live public URL below (or open your Render/Vercel site directly) so any phone can scan the QR code:
+                          ⚠️ <strong>Guest Connector Domain:</strong> Set to your Render Guest Connector site so scanning the QR code opens the dedicated Guest App directly:
                         </div>
                         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
                           <button
                             type="button"
                             className="ad-tool-btn"
                             onClick={() => {
-                              const url = 'https://afterdark-social-universe.vercel.app';
+                              const url = 'https://afterdark-guest-connector.onrender.com';
                               setCustomGuestOrigin(url);
                               localStorage.setItem(CUSTOM_GUEST_ORIGIN_KEY, url);
                             }}
                           >
-                            ⚡ Use My Vercel URL (afterdark-social-universe.vercel.app)
+                            ⚡ Use Render Guest Connector (afterdark-guest-connector.onrender.com)
                           </button>
                           <button
                             type="button"
                             className="ad-tool-btn"
                             onClick={() => setShowCustomDomainConfig(true)}
                           >
-                            🌐 Enter My Render.com URL
+                            🌐 Custom Guest URL
                           </button>
                         </div>
                       </div>
@@ -1355,7 +1489,7 @@ function App() {
                         className="ad-btn ad-btn-secondary"
                         onClick={() => setShowCustomDomainConfig((prev) => !prev)}
                       >
-                        ⚙️ Custom Second App Domain
+                        ⚙️ Guest Connector Domain
                       </button>
 
                       {activeConnection?.status === 'active' && (
@@ -1381,7 +1515,7 @@ function App() {
                     {showCustomDomainConfig && (
                       <div className="ad-collapsible-drawer" style={{ marginTop: 12 }}>
                         <div className="ad-drawer-head">
-                          <strong>🌐 Custom Second App Base URL (Optional)</strong>
+                          <strong>🌐 Guest Connector Base URL (Render)</strong>
                           <button
                             type="button"
                             className="ad-btn-close"
@@ -1391,12 +1525,12 @@ function App() {
                           </button>
                         </div>
                         <p className="ad-muted" style={{ fontSize: '0.84rem', margin: '4px 0 8px' }}>
-                          Leave blank to use this domain automatically (guaranteed zero 404). Or enter a separate deployed Guest App URL if you hosted <code>guest-site</code> separately:
+                          Defaults to <code>https://afterdark-guest-connector.onrender.com</code> so scanning the QR code opens your dedicated Render Guest Connector site:
                         </p>
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <input
                             type="url"
-                            placeholder="https://your-guest-app.vercel.app (leave empty for default)"
+                            placeholder="https://afterdark-guest-connector.onrender.com"
                             value={customGuestOrigin}
                             onChange={(e) => {
                               const val = e.target.value;
@@ -1405,18 +1539,17 @@ function App() {
                             }}
                             style={{ flex: 1 }}
                           />
-                          {customGuestOrigin && (
-                            <button
-                              type="button"
-                              className="ad-btn ad-btn-secondary"
-                              onClick={() => {
-                                setCustomGuestOrigin('');
-                                localStorage.removeItem(CUSTOM_GUEST_ORIGIN_KEY);
-                              }}
-                            >
-                              Reset to Default
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className="ad-btn ad-btn-secondary"
+                            onClick={() => {
+                              const defaultRenderUrl = 'https://afterdark-guest-connector.onrender.com';
+                              setCustomGuestOrigin(defaultRenderUrl);
+                              localStorage.setItem(CUSTOM_GUEST_ORIGIN_KEY, defaultRenderUrl);
+                            }}
+                          >
+                            Reset to Render Default
+                          </button>
                         </div>
                       </div>
                     )}
@@ -1520,7 +1653,7 @@ function App() {
                 <div className="ad-chat-header">
                   <div>
                     <span className="ad-tag">
-                      ● PRIVATE 1-ON-1 ROOM · END-TO-END ISOLATED · COUPLES &amp; BESTIES
+                      ● AES-256-GCM END-TO-END ENCRYPTED · KEY FINGERPRINT: {activeE2eeContext.keyFingerprint}
                     </span>
                     <h2>
                       {activeInvite?.creatorCustomName || user.displayName} &amp;{' '}
@@ -1529,6 +1662,19 @@ function App() {
                   </div>
 
                   <div className="ad-chat-toolbar">
+                    <button
+                      type="button"
+                      className={`ad-tool-btn ${activeChatDrawer === 'e2ee' ? 'active' : ''}`}
+                      onClick={() =>
+                        setActiveChatDrawer((prev) => (prev === 'e2ee' ? 'none' : 'e2ee'))
+                      }
+                      style={{
+                        borderColor: activeE2eeContext.locked ? '#f43f5e' : '#10b981',
+                        color: activeE2eeContext.locked ? '#fecdd3' : '#a7f3d0'
+                      }}
+                    >
+                      {activeE2eeContext.locked ? '🔒 Unlock E2EE History' : '🔐 E2EE Security & Lock'}
+                    </button>
                     <button
                       type="button"
                       className={`ad-tool-btn ${activeChatDrawer === 'treasure' ? 'active' : ''}`}
@@ -1616,6 +1762,26 @@ function App() {
                     </button>
                   </div>
                 </div>
+
+                {/* SAME-THEME FLIPKART OFFICIAL REDIRECT & BUILT-IN BRAND QUICK BAR */}
+                <FlipkartBrandQuickStrip
+                  userCity={userCity}
+                  onOpenBrandDrawer={handleOpenBrandDrawer}
+                />
+
+                {/* COLLAPSIBLE DRAWER 0: END-TO-END ENCRYPTION (E2EE) VAULT & HISTORY LOCK */}
+                <E2eeSecurityDrawer
+                  open={activeChatDrawer === 'e2ee'}
+                  onClose={() => setActiveChatDrawer('none')}
+                  keyFingerprint={activeE2eeContext.keyFingerprint}
+                  isHistoryLocked={activeE2eeContext.locked}
+                  onLockHistory={handleLockE2eeHistory}
+                  onUnlockHistoryWithOtp={handleUnlockE2eeHistory}
+                  customPassphrase={activeE2eeContext.customPassphrase}
+                  onSaveCustomPassphrase={handleSaveCustomE2eePassphrase}
+                  messages={messages}
+                  inviteLink={guestInviteLink}
+                />
 
                 {/* COLLAPSIBLE DRAWER 1: SEND & SAVE PHOTOS */}
                 {activeChatDrawer === 'photos' && (
@@ -1935,6 +2101,11 @@ function App() {
                               voiceMeta={msg.voiceMeta}
                               isMine={msg.senderRole === 'creator'}
                               seenAt={msg.seenAt}
+                              e2ee={msg.e2ee !== false}
+                              e2eeLocked={Boolean(msg.e2eeLocked || activeE2eeContext.locked)}
+                              rawCiphertext={msg.rawCiphertext}
+                              keyFingerprint={msg.keyFingerprint || activeE2eeContext.keyFingerprint}
+                              onUnlockHistory={() => setActiveChatDrawer('e2ee')}
                               onOpenBrandDrawer={handleOpenBrandDrawer}
                               onSavePhoto={downloadDataUrl}
                             />

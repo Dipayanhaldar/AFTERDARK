@@ -1,0 +1,71 @@
+name: Sync Standalone Guest Repo & Render Auto-Deploy
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "guest-site/**"
+      - "src/**"
+      - ".github/workflows/guest-repo-autodeploy.yml"
+  workflow_dispatch:
+    inputs:
+      target_guest_repo:
+        description: "Target GitHub repository (e.g. Dipayanhaldar/afterdark-guest-connector)"
+        required: false
+        default: "Dipayanhaldar/afterdark-guest-connector"
+
+jobs:
+  build-and-sync-guest-repo:
+    name: Build Standalone Guest Chat & Sync to GitHub / Render
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install & Build Standalone Guest Repository (guest-site)
+        working-directory: ./guest-site
+        run: |
+          npm install
+          npm run build
+
+      - name: Upload Standalone Guest Repo Bundle Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: afterdark-guest-connector-repo
+          path: |
+            guest-site/
+            !guest-site/node_modules/
+
+      - name: Push guest-site/ subtree to separate GitHub repository (if GUEST_REPO_PAT is set)
+        env:
+          GUEST_REPO_PAT: ${{ secrets.GUEST_REPO_PAT }}
+          TARGET_REPO: ${{ github.event.inputs.target_guest_repo || vars.GUEST_GITHUB_REPO || 'Dipayanhaldar/afterdark-guest-connector' }}
+        run: |
+          if [ -z "$GUEST_REPO_PAT" ]; then
+            echo "ℹ️ GUEST_REPO_PAT secret not configured — skipping remote push to $TARGET_REPO."
+            echo "To auto-push to a separate GitHub repo on every commit, add GUEST_REPO_PAT in Repository Secrets."
+            exit 0
+          fi
+          git config user.name "AfterDark Auto-Sync Bot"
+          git config user.email "actions@github.com"
+          git subtree split --prefix=guest-site -b guest-repo-sync
+          git push --force "https://x-access-token:${GUEST_REPO_PAT}@github.com/${TARGET_REPO}.git" guest-repo-sync:main
+
+      - name: Trigger Render Auto-Deploy Hook (if RENDER_GUEST_DEPLOY_HOOK_URL is set)
+        env:
+          RENDER_HOOK: ${{ secrets.RENDER_GUEST_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -n "$RENDER_HOOK" ]; then
+            echo "🚀 Triggering Render deploy hook for afterdark-guest-connector..."
+            curl -fsSL -X POST "$RENDER_HOOK"
+          else
+            echo "ℹ️ RENDER_GUEST_DEPLOY_HOOK_URL not set — Render Blueprint autoDeploy: true will deploy automatically from GitHub."
+          fi

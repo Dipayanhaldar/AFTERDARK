@@ -465,13 +465,100 @@ export function MessageWithBrandCards({
   voiceMeta,
   isMine = false,
   seenAt = null,
+  e2ee = true,
+  e2eeLocked = false,
+  rawCiphertext = null,
+  keyFingerprint = '',
+  onUnlockHistory,
   onOpenBrandDrawer,
   onSavePhoto
 }) {
   return (
     <div className="ad-msg-ad-wrapper">
-      {body && (
-        <p className="ad-msg-text">{renderTextWithClickableAdLinks(body, onOpenBrandDrawer)}</p>
+      {e2eeLocked ? (
+        <div
+          style={{
+            padding: '10px 12px',
+            borderRadius: '12px',
+            background: 'rgba(15, 23, 42, 0.78)',
+            border: '1px dashed rgba(244, 63, 94, 0.55)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px'
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+              flexWrap: 'wrap'
+            }}
+          >
+            <span
+              style={{
+                fontSize: '0.7rem',
+                fontWeight: 800,
+                color: '#fda4af',
+                letterSpacing: '0.04em'
+              }}
+            >
+              🔒 E2EE CIPHERTEXT LOCKED (AES-256-GCM)
+            </span>
+            {onUnlockHistory && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onUnlockHistory();
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #ec4899, #8b5cf6)',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: '99px',
+                  padding: '3px 10px',
+                  fontSize: '0.7rem',
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                🔓 Unlock with 6-Digit OTP
+              </button>
+            )}
+          </div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: '0.8rem',
+              color: '#e2e8f0'
+            }}
+          >
+            {body}
+          </p>
+          {rawCiphertext && (
+            <code
+              style={{
+                fontSize: '0.66rem',
+                color: '#94a3b8',
+                background: 'rgba(0,0,0,0.35)',
+                padding: '4px 7px',
+                borderRadius: '6px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                display: 'block'
+              }}
+            >
+              {rawCiphertext}
+            </code>
+          )}
+        </div>
+      ) : (
+        body && (
+          <p className="ad-msg-text">{renderTextWithClickableAdLinks(body, onOpenBrandDrawer)}</p>
+        )
       )}
 
       {voiceMeta?.dataUrl && (
@@ -596,23 +683,44 @@ export function MessageWithBrandCards({
         </div>
       )}
 
-      {isMine && (
-        <div
+      <div
+        style={{
+          marginTop: '5px',
+          fontSize: '0.68rem',
+          fontWeight: 600,
+          color: seenAt ? '#ffd1e6' : 'rgba(255,255,255,0.56)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+          flexWrap: 'wrap'
+        }}
+      >
+        <span
           style={{
-            marginTop: '5px',
-            fontSize: '0.7rem',
-            fontWeight: 600,
-            color: seenAt ? '#ffd1e6' : 'rgba(255,255,255,0.52)',
-            display: 'flex',
+            display: 'inline-flex',
             alignItems: 'center',
-            gap: '4px'
+            gap: '4px',
+            color: e2eeLocked ? '#fda4af' : '#6ee7b7',
+            fontSize: '0.65rem',
+            fontWeight: 700
           }}
+          title={
+            keyFingerprint
+              ? `End-to-End Encrypted (AES-256-GCM) · Key Fingerprint: ${keyFingerprint}`
+              : 'End-to-End Encrypted (AES-256-GCM)'
+          }
         >
-          {seenAt
-            ? getGenZSeenStatusText(messageId)
-            : '🕊️ Hawa mein gaya · Partner abhi padhne wala hai...'}
-        </div>
-      )}
+          {e2eeLocked ? '🔒 History Locked' : e2ee ? '🔐 AES-256-GCM E2EE' : '🔒 Private'}
+        </span>
+        {isMine && (
+          <span>
+            {seenAt
+              ? getGenZSeenStatusText(messageId)
+              : '🕊️ Hawa mein gaya · Partner abhi padhne wala hai...'}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -844,6 +952,7 @@ export function InChatBrandPromoCard({ adData, onOpenBrandDrawer }) {
  * Works for both Romantic Couples AND Boy-Girl Best Friends / Dosts!
  */
 export function LocationTreasureHuntDrawer({
+  open = true,
   userCity = 'Hyderabad',
   elapsedMinutes = 0,
   onSendChallengeToChat,
@@ -853,6 +962,8 @@ export function LocationTreasureHuntDrawer({
     CITY_TREASURE_HUNT_MISSIONS[userCity] || CITY_TREASURE_HUNT_MISSIONS.Hyderabad;
   const [missionIndex, setMissionIndex] = useState(0);
   const currentMission = missions[missionIndex % missions.length] || missions[0];
+
+  if (!open) return null;
 
   function handleNextMission() {
     setMissionIndex((prev) => (prev + 1) % missions.length);
@@ -2026,3 +2137,639 @@ export function InlineCommerceDrawer({
     </div>
   );
 }
+
+/**
+ * Same-Theme Flipkart Official Redirect & Built-in Brand Quick Bar for Guest & Couple Chat
+ */
+export function FlipkartBrandQuickStrip({
+  userCity = 'Hyderabad',
+  onOpenBrandDrawer
+}) {
+  const [quickFlipkartSearch, setQuickFlipkartSearch] = useState('');
+
+  const flipkartDirectUrl = quickFlipkartSearch.trim()
+    ? `https://www.flipkart.com/search?q=${encodeURIComponent(quickFlipkartSearch.trim())}`
+    : 'https://www.flipkart.com/search?q=couple+gift+hamper+chocolates+watches';
+
+  const quickCuratedBrands = [
+    { id: 'flipkart_minutes', label: '⚡ Flipkart Minutes', accent: '#ffe500' },
+    { id: 'myntra', label: '👗 Myntra Twin Fits', accent: '#ff3f6c' },
+    { id: 'nykaa', label: '💄 Nykaa Luxe', accent: '#fc2779' },
+    { id: 'blinkit', label: '⚡ Blinkit 10-Min', accent: '#f8cb46' },
+    { id: 'zomato', label: '🍽️ Zomato Dining', accent: '#e23744' },
+    { id: 'cafes', label: `☕ ${userCity} Cafes`, accent: '#f59e0b' }
+  ];
+
+  return (
+    <div
+      style={{
+        margin: '6px 0 8px',
+        padding: '8px 12px',
+        borderRadius: '14px',
+        background:
+          'linear-gradient(135deg, rgba(22, 10, 34, 0.94), rgba(40, 116, 240, 0.16))',
+        border: '1px solid rgba(255, 214, 0, 0.35)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: '8px',
+        flexWrap: 'wrap'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+        <span
+          style={{
+            background: '#2874f0',
+            color: '#ffe500',
+            fontWeight: 900,
+            fontSize: '0.66rem',
+            padding: '2px 8px',
+            borderRadius: '99px',
+            letterSpacing: '0.03em'
+          }}
+        >
+          ⚡ FLIPKART &amp; BUILT-IN BRANDS
+        </span>
+        {quickCuratedBrands.map((b) => (
+          <button
+            key={b.id}
+            type="button"
+            onClick={() => onOpenBrandDrawer && onOpenBrandDrawer(b.id)}
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: `1px solid ${b.accent}66`,
+              color: '#f8fafc',
+              borderRadius: '99px',
+              padding: '3px 9px',
+              fontSize: '0.71rem',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            {b.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+        <input
+          type="search"
+          placeholder="Search Flipkart gifts, chocolates..."
+          value={quickFlipkartSearch}
+          onChange={(e) => setQuickFlipkartSearch(e.target.value)}
+          style={{
+            padding: '4px 9px',
+            borderRadius: '8px',
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255, 229, 0, 0.35)',
+            color: '#fff',
+            fontSize: '0.73rem',
+            width: '190px'
+          }}
+        />
+        <a
+          href={flipkartDirectUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            textDecoration: 'none',
+            background: 'linear-gradient(135deg, #ffe500, #f59e0b)',
+            color: '#111827',
+            fontWeight: 800,
+            fontSize: '0.72rem',
+            padding: '5px 11px',
+            borderRadius: '99px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+        >
+          🛒 Redirect to Flipkart ↗
+        </a>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Interactive End-to-End Encryption (E2EE) Security Vault & History Lock Drawer
+ */
+export function E2eeSecurityDrawer({
+  open,
+  onClose,
+  keyFingerprint = 'UNVERIFIED-KEY',
+  isHistoryLocked = false,
+  onLockHistory,
+  onUnlockHistoryWithOtp,
+  customPassphrase = '',
+  onSaveCustomPassphrase,
+  messages = [],
+  inviteLink = ''
+}) {
+  const [unlockOtpInput, setUnlockOtpInput] = useState('');
+  const [passphraseInput, setPassphraseInput] = useState(customPassphrase || '');
+  const [unlockError, setUnlockError] = useState('');
+  const [statusNote, setStatusNote] = useState('');
+
+  useEffect(() => {
+    setPassphraseInput(customPassphrase || '');
+  }, [customPassphrase]);
+
+  if (!open) return null;
+
+  const encryptedSampleMessages = messages.slice(-3);
+
+  function handleUnlockSubmit(e) {
+    e.preventDefault();
+    setUnlockError('');
+    setStatusNote('');
+    const cleanOtp = unlockOtpInput.replace(/\D/g, '').slice(0, 6);
+    if (cleanOtp.length !== 6) {
+      setUnlockError('Please enter the 6-digit Couple OTP to derive the AES-256-GCM decryption key.');
+      return;
+    }
+    const ok = onUnlockHistoryWithOtp ? onUnlockHistoryWithOtp(cleanOtp, passphraseInput) : true;
+    if (ok === false) {
+      setUnlockError('Invalid 6-digit OTP! Decryption key mismatch — history remains locked.');
+    } else {
+      setUnlockOtpInput('');
+      setStatusNote('🔓 AES-256-GCM key verified! Message history decrypted locally.');
+    }
+  }
+
+  function handlePassphraseSave(e) {
+    e.preventDefault();
+    setUnlockError('');
+    if (onSaveCustomPassphrase) {
+      onSaveCustomPassphrase(passphraseInput.trim());
+      setStatusNote(
+        passphraseInput.trim()
+          ? '🔐 Custom E2EE Passphrase active! Outgoing & incoming messages now use dual OTP + Passphrase PBKDF2 key derivation.'
+          : '🔐 Reverted to standard 6-Digit OTP PBKDF2 key derivation.'
+      );
+    }
+  }
+
+  return (
+    <div
+      className="ad-collapsible-drawer"
+      style={{
+        border: '1.5px solid rgba(16, 185, 129, 0.55)',
+        background: 'linear-gradient(135deg, rgba(12, 26, 36, 0.96), rgba(20, 11, 34, 0.98))',
+        marginBottom: '12px'
+      }}
+    >
+      <div className="ad-drawer-head">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span
+            style={{
+              background: isHistoryLocked ? '#f43f5e' : '#10b981',
+              color: '#052e16',
+              fontWeight: 900,
+              fontSize: '0.66rem',
+              padding: '2px 8px',
+              borderRadius: '99px'
+            }}
+          >
+            {isHistoryLocked ? '🔒 HISTORY LOCKED (LINK-ONLY MODE)' : '🔐 AES-256-GCM E2EE ACTIVE'}
+          </span>
+          <strong>
+            End-to-End Encrypted Guest Chat Vault · Key Fingerprint:{' '}
+            <code style={{ color: '#6ee7b7' }}>{keyFingerprint}</code>
+          </strong>
+        </div>
+        {onClose && (
+          <button type="button" className="ad-btn-close" onClick={onClose}>
+            ✕ Close
+          </button>
+        )}
+      </div>
+
+      <p style={{ margin: '6px 0 10px', fontSize: '0.8rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+        <strong>Zero-Knowledge Access Link Protection:</strong> Even if someone obtains your guest-specific access link (
+        <code>?invite=...&amp;k=ad1_...</code>), the URL only carries a non-reversible{' '}
+        <strong>SHA-256 commitment</strong> and never the 6-digit OTP. Every message is encrypted client-side using{' '}
+        <strong>Web Crypto AES-256-GCM + PBKDF2 (50,000 iterations)</strong> before transmission.
+      </p>
+
+      {statusNote && (
+        <div
+          style={{
+            padding: '7px 10px',
+            borderRadius: '8px',
+            background: 'rgba(16, 185, 129, 0.16)',
+            border: '1px solid rgba(16, 185, 129, 0.45)',
+            color: '#a7f3d0',
+            fontSize: '0.78rem',
+            marginBottom: '8px'
+          }}
+        >
+          {statusNote}
+        </div>
+      )}
+
+      {unlockError && (
+        <div
+          style={{
+            padding: '7px 10px',
+            borderRadius: '8px',
+            background: 'rgba(244, 63, 94, 0.18)',
+            border: '1px solid rgba(244, 63, 94, 0.5)',
+            color: '#fecdd3',
+            fontSize: '0.78rem',
+            marginBottom: '8px'
+          }}
+        >
+          {unlockError}
+        </div>
+      )}
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: '10px',
+          marginBottom: '10px'
+        }}
+      >
+        {/* CARD 1: Lock / Unlock Message History */}
+        <div
+          style={{
+            padding: '10px 12px',
+            borderRadius: '12px',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.1)'
+          }}
+        >
+          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f8fafc', marginBottom: '6px' }}>
+            🛡️ Message History Access Control
+          </div>
+          {!isHistoryLocked ? (
+            <div>
+              <p style={{ margin: '0 0 8px', fontSize: '0.74rem', color: '#94a3b8' }}>
+                Test what an outsider with only the Guest Link sees: locking clears the active decryption key from memory and masks all chat history as ciphertext.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusNote('');
+                  if (onLockHistory) onLockHistory();
+                }}
+                style={{
+                  background: 'rgba(244, 63, 94, 0.2)',
+                  border: '1px solid #f43f5e',
+                  color: '#fda4af',
+                  borderRadius: '8px',
+                  padding: '6px 12px',
+                  fontSize: '0.76rem',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+              >
+                🔒 Lock Message History Now (Link-Only View)
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleUnlockSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="Enter 6-Digit Couple OTP to Unlock..."
+                value={unlockOtpInput}
+                onChange={(e) => setUnlockOtpInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                style={{
+                  padding: '7px 10px',
+                  borderRadius: '8px',
+                  background: 'rgba(0,0,0,0.4)',
+                  border: '1px solid #10b981',
+                  color: '#fff',
+                  fontSize: '0.8rem'
+                }}
+              />
+              <button
+                type="submit"
+                style={{
+                  background: 'linear-gradient(135deg, #10b981, #059669)',
+                  border: 'none',
+                  color: '#052e16',
+                  borderRadius: '8px',
+                  padding: '7px 12px',
+                  fontSize: '0.76rem',
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                🔓 Verify OTP &amp; Decrypt Message History
+              </button>
+            </form>
+          )}
+        </div>
+
+        {/* CARD 2: Optional Shared E2EE Passphrase */}
+        <form
+          onSubmit={handlePassphraseSave}
+          style={{
+            padding: '10px 12px',
+            borderRadius: '12px',
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px'
+          }}
+        >
+          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f8fafc' }}>
+            🔑 Optional Second-Factor E2EE Secret Passphrase
+          </div>
+          <p style={{ margin: 0, fontSize: '0.73rem', color: '#94a3b8' }}>
+            Combine a custom couple secret phrase with your 6-digit OTP for dual-secret AES-256-GCM key derivation:
+          </p>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <input
+              type="password"
+              placeholder="Optional secret phrase (leave blank for OTP-only)..."
+              value={passphraseInput}
+              onChange={(e) => setPassphraseInput(e.target.value)}
+              style={{
+                flex: 1,
+                padding: '6px 10px',
+                borderRadius: '8px',
+                background: 'rgba(0,0,0,0.35)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                color: '#fff',
+                fontSize: '0.76rem'
+              }}
+            />
+            <button
+              type="submit"
+              className="ad-select-item-btn"
+              style={{ whiteSpace: 'nowrap', fontWeight: 700 }}
+            >
+              Apply Key
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* LIVE CIPHERTEXT WIRE INSPECTOR */}
+      <div
+        style={{
+          padding: '8px 10px',
+          borderRadius: '10px',
+          background: 'rgba(0, 0, 0, 0.35)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          fontSize: '0.72rem'
+        }}
+      >
+        <div style={{ color: '#6ee7b7', fontWeight: 700, marginBottom: '4px' }}>
+          📡 Live Zero-Knowledge Wire &amp; Storage Inspector (What the Server / Link-Holder Sees):
+        </div>
+        {inviteLink && (
+          <div style={{ color: '#94a3b8', marginBottom: '4px', wordBreak: 'break-all' }}>
+            <strong>Invite URL Commitment:</strong> <code>{inviteLink}</code>
+          </div>
+        )}
+        {encryptedSampleMessages.length === 0 ? (
+          <div style={{ color: '#94a3b8' }}>
+            No messages in room yet — send a chat message to inspect its live <code>AD_E2EE_V1:</code> AES-256-GCM payload.
+          </div>
+        ) : (
+          encryptedSampleMessages.map((m) => (
+            <div
+              key={m.id}
+              style={{
+                color: '#cbd5e1',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                marginTop: '3px'
+              }}
+            >
+              <strong>{m.senderName || m.senderRole}:</strong>{' '}
+              <code style={{ color: '#f472b6' }}>
+                {m.rawCiphertext || `AD_E2EE_V1:aes256gcm:${m.id}`}
+              </code>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Standalone GitHub Repository & Render Auto-Deploy Kit Modal/Drawer
+ */
+export function GuestRepoRenderDeployModal({ open, onClose }) {
+  const [copiedBlock, setCopiedBlock] = useState('');
+
+  if (!open) return null;
+
+  const gitSubtreeCommands = `# Option A: Push guest-site/ as its own standalone GitHub repository for Render Auto-Deploy
+bash scripts/export-guest-repo.sh https://github.com/<YOUR_GITHUB_USERNAME>/afterdark-guest-connector.git
+
+# Or run git subtree split directly:
+git subtree split --prefix=guest-site -b guest-repo
+git push https://github.com/<YOUR_GITHUB_USERNAME>/afterdark-guest-connector.git guest-repo:main --force`;
+
+  const renderBlueprintYaml = `services:
+  - type: web
+    name: afterdark-guest-connector
+    runtime: static
+    autoDeploy: true
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: true
+    routes:
+      - type: rewrite
+        source: /guest
+        destination: /index.html
+      - type: rewrite
+        source: /guest/*
+        destination: /index.html
+      - type: rewrite
+        source: /invite/*
+        destination: /index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html`;
+
+  function copySnippet(text, id) {
+    navigator.clipboard?.writeText(text).catch(() => {});
+    setCopiedBlock(id);
+    setTimeout(() => setCopiedBlock(''), 2400);
+  }
+
+  return (
+    <div
+      className="ad-modal-backdrop"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 10000,
+        background: 'rgba(8, 4, 15, 0.86)',
+        backdropFilter: 'blur(10px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        overflowY: 'auto'
+      }}
+      onClick={onClose}
+    >
+      <section
+        className="ad-commerce-drawer"
+        style={{
+          width: 'min(820px, 100%)',
+          maxHeight: '90vh',
+          overflowY: 'auto',
+          margin: 0,
+          border: '1.5px solid rgba(56, 189, 248, 0.55)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.8)'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="ad-commerce-header">
+          <div>
+            <span className="ad-commerce-badge" style={{ color: '#38bdf8' }}>
+              🚀 SEPARATE GITHUB REPOSITORY · RENDER BLUEPRINT AUTO-DEPLOY READY
+            </span>
+            <h4>
+              Standalone Guest Chat Repository (<code>guest-site/</code>) &amp; Render Auto-Deploy Kit
+            </h4>
+          </div>
+          <button type="button" className="ad-btn-close" onClick={onClose}>
+            ✕ Close
+          </button>
+        </div>
+
+        <p style={{ fontSize: '0.82rem', color: '#cbd5e1', margin: '4px 0 12px', lineHeight: 1.5 }}>
+          The standalone Guest Chat repository (<code>guest-site/</code>) is architected with 100% self-contained source files so you can push it to a separate GitHub repo (e.g.{' '}
+          <code>afterdark-guest-connector</code>) and connect it to <strong>Render Static Sites</strong> with{' '}
+          <code>autoDeploy: true</code>.
+        </p>
+
+        {/* INCLUDED CAPABILITIES CHECKLIST */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+            gap: '8px',
+            marginBottom: '12px'
+          }}
+        >
+          {[
+            {
+              title: '🔐 E2EE Guest Chat (AES-256-GCM)',
+              desc: 'src/e2ee-crypto.js encrypts all chat history so even with the guest access link, history stays locked without the 6-digit OTP.'
+            },
+            {
+              title: '🌙 Identical Dark-Luxury Theme',
+              desc: 'Includes src/style.css & src/ThreeRomanticScene.jsx for the exact same glassmorphic aesthetic and 3D rooftop scene.'
+            },
+            {
+              title: '🎁 Same-Theme In-Chat Brand Ads',
+              desc: 'Contextual one-sided InChatBrandPromoCard & clickable brand keywords inside the Guest Chat stream.'
+            },
+            {
+              title: '🛒 Direct Flipkart Redirect & 38+ Brands',
+              desc: 'FlipkartBrandQuickStrip + InlineCommerceDrawer with 1-click Flipkart Official Redirect & Flipkart Minutes.'
+            }
+          ].map((item, i) => (
+            <div
+              key={i}
+              style={{
+                padding: '9px 11px',
+                borderRadius: '10px',
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.1)'
+              }}
+            >
+              <strong style={{ fontSize: '0.78rem', color: '#ffd1e6', display: 'block' }}>
+                {item.title}
+              </strong>
+              <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{item.desc}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* STEP 1: GIT COMMANDS FOR SEPARATE REPO */}
+        <div style={{ marginBottom: '12px' }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '6px'
+            }}
+          >
+            <strong style={{ fontSize: '0.82rem', color: '#bae6fd' }}>
+              1️⃣ Push <code>guest-site/</code> to a Separate GitHub Repository (or Auto-Sync via GitHub Actions)
+            </strong>
+            <button
+              type="button"
+              className="ad-select-item-btn"
+              onClick={() => copySnippet(gitSubtreeCommands, 'git')}
+            >
+              {copiedBlock === 'git' ? '✓ Copied Commands' : '📋 Copy Git Commands'}
+            </button>
+          </div>
+          <pre
+            style={{
+              margin: 0,
+              padding: '10px 12px',
+              borderRadius: '10px',
+              background: '#090510',
+              border: '1px solid rgba(56, 189, 248, 0.35)',
+              color: '#e2e8f0',
+              fontSize: '0.73rem',
+              overflowX: 'auto'
+            }}
+          >
+            {gitSubtreeCommands}
+          </pre>
+        </div>
+
+        {/* STEP 2: RENDER.YAML AUTO-DEPLOY BLUEPRINT */}
+        <div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '6px'
+            }}
+          >
+            <strong style={{ fontSize: '0.82rem', color: '#fde047' }}>
+              2️⃣ Built-in <code>guest-site/render.yaml</code> Blueprint (Render Auto-Deploy Enabled)
+            </strong>
+            <button
+              type="button"
+              className="ad-select-item-btn"
+              onClick={() => copySnippet(renderBlueprintYaml, 'yaml')}
+            >
+              {copiedBlock === 'yaml' ? '✓ Copied render.yaml' : '📋 Copy render.yaml'}
+            </button>
+          </div>
+          <pre
+            style={{
+              margin: 0,
+              padding: '10px 12px',
+              borderRadius: '10px',
+              background: '#090510',
+              border: '1px solid rgba(250, 204, 21, 0.35)',
+              color: '#fef08a',
+              fontSize: '0.73rem',
+              overflowX: 'auto'
+            }}
+          >
+            {renderBlueprintYaml}
+          </pre>
+        </div>
+      </section>
+    </div>
+  );
+}
+

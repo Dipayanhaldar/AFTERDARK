@@ -2636,11 +2636,16 @@ export function detectBrandsInMessage(text) {
   }
 
   const lower = raw.toLowerCase();
-  const matched = [];
+  const directMatches = [];
+  const keywordMatches = [];
   const seen = new Set();
 
   for (const b of brandCatalog) {
-    const hasMention = lower.includes(`@${b.id}`) || lower.includes(b.name.toLowerCase());
+    const brandFirstToken = b.name.toLowerCase().split(/\s+/)[0];
+    const hasMention =
+      lower.includes(`@${b.id}`) ||
+      lower.includes(b.name.toLowerCase()) ||
+      (brandFirstToken.length >= 4 && new RegExp(`\\b${brandFirstToken}\\b`, 'i').test(lower));
     const hasKeyword = b.keywords.some((kw) => {
       const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       return new RegExp(`\\b${escaped}\\b`, 'i').test(lower);
@@ -2649,11 +2654,15 @@ export function detectBrandsInMessage(text) {
     if (hasMention || hasKeyword) {
       if (!seen.has(b.id)) {
         seen.add(b.id);
-        matched.push(b);
+        if (hasMention) {
+          directMatches.push(b);
+        } else {
+          keywordMatches.push(b);
+        }
       }
     }
   }
-  return matched;
+  return [...directMatches, ...keywordMatches];
 }
 
 /**
@@ -2814,12 +2823,14 @@ const MIN_WARMUP_MESSAGES = 3; // First 3 messages (indices 0, 1, 2) NEVER show 
 const MIN_MSG_GAP_BETWEEN_ADS = 3;
 
 function resolveCandidateAdBrands(candidateMsg, messages, idx) {
-  // Never interrupt the initial greeting / warm-up phase of a chat!
-  if (idx < MIN_WARMUP_MESSAGES) return null;
+  if (idx < 1) return null;
+  if (candidateMsg?.e2eeLocked) return null;
 
   const text = String(candidateMsg?.body || candidateMsg?.text || '').trim();
   if (!text) return null;
   if (
+    text.startsWith('AD_E2EE_V1:') ||
+    text.startsWith('🔒 End-to-End Encrypted') ||
     (text.includes('OTP') && text.includes('verify')) ||
     text.includes('private couple chat khol liya') ||
     INITIAL_GREETING_STOPWORDS.test(text)
@@ -2844,6 +2855,9 @@ function resolveCandidateAdBrands(candidateMsg, messages, idx) {
     };
   }
 
+  // Implicit banter waits until after the initial greeting / warm-up phase
+  if (idx < MIN_WARMUP_MESSAGES) return null;
+
   return detectImplicitChatBrands(text, messages, idx);
 }
 
@@ -2854,8 +2868,7 @@ export function getPersonalizedInChatBrandAd(
   userCity = 'Hyderabad',
   aiInsight = null
 ) {
-  // Never show an ad during the initial greeting / first 3 messages!
-  if (msgIndex < MIN_WARMUP_MESSAGES) return null;
+  if (msgIndex < 1) return null;
 
   const msg = messages[msgIndex];
   if (!msg) return null;
@@ -2877,7 +2890,7 @@ export function getPersonalizedInChatBrandAd(
   let lastShownAdIndex = -1;
   let lastShownAdTs = 0;
 
-  for (let i = MIN_WARMUP_MESSAGES; i <= msgIndex; i++) {
+  for (let i = 1; i <= msgIndex; i++) {
     const candidate = messages[i];
     const match = resolveCandidateAdBrands(candidate, messages, i);
     if (!match) continue;
@@ -2894,6 +2907,7 @@ export function getPersonalizedInChatBrandAd(
 
     const canShow =
       lastShownAdIndex === -1 ||
+      match.isExplicit ||
       (msgGapOk && candidateTs && lastShownAdTs && elapsedMs >= MIN_AD_COOLDOWN_MS);
 
     if (i === msgIndex) {
@@ -2904,7 +2918,11 @@ export function getPersonalizedInChatBrandAd(
     }
   }
 
-  let chosen = isCreator ? currentMatch.creatorBrand : currentMatch.guestBrand;
+  let chosen = isCreator
+    ? currentMatch.creatorBrand
+    : currentMatch.isExplicit
+    ? currentMatch.creatorBrand
+    : currentMatch.guestBrand;
 
   if (
     !currentMatch.isExplicit &&

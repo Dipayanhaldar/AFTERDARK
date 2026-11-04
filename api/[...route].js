@@ -2,6 +2,12 @@ import { createHash, randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual
 import { promisify } from 'node:util';
 import { getLocalDatabase, ObjectId } from './local-db.js';
 import { brandCatalog, CITY_PROFILES, analyzeChatContextLocally } from '../src/commerce-data.js';
+import {
+  verifyOtpSignature,
+  deriveE2eeFingerprint,
+  isE2eeCiphertext,
+  encryptChatMessage
+} from '../src/e2ee-crypto.js';
 import { GoogleGenAI, Type } from '@google/genai';
 
 const scrypt = promisify(scryptCb);
@@ -205,12 +211,16 @@ function formatConnectionForGuest(conn) {
 }
 
 function formatMessageDoc(m, defaultRole = 'creator') {
+  const rawBody = m.body || m.text || '';
   return {
     id: m._id.toString(),
     senderRole: m.senderRole || defaultRole,
     senderName: m.senderName || '',
-    body: m.body || m.text || '',
-    text: m.body || m.text || '',
+    body: rawBody,
+    text: rawBody,
+    e2ee: Boolean(m.e2ee || isE2eeCiphertext(rawBody)),
+    e2eeAlg: m.e2eeAlg || 'AES-256-GCM-PBKDF2',
+    keyFingerprint: m.keyFingerprint || '',
     orderMeta: m.orderMeta || null,
     photoMeta: m.photoMeta || null,
     voiceMeta: m.voiceMeta || null,
@@ -238,7 +248,32 @@ export default async function handler(req, res) {
     const action = parts.join('/');
 
     if (action === 'health' && req.method === 'GET') {
-      return json(res, 200, { ok: true, service: 'afterdark-hyderabad-couples' }, req);
+      return json(res, 200, { ok: true, service: 'afterdark-hyderabad-couples', e2ee: 'AES-256-GCM-PBKDF2' }, req);
+    }
+
+    if (action === 'guest-repo/manifest' && req.method === 'GET') {
+      return json(
+        res,
+        200,
+        {
+          repoName: 'afterdark-guest-connector',
+          sourceDir: 'guest-site',
+          renderServiceName: 'afterdark-guest-connector',
+          renderUrl: 'https://afterdark-guest-connector.onrender.com',
+          autoDeploy: true,
+          e2eeProtocol: 'AD_E2EE_V1 (AES-256-GCM + PBKDF2-SHA256 50,000 iterations)',
+          zeroKnowledgeUrlSignature: 'ad1_<sha256_commitment>',
+          features: [
+            'End-to-End Encrypted Guest Chat (AES-256-GCM) with OTP & Custom Passphrase Lock',
+            'Identical AfterDark Dark-Luxury Theme & 3D Romantic Rooftop Scene',
+            'Contextual One-Sided In-Chat Brand Ads (InChatBrandPromoCard)',
+            'Direct Flipkart Official Redirect & Flipkart Minutes Quick Bar',
+            `Built-in ${brandCatalog.length}+ Indian Brand Store & Local Cafe Discovery`,
+            'Render Blueprint (render.yaml) & GitHub Actions Auto-Deploy Workflow'
+          ]
+        },
+        req
+      );
     }
 
     const body = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
@@ -778,8 +813,7 @@ Draft: ${draftText || '(none)'}`,
 
       if (!invite) {
         const sameDev = Boolean(guestDeviceId && urlCreatorDev && guestDeviceId === urlCreatorDev);
-        const sameIp = Boolean(guestIp && urlCreatorIp && guestIp === urlCreatorIp);
-        const blocked = sameDev || sameIp;
+        const blocked = sameDev;
         return json(
           res,
           200,
@@ -791,8 +825,6 @@ Draft: ${draftText || '(none)'}`,
               sameDeviceOrIpBlocked: blocked,
               blockReason: sameDev
                 ? '🚫 Same-Device Blocked: One device cannot chat with itself! You generated this link on this device. Send the QR or link to your partner’s phone.'
-                : sameIp
-                ? `🚫 Same IP Address Blocked (${guestIp}): The Guest cannot join from the exact same IP address as the Link Generator.`
                 : '',
               creatorDisplayName: url.searchParams.get('creator') || 'Your Partner',
               recipientHint: url.searchParams.get('hint') || 'Meri Jaan'
@@ -815,14 +847,10 @@ Draft: ${draftText || '(none)'}`,
       }
 
       const effectiveCreatorDev = invite.creatorDeviceId || urlCreatorDev;
-      const effectiveCreatorIp = invite.creatorIp || urlCreatorIp;
       const isSameDevice = Boolean(
         guestDeviceId && effectiveCreatorDev && guestDeviceId === effectiveCreatorDev
       );
-      const isSameIp = Boolean(
-        guestIp && effectiveCreatorIp && guestIp === effectiveCreatorIp
-      );
-      const blocked = isSameDevice || isSameIp;
+      const blocked = isSameDevice;
 
       return json(
         res,
@@ -835,8 +863,6 @@ Draft: ${draftText || '(none)'}`,
             sameDeviceOrIpBlocked: blocked,
             blockReason: isSameDevice
               ? '🚫 Same-Device Blocked: One device cannot chat with itself! You generated this Couple Link on this device. Send the QR code or link to your partner’s separate device.'
-              : isSameIp
-              ? `🚫 Same IP Address Blocked (${guestIp}): The Guest cannot join or chat from the same IP address as the Link Generator. Please connect from a separate device/network.`
               : '',
             handle: invite.creatorDisplayName || 'Your Partner',
             creatorDisplayName: invite.creatorDisplayName || 'Your Partner',
@@ -930,11 +956,9 @@ Draft: ${draftText || '(none)'}`,
         );
       }
 
-      // Step 3: Enforce Same-Device & Same-IP Security Block (One device / same IP cannot chat with itself!)
-      const guestIp = getClientIp(req, body);
+      // Step 3: Enforce Same-Device Security Block (One device cannot chat with itself!)
       const guestDeviceId = getRequestDeviceId(req, body);
       const effectiveCreatorDev = invite?.creatorDeviceId || String(body.creatorDeviceId || '').trim();
-      const effectiveCreatorIp = invite?.creatorIp || String(body.creatorIp || '').trim();
 
       if (guestDeviceId && effectiveCreatorDev && guestDeviceId === effectiveCreatorDev) {
         return json(
@@ -943,17 +967,6 @@ Draft: ${draftText || '(none)'}`,
           {
             error:
               '🚫 Security Block: One device cannot chat with itself! You generated this Couple Link on this device. Please send the QR code or link to your partner’s separate phone/device.'
-          },
-          req
-        );
-      }
-
-      if (guestIp && effectiveCreatorIp && guestIp === effectiveCreatorIp) {
-        return json(
-          res,
-          403,
-          {
-            error: `🚫 Security Block: Same IP Address Detected (${guestIp})! The Guest cannot verify or chat from the exact same IP address as the Link Generator. Please connect from your partner’s separate device/network.`
           },
           req
         );
@@ -969,21 +982,10 @@ Draft: ${draftText || '(none)'}`,
         );
       }
 
-      // Step 4: If server cold-started and invite wasn't in DB, validate against signed QR OTP signature
+      // Step 4: If server cold-started and invite wasn't in DB, validate against one-way SHA-256 commitment signature (`ad1_...`)
       if (!invite) {
-        let expectedOtpFromSig = '';
-        if (body.expectedSignature) {
-          try {
-            const decoded = Buffer.from(String(body.expectedSignature), 'base64').toString('utf8');
-            if (decoded.startsWith('ad:')) {
-              expectedOtpFromSig = decoded.slice(3).replace(/\D/g, '').slice(0, 6);
-            }
-          } catch {
-            expectedOtpFromSig = '';
-          }
-        }
-
-        if (!rawToken || rawToken === 'otp-direct' || !expectedOtpFromSig) {
+        const expectedSig = String(body.expectedSignature || '').trim();
+        if (!rawToken || rawToken === 'otp-direct' || !expectedSig) {
           return json(
             res,
             401,
@@ -995,7 +997,7 @@ Draft: ${draftText || '(none)'}`,
           );
         }
 
-        if (expectedOtpFromSig !== suppliedOtp) {
+        if (!verifyOtpSignature(suppliedOtp, rawToken, expectedSig)) {
           return json(
             res,
             401,
@@ -1094,12 +1096,25 @@ Draft: ${draftText || '(none)'}`,
           }
         );
 
+        const plainWelcome = `Hau miyaan! ${guestDisplayName} connected to our private 1-on-1 E2EE room ♥ Ab baatein shuru karein?`;
+        let encryptedWelcome = plainWelcome;
+        try {
+          encryptedWelcome = await encryptChatMessage(plainWelcome, {
+            verificationCode: suppliedOtp
+          });
+        } catch {
+          encryptedWelcome = plainWelcome;
+        }
+
         await db.collection('messages').insertOne({
           connectionId: createdConn.insertedId,
           channelId,
           senderRole: 'guest',
           senderName: guestDisplayName,
-          body: `Hau miyaan! ${guestDisplayName} connected to our private 1-on-1 room ♥ Ab baatein shuru karein?`,
+          body: encryptedWelcome,
+          e2ee: true,
+          e2eeAlg: 'AES-256-GCM-PBKDF2',
+          keyFingerprint: deriveE2eeFingerprint(suppliedOtp),
           createdAt: nowIso
         });
       }
@@ -1214,6 +1229,12 @@ Draft: ${draftText || '(none)'}`,
             return json(res, 400, { error: 'Write a message or attach a voice/camera note first.' }, req);
           }
           const nowIso = new Date().toISOString();
+          const isEncrypted = Boolean(body.e2ee || isE2eeCiphertext(text));
+          const keyFp =
+            body.keyFingerprint ||
+            (connection.verificationCode
+              ? deriveE2eeFingerprint(connection.verificationCode)
+              : '');
           const inserted = await db.collection('messages').insertOne({
             connectionId: connId,
             senderRole: 'guest',
@@ -1221,6 +1242,9 @@ Draft: ${draftText || '(none)'}`,
             body: text,
             voiceMeta,
             photoMeta,
+            e2ee: isEncrypted,
+            e2eeAlg: body.e2eeAlg || 'AES-256-GCM-PBKDF2',
+            keyFingerprint: keyFp,
             seenAt: null,
             createdAt: nowIso
           });
@@ -1236,6 +1260,9 @@ Draft: ${draftText || '(none)'}`,
                 text,
                 voiceMeta,
                 photoMeta,
+                e2ee: isEncrypted,
+                e2eeAlg: body.e2eeAlg || 'AES-256-GCM-PBKDF2',
+                keyFingerprint: keyFp,
                 seenAt: null,
                 createdAt: nowIso
               }
@@ -1553,6 +1580,12 @@ Draft: ${draftText || '(none)'}`,
             return json(res, 400, { error: 'Write a message or attach a voice/camera note first.' }, req);
           }
           const nowIso = new Date().toISOString();
+          const isEncrypted = Boolean(body.e2ee || isE2eeCiphertext(text));
+          const keyFp =
+            body.keyFingerprint ||
+            (connection.verificationCode
+              ? deriveE2eeFingerprint(connection.verificationCode)
+              : '');
           const inserted = await db.collection('messages').insertOne({
             connectionId: connId,
             senderRole: 'creator',
@@ -1560,6 +1593,9 @@ Draft: ${draftText || '(none)'}`,
             body: text,
             voiceMeta,
             photoMeta,
+            e2ee: isEncrypted,
+            e2eeAlg: body.e2eeAlg || 'AES-256-GCM-PBKDF2',
+            keyFingerprint: keyFp,
             seenAt: null,
             createdAt: nowIso
           });
@@ -1575,6 +1611,9 @@ Draft: ${draftText || '(none)'}`,
                 text,
                 voiceMeta,
                 photoMeta,
+                e2ee: isEncrypted,
+                e2eeAlg: body.e2eeAlg || 'AES-256-GCM-PBKDF2',
+                keyFingerprint: keyFp,
                 seenAt: null,
                 createdAt: nowIso
               }

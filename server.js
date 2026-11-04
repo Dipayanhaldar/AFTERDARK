@@ -28,6 +28,7 @@ async function startServer() {
 
   const distPath = path.join(__dirname, 'dist');
   const distIndex = path.join(distPath, 'index.html');
+  const distGuest = path.join(distPath, 'guest.html');
   const useStaticDist = process.env.NODE_ENV === 'production' && fs.existsSync(distIndex);
 
   if (!useStaticDist) {
@@ -37,7 +38,7 @@ async function startServer() {
       appType: 'spa'
     });
 
-    // Rewrite /guest, /guest/, /guest.html, and /invite/* to /index.html so Vite serves the app with HTTP 200
+    // Rewrite /guest, /guest/, /guest.html, and /invite/* to /guest.html so Vite serves the standalone GuestApp
     app.use((req, _res, next) => {
       if (
         req.path === '/guest' ||
@@ -48,7 +49,7 @@ async function startServer() {
       ) {
         const searchIndex = req.url.indexOf('?');
         const query = searchIndex >= 0 ? req.url.slice(searchIndex) : '';
-        req.url = `/index.html${query}`;
+        req.url = `/guest.html${query}`;
       }
       next();
     });
@@ -56,8 +57,17 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     app.use(express.static(distPath));
-    app.use((_req, res) => {
-      res.status(200).sendFile(distIndex);
+    app.use((req, res) => {
+      if (
+        (req.path === '/guest' ||
+          req.path === '/guest/' ||
+          req.path === '/guest.html' ||
+          req.path.startsWith('/invite/')) &&
+        fs.existsSync(distGuest)
+      ) {
+        return res.status(200).sendFile(distGuest);
+      }
+      return res.status(200).sendFile(distIndex);
     });
   }
 

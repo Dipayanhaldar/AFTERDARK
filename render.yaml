@@ -1,11 +1,35 @@
 services:
   - type: web
-    name: afterdark
-    runtime: node
-    plan: free
+    name: afterdark-guest-connector
+    runtime: static
+    rootDir: guest-site
     buildCommand: npm install && npm run build
-    startCommand: npm run start
-    healthCheckPath: /healthz
+    staticPublishPath: dist
+    autoDeploy: true
+    pullRequestPreviewsEnabled: true
     envVars:
-      - key: NODE_ENV
-        value: production
+      - key: VITE_API_BASE_URL
+        value: https://afterdark-social-universe.vercel.app
+      - key: VITE_GUEST_CONNECTOR_URL
+        value: https://afterdark-guest-connector.onrender.com
+    headers:
+      - path: /*
+        name: X-Robots-Tag
+        value: noindex, nofollow, noarchive
+      - path: /*
+        name: Cache-Control
+        value: no-store
+    routes:
+      - type: rewrite
+        source: /guest
+        destination: /index.html
+      - type: rewrite
+        source: /guest/*
+        destination: /index.html
+      - type: rewrite
+        source: /invite/*
+        destination: /index.html
+      - type: rewrite
+        source: /*
+        destination: /index.html
+

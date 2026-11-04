@@ -9,19 +9,19 @@
     },
     {
       "source": "/guest",
-      "destination": "/index.html"
+      "destination": "/guest.html"
     },
     {
       "source": "/guest/(.*)",
-      "destination": "/index.html"
+      "destination": "/guest.html"
     },
     {
       "source": "/guest.html",
-      "destination": "/index.html"
+      "destination": "/guest.html"
     },
     {
       "source": "/invite/(.*)",
-      "destination": "/index.html"
+      "destination": "/guest.html"
     },
     {
       "source": "/(.*)",

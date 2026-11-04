@@ -5,13 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "vite build && node -e \"import('node:fs').then(fs=>{fs.copyFileSync('dist/index.html','dist/guest.html');fs.copyFileSync('dist/index.html','dist/404.html');fs.mkdirSync('dist/guest',{recursive:true});fs.copyFileSync('dist/index.html','dist/guest/index.html');})\"",
     "preview": "vite preview"
   },
   "dependencies": {
-    "vite": "^6.4.1",
+    "vite": ">=5.0.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "three": ">=0.160.0"
   },
   "devDependencies": {}
 }
