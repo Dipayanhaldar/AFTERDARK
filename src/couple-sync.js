@@ -193,16 +193,17 @@ export function buildPublicInviteLinks({
 
   const query = params.toString();
 
-  // Root URL (`/?invite=...`) is 100% guaranteed to NEVER 404 on any host (Render, Vercel, Cloud Run, localhost)
-  // and automatically mounts the standalone Guest App on a separate partner device!
-  const rootDirectUrl = `${targetOrigin}/?${query}`;
+  // Use the explicit /guest route so the app mounts GuestApp before the
+  // main dashboard. Vercel rewrites /guest to index.html; src/main.jsx
+  // detects the pathname and renders the standalone guest experience.
   const guestAppUrl = `${targetOrigin}/guest?${query}`;
+  const rootDirectUrl = `${targetOrigin}/?${query}`;
 
   return {
-    primaryUrl: rootDirectUrl,
+    primaryUrl: guestAppUrl,
     guestAppUrl,
     rootDirectUrl,
-    sameOriginUrl: rootDirectUrl
+    sameOriginUrl: guestAppUrl
   };
 }
 
