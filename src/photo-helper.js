@@ -34,3 +34,17 @@ export async function compressPhotoToDataUrl(file) {
   }
   throw new Error('Photo is still too large. Crop it or choose a smaller image.');
 }
+
+export async function preparePhotoFiles(fileList) {
+  const files = Array.from(fileList || []);
+  const results = [];
+  for (const file of files) {
+    const dataUrl = await compressPhotoToDataUrl(file);
+    results.push({
+      name: file.name || 'Couple Memory',
+      dataUrl
+    });
+  }
+  return results;
+}
+

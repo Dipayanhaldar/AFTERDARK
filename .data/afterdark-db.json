@@ -1,0 +1,748 @@
+{
+  "rate_limits": [
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892475",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T15:57:14.561Z"
+      },
+      "count": 1
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892476",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T15:58:44.681Z"
+      },
+      "count": 12
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892477",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T15:59:02.586Z"
+      },
+      "count": 19
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892478",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:00:02.123Z"
+      },
+      "count": 17
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892479",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:01:01.598Z"
+      },
+      "count": 13
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892480",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:02:02.171Z"
+      },
+      "count": 17
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892481",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:03:01.689Z"
+      },
+      "count": 17
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892482",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:04:01.208Z"
+      },
+      "count": 17
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892483",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:05:00.662Z"
+      },
+      "count": 17
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892484",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:06:00.250Z"
+      },
+      "count": 18
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892485",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:07:03.364Z"
+      },
+      "count": 16
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892486",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:08:00.001Z"
+      },
+      "count": 18
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892487",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:09:03.082Z"
+      },
+      "count": 17
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892488",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:10:02.007Z"
+      },
+      "count": 17
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892489",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:11:01.991Z"
+      },
+      "count": 17
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892490",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:12:01.021Z"
+      },
+      "count": 17
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892491",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:13:01.012Z"
+      },
+      "count": 17
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892492",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:14:00.019Z"
+      },
+      "count": 11
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892496",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:18:15.707Z"
+      },
+      "count": 15
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892497",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:19:01.008Z"
+      },
+      "count": 7
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892498",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:20:25.244Z"
+      },
+      "count": 1
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892499",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:21:25.206Z"
+      },
+      "count": 1
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892500",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:22:25.356Z"
+      },
+      "count": 1
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892501",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:23:26.816Z"
+      },
+      "count": 1
+    },
+    {
+      "_id": "2401:4900:97a7:bac9:d584:c75e:99d7:10:29892502",
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-01T16:24:25.270Z"
+      },
+      "count": 1
+    }
+  ],
+  "users": [
+    {
+      "email": "connect.dipayanhaldar@gmail.com",
+      "passwordHash": "2cb93b56c45a57d6342a1161429418bd:8588e862ccb72caa5f6fcad7d84bc519b06de34c0ba667dce269e607799a197aebb71a59d175fb03904e75d0cefb9dc12c276986e7dadc7f2e4a9be48132ab74",
+      "handle": "jaanu",
+      "createdAt": {
+        "__type": "Date",
+        "value": "2026-11-01T15:56:44.757Z"
+      },
+      "adultConfirmedAt": {
+        "__type": "Date",
+        "value": "2026-11-01T15:56:44.757Z"
+      },
+      "blockedUsers": [],
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae7613cc253113d0cf9e1de"
+      }
+    },
+    {
+      "email": "ayaan@afterdark.local",
+      "displayName": "Ayaan",
+      "passwordHash": "7bfd245d29e430d9dd77d891db0c0509:f78d20afb919718a0e87d06f82eb2e00c6668a7ca31eaa98821e645e9824b066e9b925d458b0c213601ba08c15fd1d8586267878981986c7291a64c44069dd33",
+      "createdAt": "2026-11-01T16:26:00.519Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac02"
+      }
+    },
+    {
+      "email": "ayaan_1793630166595@test.com",
+      "displayName": "Ayaan",
+      "handle": "Ayaan",
+      "passwordHash": "99897c654633d0f1c9ac6b4e348b54c5:1d5dbd217d26f0c7a0ce688c44219f9b234cfdbe3c63a91b2760815037a6a00ed84b1d9987a03013bb085f057f2e3091fc39bea0991f1f96138e40ebffa5d2d8",
+      "createdAt": "2026-11-02T14:36:06.787Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894cc"
+      }
+    },
+    {
+      "email": "host_1793632641430@afterdark.test",
+      "displayName": "Ayaan",
+      "handle": "Ayaan",
+      "passwordHash": "0ce6506ec1f2295ae796aa92f95c14c7:51d3da4c600e6ad2f1a8adce358290a0cc046332c31d6d4441d789f94733b15a948b3a13184de66a300d985ab3ee9df7a5484b24c76798b5137881c03ba1d6a1",
+      "createdAt": "2026-11-02T15:17:21.619Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c32"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac02"
+      },
+      "creatorDisplayName": "Ayaan",
+      "guestDisplayName": "Zoya",
+      "recipientHint": "Zoya",
+      "inviteId": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac04"
+      },
+      "status": "active",
+      "createdAt": "2026-11-01T16:26:00.547Z",
+      "approvedAt": "2026-11-01T16:26:00.547Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac05"
+      }
+    },
+    {
+      "creatorId": null,
+      "creatorDisplayName": "Ayaan",
+      "guestDisplayName": "Zoya",
+      "recipientHint": "Zoya",
+      "inviteId": {
+        "__type": "ObjectId",
+        "value": "6ae76156c253113d0cf9e1e0"
+      },
+      "inviteToken": "test_tok",
+      "verificationCode": "889900",
+      "status": "active",
+      "createdAt": "2026-11-02T13:45:03.035Z",
+      "approvedAt": "2026-11-02T13:45:03.035Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae893df5c54ed6fd6bfb18f"
+      }
+    },
+    {
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894cc"
+      },
+      "creatorDisplayName": "Ayaan",
+      "guestDisplayName": "Zoya",
+      "recipientHint": "Zoya",
+      "inviteId": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894ce"
+      },
+      "inviteToken": "vsIWK7Lz4AoB5APrQCIR1Gmz7Q4FSBjG",
+      "verificationCode": "874840",
+      "status": "closed",
+      "createdAt": "2026-11-02T14:36:06.815Z",
+      "approvedAt": "2026-11-02T14:36:06.815Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894cf"
+      },
+      "closedAt": "2026-11-02T14:36:06.827Z"
+    },
+    {
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c32"
+      },
+      "creatorDisplayName": "Ayaan",
+      "guestDisplayName": "Zoya",
+      "recipientHint": "Zoya",
+      "inviteId": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c34"
+      },
+      "inviteToken": "at0ZKvD64fjTodG-4C_wbx2bZqYZfiYE",
+      "verificationCode": "962545",
+      "channelId": "chan_at0ZKvD64fjTod",
+      "status": "active",
+      "createdAt": "2026-11-02T15:17:21.647Z",
+      "approvedAt": "2026-11-02T15:17:21.647Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c35"
+      }
+    }
+  ],
+  "invites": [
+    {
+      "tokenHash": "b5c362e0d16e86adba059410873de6c0af93005187f439cb3a3ce4083969aef0",
+      "codeHash": "b069943c7e47f5281c9f07fb4b10ca36cfdf7b3f54263d6824b311f49f251b18",
+      "rawTokenSealed": "moZ1_3S6yACddz3V.LVNphX4uatoFy3WV4Xg5TA.S13otssAGDLLgn_edwHujempKky2ekJrDg60PGkPP3DoOgYygFp4l5cAhw",
+      "codeSealed": "5Jg4HtQfUMfi_GaC.N_zk6uGT0ESWMXqYM4kjUQ.IlGM48y0",
+      "ownerId": {
+        "__type": "ObjectId",
+        "value": "6ae7613cc253113d0cf9e1de"
+      },
+      "status": "revoked",
+      "createdAt": {
+        "__type": "Date",
+        "value": "2026-11-01T15:56:53.497Z"
+      },
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-08T15:56:53.497Z"
+      },
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae76145c253113d0cf9e1df"
+      },
+      "revokedAt": {
+        "__type": "Date",
+        "value": "2026-11-01T15:57:10.987Z"
+      }
+    },
+    {
+      "tokenHash": "88e0278c0d906c9cb2b98c74581d58040f78a93ad0c69b280bda638d0439c8f2",
+      "codeHash": "f58c87169a0c75d988677ee512b0b480eb670814810ae0365a04a705ada25b50",
+      "rawTokenSealed": "TNSJooILIIWybDnP.nJHhtaqqJvbg1YlXUtXAKA.6beHn6d11cDpkINaPNBLAeGsUjIFlgNmQzHGNXqLid4rKQ-d3GVTLKxtqg",
+      "codeSealed": "5phXxXfqW3yR7_ns.HZKnlNOTleFGnm8Pk7gJ8g.T-ObsYkc",
+      "ownerId": {
+        "__type": "ObjectId",
+        "value": "6ae7613cc253113d0cf9e1de"
+      },
+      "status": "active",
+      "createdAt": {
+        "__type": "Date",
+        "value": "2026-11-01T15:57:10.988Z"
+      },
+      "expiresAt": {
+        "__type": "Date",
+        "value": "2026-11-08T15:57:10.988Z"
+      },
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae76156c253113d0cf9e1e0"
+      },
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae893df5c54ed6fd6bfb18f"
+      },
+      "guestDisplayName": "Zoya",
+      "approvedAt": "2026-11-02T13:45:03.035Z"
+    },
+    {
+      "inviteToken": "alBg4odVSck9Iq54pKBn8Dylu8k",
+      "tokenHash": "baa86de48220cb9c69696d19decb2e7e0f4fbe6f28d644ae7345729c88ddca52",
+      "verificationCode": "417079",
+      "codeHash": "152fd2d504fe0b4cd7cf2f626c566caaa5fd79fc9ea9f26449c8103c39f571a6",
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac02"
+      },
+      "creatorDisplayName": "Ayaan",
+      "recipientHint": "Zoya",
+      "status": "active",
+      "createdAt": "2026-11-01T16:26:00.538Z",
+      "expiresAt": "2026-11-08T16:26:00.537Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac04"
+      },
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac05"
+      },
+      "guestDisplayName": "Zoya",
+      "approvedAt": "2026-11-01T16:26:00.547Z"
+    },
+    {
+      "inviteToken": "gkjMmCt75Eoe0iivtRDda6JGd-E",
+      "tokenHash": "8be0e6fadbbf0c24a63319db0b96bc14690515c4964488c5f3cc66001017c200",
+      "verificationCode": "179265",
+      "codeHash": "6016b725c38422f0b16e13764711cab5942d87212be18bbdb869cb013803b4f0",
+      "creatorId": null,
+      "creatorDisplayName": "jaanu",
+      "recipientHint": "jannu riya",
+      "status": "pending",
+      "createdAt": "2026-11-02T14:23:41.742Z",
+      "expiresAt": "2026-11-09T13:51:35.108Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae89ced6805e711f8386ebf"
+      }
+    },
+    {
+      "inviteToken": "vsIWK7Lz4AoB5APrQCIR1Gmz7Q4FSBjG",
+      "tokenHash": "0581d3660baa1dbbbfe9118dd565393a69e38e1b67d972e7b6122a4ed1b1e31b",
+      "verificationCode": "874840",
+      "codeHash": "faef3f4a9929487a6c60bbde827c239cfff967759465f65a0d0da4adfafbac34",
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894cc"
+      },
+      "creatorDisplayName": "Ayaan",
+      "recipientHint": "Zoya",
+      "creatorCustomName": "Ayaan",
+      "partnerCustomName": "Zoya",
+      "themeId": "bollywood",
+      "emblemStyle": "dil",
+      "status": "revoked",
+      "createdAt": "2026-11-02T14:36:06.807Z",
+      "expiresAt": "2026-11-09T14:36:06.807Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894ce"
+      },
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894cf"
+      },
+      "guestDisplayName": "Zoya",
+      "approvedAt": "2026-11-02T14:36:06.815Z",
+      "revokedAt": "2026-11-02T14:36:06.827Z"
+    },
+    {
+      "inviteToken": "at0ZKvD64fjTodG-4C_wbx2bZqYZfiYE",
+      "tokenHash": "0744bc6862a0d917a6a3e8317487912d4a931052192671b65539d954089c98f9",
+      "verificationCode": "962545",
+      "codeHash": "7487eedcf05747466d87b50c97c0fd96b7df9e8e852b9ad69f9eefb84ab94f74",
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c32"
+      },
+      "creatorDisplayName": "Ayaan",
+      "recipientHint": "Zoya",
+      "creatorCustomName": "Ayaan",
+      "partnerCustomName": "Zoya",
+      "themeId": "charminar",
+      "emblemStyle": "dil",
+      "status": "active",
+      "createdAt": "2026-11-02T15:17:21.638Z",
+      "expiresAt": "2026-11-09T15:17:21.638Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c34"
+      },
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c35"
+      },
+      "channelId": "chan_at0ZKvD64fjTod",
+      "guestDisplayName": "Zoya",
+      "approvedAt": "2026-11-02T15:17:21.647Z"
+    }
+  ],
+  "sessions": [
+    {
+      "tokenHash": "0f9e1a481aeab1ef7dd3573c8c46106e9624dd92ac5797406321811e8cb6d2be",
+      "userId": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac02"
+      },
+      "createdAt": "2026-11-01T16:26:00.521Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac03"
+      }
+    },
+    {
+      "tokenHash": "6deb3535c478f8794b9e1a03480eba46da3bf214833a0e6c4dac86ba078d45d7",
+      "userId": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894cc"
+      },
+      "createdAt": "2026-11-02T14:36:06.789Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894cd"
+      }
+    },
+    {
+      "tokenHash": "2a0ac154201db58162decdf88bec5d1c0e9d811c340715998753d16ad647a553",
+      "userId": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c32"
+      },
+      "createdAt": "2026-11-02T15:17:21.620Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c33"
+      }
+    }
+  ],
+  "messages": [
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac05"
+      },
+      "senderRole": "guest",
+      "senderName": "Zoya",
+      "body": "Hau miyaan, 6-digit OTP (417079) daal ke humare private room mein aa gayi/gaya! 🌙♥ Ab bolo — Niloufer ki chai peene chalein ya yahin chat mein @swiggy se गरमा-गरम Biryani mangwayein?",
+      "createdAt": "2026-11-01T16:26:00.547Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac06"
+      }
+    },
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac05"
+      },
+      "senderRole": "guest",
+      "senderName": "Zoya",
+      "body": "🛍️ [IN-CHAT FREE ORDER · ₹0] Zoya booked \"Niloufer Special Irani Chai Flask + 2 Malai Bun Maska\" via Café Niloufer (ETA 16 mins) — Note: \"Jaan ke liye Malai Bun & Irani Chai\" @niloufer",
+      "orderMeta": {
+        "connectionId": {
+          "__type": "ObjectId",
+          "value": "6ae76818d1681c265099ac05"
+        },
+        "brandId": "niloufer",
+        "brandName": "Café Niloufer",
+        "itemId": "nl-1",
+        "itemName": "Niloufer Special Irani Chai Flask + 2 Malai Bun Maska",
+        "etaMinutes": 16,
+        "note": "Jaan ke liye Malai Bun & Irani Chai",
+        "orderedByRole": "guest",
+        "orderedByName": "Zoya",
+        "createdAt": "2026-11-01T16:26:00.556Z",
+        "id": "6ae76818d1681c265099ac08"
+      },
+      "createdAt": "2026-11-01T16:26:00.556Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac09"
+      }
+    },
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae893df5c54ed6fd6bfb18f"
+      },
+      "senderRole": "guest",
+      "senderName": "Zoya",
+      "body": "Hau miyaan, 6-digit OTP (889900) daal ke humare private room mein aa gayi/gaya! 🌙♥ Ab bolo — Niloufer ki chai peene chalein ya yahin chat mein @swiggy se गरमा-गरम Biryani mangwayein?",
+      "createdAt": "2026-11-02T13:45:03.035Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae893df5c54ed6fd6bfb190"
+      }
+    },
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894cf"
+      },
+      "senderRole": "guest",
+      "senderName": "Zoya",
+      "body": "Hau miyaan! Zoya ne OTP verify karke humara private couple chat khol liya ♥ Ab baatein shuru karein?",
+      "createdAt": "2026-11-02T14:36:06.815Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894d0"
+      }
+    },
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894cf"
+      },
+      "senderRole": "creator",
+      "senderName": "Ayaan",
+      "body": "🕯️ Ayaan planned an upcoming date: \"Candlelight Dinner at Olive Bistro\" at Durgam Cheruvu! Tap below to add it directly to Google Calendar ♥",
+      "dateMeta": {
+        "title": "Candlelight Dinner at Olive Bistro",
+        "location": "Durgam Cheruvu",
+        "dateTime": "2026-11-05T21:00",
+        "description": "Just the two of us ♥",
+        "createdBy": "Ayaan",
+        "createdAt": "2026-11-02T14:36:06.822Z"
+      },
+      "createdAt": "2026-11-02T14:36:06.822Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894d3"
+      }
+    },
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c35"
+      },
+      "channelId": "chan_at0ZKvD64fjTod",
+      "senderRole": "guest",
+      "senderName": "Zoya",
+      "body": "Hau miyaan! Zoya ne OTP (962545) verify karke humara private couple chat khol liya ♥ Ab baatein shuru karein?",
+      "createdAt": "2026-11-02T15:17:21.647Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c36"
+      }
+    },
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c35"
+      },
+      "senderRole": "creator",
+      "senderName": "Ayaan",
+      "body": "Hey Zoya, welcome to our private channel!",
+      "createdAt": "2026-11-02T15:17:21.659Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c38"
+      }
+    }
+  ],
+  "guest_sessions": [
+    {
+      "tokenHash": "c00e07a276ce71320b86f96dc211431acc18c81f92d8cbb434fc7409d9366091",
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac05"
+      },
+      "guestDisplayName": "Zoya",
+      "createdAt": "2026-11-01T16:26:00.549Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac07"
+      }
+    },
+    {
+      "tokenHash": "0228c58528fbf9dd8213c68c927158fa7387d7d60144f2df8c04def7346084c1",
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae893df5c54ed6fd6bfb18f"
+      },
+      "guestDisplayName": "Zoya",
+      "createdAt": "2026-11-02T13:45:03.038Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae893df5c54ed6fd6bfb191"
+      }
+    },
+    {
+      "tokenHash": "be2e952381f11c6dbbab8cb15de24b8e4820c32a2476e182444b2a4b5a082ced",
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c35"
+      },
+      "inviteToken": "at0ZKvD64fjTodG-4C_wbx2bZqYZfiYE",
+      "verificationCode": "962545",
+      "channelId": "chan_at0ZKvD64fjTod",
+      "guestDisplayName": "Zoya",
+      "createdAt": "2026-11-02T15:17:21.651Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae8a98129c7b63940207c37"
+      }
+    }
+  ],
+  "orders": [
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac05"
+      },
+      "brandId": "niloufer",
+      "brandName": "Café Niloufer",
+      "itemId": "nl-1",
+      "itemName": "Niloufer Special Irani Chai Flask + 2 Malai Bun Maska",
+      "etaMinutes": 16,
+      "note": "Jaan ke liye Malai Bun & Irani Chai",
+      "orderedByRole": "guest",
+      "orderedByName": "Zoya",
+      "createdAt": "2026-11-01T16:26:00.556Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae76818d1681c265099ac08"
+      }
+    }
+  ],
+  "dates": [
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894cf"
+      },
+      "title": "Candlelight Dinner at Olive Bistro",
+      "location": "Durgam Cheruvu",
+      "dateTime": "2026-11-05T21:00",
+      "description": "Just the two of us ♥",
+      "createdBy": "Ayaan",
+      "createdAt": "2026-11-02T14:36:06.822Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6ae89fd6ce4f088bc3a894d2"
+      }
+    }
+  ]
+}

@@ -1,668 +1,1730 @@
-import { MongoClient } from 'mongodb';
-import { randomBytes, randomInt, scrypt as scryptCallback, timingSafeEqual, createHmac, createHash, createCipheriv, createDecipheriv } from 'node:crypto';
+import { createHash, randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { getLocalDatabase, ObjectId } from './local-db.js';
+import { brandCatalog, CITY_PROFILES, analyzeChatContextLocally } from '../src/commerce-data.js';
+import { GoogleGenAI, Type } from '@google/genai';
 
-const scrypt = promisify(scryptCallback);
-let clientPromise;
-let emailIndexMigrationPromise;
-const COOKIE = 'afterdark_session';
-const DAY = 86400;
-const json = (res, status, body) => { res.statusCode = status; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(body)); };
-// Public guest invitation endpoints are consumed by static guest sites hosted
-// on Render. CORS is a browser access policy, not authentication; invite tokens
-// and guest sessions are validated in the route handlers. No cookies are used
-// for cross-origin guest API calls, so a wildcard origin is appropriate here.
-function setGuestCors(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.setHeader('Access-Control-Max-Age', '86400');
+const scrypt = promisify(scryptCb);
+
+function setCorsHeaders(req, res) {
+  const origin = req?.headers?.origin || '*';
+  res.setHeader('Access-Control-Allow-Origin', origin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, X-Requested-With, Accept, X-Device-Id, X-Client-Ip'
+  );
 }
-function hashGuestToken(value) {
-  if (!process.env.JWT_SECRET) throw new Error('AUTH_CONFIG');
-  return createHmac('sha256', process.env.JWT_SECRET).update(value).digest('hex');
+
+function getClientIp(req, body = {}) {
+  if (body?.clientIp) return String(body.clientIp).trim();
+  const headerIp =
+    req?.headers?.['x-client-ip'] ||
+    req?.headers?.['cf-connecting-ip'] ||
+    req?.headers?.['x-real-ip'] ||
+    req?.headers?.['x-forwarded-for'];
+  if (headerIp) {
+    return String(headerIp).split(',')[0].trim();
+  }
+  return String(req?.socket?.remoteAddress || '').trim();
 }
-function sealGuestSession(value) {
-  const key = createHash('sha256').update(process.env.JWT_SECRET || 'AUTH_CONFIG').digest();
-  const iv = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
-  return [iv.toString('base64url'), cipher.getAuthTag().toString('base64url'), encrypted.toString('base64url')].join('.');
+
+function getRequestDeviceId(req, body = {}) {
+  return String(req?.headers?.['x-device-id'] || body?.deviceId || '').trim();
 }
-function openGuestSession(value) {
-  const [iv, tag, encrypted] = String(value || '').split('.');
-  if (!iv || !tag || !encrypted) throw new Error('GUEST_SESSION_RECOVERY_UNAVAILABLE');
-  const key = createHash('sha256').update(process.env.JWT_SECRET || 'AUTH_CONFIG').digest();
-  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64url'));
-  decipher.setAuthTag(Buffer.from(tag, 'base64url'));
-  return Buffer.concat([decipher.update(Buffer.from(encrypted, 'base64url')), decipher.final()]).toString('utf8');
+
+function json(res, status, payload, req = null) {
+  setCorsHeaders(req, res);
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(JSON.stringify(payload));
 }
-const token = (n = 32) => randomBytes(n).toString('base64url');
-function cookie(res, value, maxAge = DAY * 14) { res.setHeader('Set-Cookie', `${COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`); }
-function sign(payload) { const secret = process.env.JWT_SECRET; if (!secret) throw new Error('AUTH_CONFIG'); const body = Buffer.from(JSON.stringify(payload)).toString('base64url'); return body + '.' + createHmac('sha256', secret).update(body).digest('base64url'); }
-function verify(value) { try { const [body, sig] = value.split('.'); const expected = createHmac('sha256', process.env.JWT_SECRET).update(body).digest(); const actual = Buffer.from(sig, 'base64url'); if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return null; const p = JSON.parse(Buffer.from(body, 'base64url').toString()); return p.exp > Date.now() / 1000 ? p : null; } catch { return null; } }
-function currentUser(req) { const raw = (req.headers.cookie || '').split(';').map(v => v.trim()).find(v => v.startsWith(COOKIE + '='))?.slice(COOKIE.length + 1); return raw ? verify(decodeURIComponent(raw)) : null; }
-async function db() { if (!process.env.MONGODB_URI) throw new Error('DB_CONFIG'); if (!clientPromise) { const client = new MongoClient(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 8000 }); clientPromise = client.connect(); } return (await clientPromise).db(process.env.MONGODB_DB || 'afterdark'); }
-async function ensureUserEmailIndex(database) {
-  if (!emailIndexMigrationPromise) emailIndexMigrationPromise = (async () => {
-    const users = database.collection('users');
-    let indexes = [];
-    try { indexes = await users.listIndexes().toArray(); }
-    catch (error) {
-      // A fresh database may not have created the users collection yet.
-      if (error.code !== 26 && error.codeName !== 'NamespaceNotFound') throw error;
+
+function hashValue(value) {
+  return createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+function randomToken(bytes = 24) {
+  return randomBytes(bytes).toString('base64url');
+}
+
+async function readBody(req) {
+  if (req.body && typeof req.body === 'object') {
+    return req.body;
+  }
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  if (!chunks.length) return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function extractBearerToken(req) {
+  const header = String(req.headers?.authorization || '');
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : '';
+}
+
+async function getCreatorFromRequest(req, db) {
+  const rawToken = extractBearerToken(req);
+  if (!rawToken) return null;
+  const session = await db.collection('sessions').findOne({
+    tokenHash: hashValue(rawToken)
+  });
+  if (!session) return null;
+  const userId = session.userId instanceof ObjectId ? session.userId : new ObjectId(session.userId);
+  const user = await db.collection('users').findOne({ _id: userId });
+  if (!user) return null;
+  return {
+    id: user._id.toString(),
+    _id: user._id,
+    email: user.email,
+    displayName: user.displayName || user.handle || 'Jaan'
+  };
+}
+
+async function getGuestFromRequest(req, db) {
+  const rawToken = extractBearerToken(req);
+  if (!rawToken) return null;
+  const guestSession = await db.collection('guest_sessions').findOne({
+    tokenHash: hashValue(rawToken)
+  });
+  if (!guestSession) return null;
+  const connectionId =
+    guestSession.connectionId instanceof ObjectId
+      ? guestSession.connectionId
+      : new ObjectId(guestSession.connectionId);
+  const connection = await db.collection('connections').findOne({ _id: connectionId });
+  if (!connection || connection.status !== 'active') return null;
+  return {
+    guestSession,
+    connection,
+    guestDisplayName: guestSession.guestDisplayName || connection.guestDisplayName || 'Meri Jaan'
+  };
+}
+
+function buildChannelId(inviteToken, fallbackId = '') {
+  const seed = String(inviteToken || fallbackId || 'couple').replace(/[^a-zA-Z0-9]/g, '');
+  return `chan_${seed.slice(0, 14) || 'private'}`;
+}
+
+function verifyOtpMatchesInvite(invite, suppliedOtp) {
+  if (!invite || !suppliedOtp || suppliedOtp.length !== 6) return false;
+  const suppliedHash = hashValue(suppliedOtp);
+  if (invite.codeHash && typeof invite.codeHash === 'string' && invite.codeHash.length === suppliedHash.length) {
+    try {
+      return timingSafeEqual(Buffer.from(invite.codeHash), Buffer.from(suppliedHash));
+    } catch {
+      // fall through to direct comparison
     }
-    // A normal unique index also indexes missing emails as null, which blocks a second guest account.
-    const legacy = indexes.find(index => index.name === 'email_1' && index.unique && !index.partialFilterExpression && !index.sparse);
-    if (legacy) {
-      await users.dropIndex('email_1').catch(error => {
-        if (error.code !== 27 && error.codeName !== 'IndexNotFound') throw error;
-      });
-    }
-    indexes = indexes.filter(index => index.name !== 'email_1');
-    const desired = indexes.find(index => index.name === 'users_email_unique');
-    const desiredFilter = desired?.partialFilterExpression?.email?.$type === 'string';
-    if (desired && (!desired.unique || !desiredFilter)) {
-      await users.dropIndex('users_email_unique');
-    }
-    await users.createIndex({ email: 1 }, {
-      unique: true,
-      partialFilterExpression: { email: { $type: 'string' } },
-      name: 'users_email_unique'
-    });
-  })();
-  try { await emailIndexMigrationPromise; }
-  catch (error) { emailIndexMigrationPromise = null; throw error; }
+  }
+  if (invite.verificationCode) {
+    return String(invite.verificationCode).trim() === suppliedOtp;
+  }
+  return false;
 }
-function cleanUser(u) { return { id: u._id.toString(), email: u.email || null, handle: u.handle || 'your-vibe', guest: Boolean(u.guest), createdAt: u.createdAt }; }
-async function readBody(req, maxBytes = 20000) { let data = ''; for await (const chunk of req) { data += chunk; if (data.length > maxBytes) throw new Error('BODY_TOO_LARGE'); } return data ? JSON.parse(data) : {}; }
-async function rateLimit(database, key, limit = 20) { const now = new Date(); const bucket = Math.floor(now.getTime() / 60000); const id = key + ':' + bucket; const c = database.collection('rate_limits'); await c.updateOne({ _id: id }, { $inc: { count: 1 }, $setOnInsert: { expiresAt: new Date(now.getTime() + 120000) } }, { upsert: true }); const row = await c.findOne({ _id: id }); if (row?.count > limit) return false; return true; }
+
+function formatConnectionForCreator(conn) {
+  const peer = conn.guestDisplayName || conn.recipientHint || 'Meri Jaan';
+  const idStr = conn._id.toString();
+  return {
+    id: idStr,
+    channelId: conn.channelId || buildChannelId(conn.inviteToken, idStr),
+    paired: (conn.status || 'active') === 'active',
+    status: conn.status || 'active',
+    creatorDisplayName: conn.creatorDisplayName || 'Creator',
+    peerDisplayName: peer,
+    guestDisplayName: peer,
+    handle: peer,
+    role: 'creator',
+    inviteToken: conn.inviteToken || '',
+    verificationCode: conn.verificationCode || '',
+    createdAt: conn.createdAt,
+    approvedAt: conn.approvedAt || conn.createdAt
+  };
+}
+
+function formatConnectionForGuest(conn) {
+  const creator = conn.creatorDisplayName || 'Tumhari Jaan';
+  const guest = conn.guestDisplayName || conn.recipientHint || 'Meri Jaan';
+  const idStr = conn._id.toString();
+  return {
+    id: idStr,
+    channelId: conn.channelId || buildChannelId(conn.inviteToken, idStr),
+    paired: (conn.status || 'active') === 'active',
+    status: conn.status || 'active',
+    creatorDisplayName: creator,
+    guestDisplayName: guest,
+    peerDisplayName: creator,
+    handle: creator,
+    role: 'invitee',
+    inviteToken: conn.inviteToken || '',
+    verificationCode: conn.verificationCode || '',
+    createdAt: conn.createdAt,
+    approvedAt: conn.approvedAt || conn.createdAt
+  };
+}
+
+function formatMessageDoc(m, defaultRole = 'creator') {
+  return {
+    id: m._id.toString(),
+    senderRole: m.senderRole || defaultRole,
+    senderName: m.senderName || '',
+    body: m.body || m.text || '',
+    text: m.body || m.text || '',
+    orderMeta: m.orderMeta || null,
+    photoMeta: m.photoMeta || null,
+    voiceMeta: m.voiceMeta || null,
+    dateMeta: m.dateMeta || null,
+    seenAt: m.seenAt || null,
+    createdAt: m.createdAt
+  };
+}
 
 export default async function handler(req, res) {
-  setGuestCors(req, res);
-  if (req.method === 'OPTIONS') { res.setHeader('Allow', 'GET,POST,PATCH,DELETE,OPTIONS'); return res.status(204).end(); }
-  let database;
-  let action = 'initialization';
-  const requestId = randomBytes(6).toString('hex');
+  setCorsHeaders(req, res);
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204;
+    return res.end();
+  }
+
   try {
-    const url = new URL(req.url, 'https://afterdark.invalid');
-    const parts = url.pathname.replace(/^\/api\/?/, '').split('/').filter(Boolean);
-    action = parts.join('/') || 'root';
-    database = await db();
+    const db = await getLocalDatabase();
+    const url = new URL(req.url || '/api', 'http://localhost:3000');
+    const parts = url.pathname
+      .replace(/^\/api\/?/, '')
+      .split('/')
+      .filter(Boolean)
+      .map((part) => decodeURIComponent(part));
+    const action = parts.join('/');
 
-    // Lightweight diagnostic route: verify database connectivity without running
-    // schema migrations, rate limits, or other application setup.
     if (action === 'health' && req.method === 'GET') {
-      await database.command({ ping: 1 });
-      return json(res, 200, { ok: true, service: 'afterdark-api', database: 'connected' });
+      return json(res, 200, { ok: true, service: 'afterdark-hyderabad-couples' }, req);
     }
 
-    // Public invite previews are intentionally served before schema/index maintenance.
-    // A guest should not have to wait for unrelated collection migrations to load a shared invite.
-    if (parts[0] === 'invites' && parts[1] && parts.length === 2 && req.method === 'GET') {
-      const ip = String(req.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim().slice(0, 80);
-      if (!await rateLimit(database, 'invite-preview:' + ip, 60)) return json(res, 429, { error: 'Too many invite checks. Wait a minute, then try again.' });
-      if (!process.env.JWT_SECRET) return json(res, 503, { error: 'Invite service is temporarily unavailable. Please try again shortly.' });
-      const raw = parts[1];
-      const hash = createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex');
-      const invite = await database.collection('invites').findOne({ tokenHash: hash, expiresAt: { $gt: new Date() } });
-      if (!invite || invite.status === 'ignored' || invite.status === 'revoked') return json(res, 404, { error: 'This invite has expired or is no longer available.' });
-      const inviteOwner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
-      let ownInvite = false;
-      const session = currentUser(req);
-      if (session?.sub) { try { ownInvite = invite.ownerId.equals(new (await import('mongodb')).ObjectId(session.sub)); } catch {} }
-      return json(res, 200, { invite: { status: invite.status, ownInvite, handle: inviteOwner?.handle || 'your person' } });
-    }
+    const body = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
+      ? await readBody(req)
+      : {};
 
-    // Email-index migration is maintenance, not a prerequisite for reading a public invite.
-    // A legacy/conflicting index must not make invite links fail before their lookup runs.
-    try { await ensureUserEmailIndex(database); }
-    catch (error) {
-      console.error('AFTERDARK email index migration failed:', {
-        requestId, action, code: error?.code || null,
-        codeName: error?.codeName || null, message: error?.message || 'unknown'
-      });
-    }
-    // Index maintenance must not take down every API route when one legacy index has
-    // conflicting options. Log each failure and keep serving requests; fix the index
-    // separately without turning guest invite loads into a generic 500.
-    const indexTasks = [
-      ['invites.tokenHash', () => database.collection('invites').createIndex({ tokenHash: 1 }, { unique: true })],
-      ['invites.expiresAt', () => database.collection('invites').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })],
-      ['connections.pairKey', () => database.collection('connections').createIndex({ pairKey: 1 }, { unique: true })],
-      ['messages.connectionId_createdAt', () => database.collection('messages').createIndex({ connectionId: 1, createdAt: 1 })],
-      ['messages.createdAt_ttl', () => database.collection('messages').createIndex({ createdAt: 1 }, { expireAfterSeconds: 30 * DAY })],
-      ['rate_limits.expiresAt', () => database.collection('rate_limits').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })],
-      ['password_resets.expiresAt', () => database.collection('password_resets').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })],
-      ['date_plans.connectionId', () => database.collection('date_plans').createIndex({ connectionId: 1 }, { unique: true })],
-      ['moments.connectionId_createdAt', () => database.collection('moments').createIndex({ connectionId: 1, createdAt: -1 })],
-      ['moments.answer_unique', () => database.collection('moments').createIndex({ connectionId: 1, type: 1, dayKey: 1, userId: 1 }, { unique: true, partialFilterExpression: { type: 'answer' } })],
-      ['reports.createdAt', () => database.collection('reports').createIndex({ createdAt: 1 })],
-      ['guest_sessions.expiresAt', () => database.collection('guest_sessions').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })]
-    ];
-    const indexResults = await Promise.allSettled(indexTasks.map(([, create]) => create()));
-    indexResults.forEach((result, index) => {
-      if (result.status === 'rejected') {
-        console.error('AFTERDARK index setup failed:', {
-          index: indexTasks[index][0],
-          code: result.reason?.code || null,
-          codeName: result.reason?.codeName || null,
-          message: result.reason?.message || 'unknown'
+    // -------------------------------------------------------------------------
+    // 0. AI IN-CHAT BRAND & FLIRT LINE ANALYZER
+    // -------------------------------------------------------------------------
+    if (action === 'ai/analyze-chat' && req.method === 'POST') {
+      const messages = Array.isArray(body.messages) ? body.messages : [];
+      const draftText = String(body.draftText || '');
+      const viewerRole = body.viewerRole === 'guest' ? 'guest' : 'creator';
+      const localInsight = analyzeChatContextLocally(messages, draftText, viewerRole);
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return json(res, 200, { insight: localInsight, source: 'contextual-engine' }, req);
+      }
+
+      try {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
         });
-      }
-    });
-    const body = ['POST','PATCH','DELETE'].includes(req.method) ? await readBody(req, parts[0] === 'connections' && parts[2] === 'moments' ? 1500000 : 20000) : {};
-    const ip = String(req.headers['x-forwarded-for'] || 'unknown').split(',')[0].trim().slice(0, 80);
-    if (!await rateLimit(database, ip, ['login','register','forgot-password','reset-password'].includes(action) ? 8 : 45)) return json(res, 429, { error: 'Too many tries. Take a breath and try again shortly.' });
+        const chatTranscript = messages
+          .slice(-6)
+          .map((m) => {
+            const mediaTag = m.voiceMeta ? '[Voice Note]' : m.photoMeta ? '[Live Photo]' : '';
+            return `${m.senderName || m.senderRole || 'Partner'}: ${mediaTag} ${m.body || m.text || ''}`.trim();
+          })
+          .join('\n');
+        const validBrandIds = brandCatalog.map((b) => b.id).join(', ');
 
-    if (action === 'register' && req.method === 'POST') {
-      const email = String(body.email || '').trim().toLowerCase();
-      const password = String(body.password || '');
-      const handle = String(body.handle || '').trim().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24);
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 10 || password.length > 128 || body.adult !== true || body.consent !== true) return json(res, 400, { error: 'Check your email, use 10+ password characters, and confirm you are 18+.' });
-      const salt = randomBytes(16).toString('hex');
-      const hash = (await scrypt(password, salt, 64)).toString('hex');
-      const previousSession = currentUser(req);
-      if (previousSession?.guest) {
-        const { ObjectId } = await import('mongodb');
-        const guestId = new ObjectId(previousSession.sub);
-        const guestUser = await database.collection('users').findOne({ _id: guestId, guest: true });
-        if (guestUser) {
-          const chosenHandle = handle || guestUser.handle || 'your-vibe';
-          await database.collection('users').updateOne({ _id: guestId }, { $set: { email, passwordHash: salt + ':' + hash, handle: chosenHandle, guest: false, adultConfirmedAt: new Date(), consentAt: new Date() }, $unset: { guestCreatedAt: '' } });
-          const upgraded = { ...guestUser, email, handle: chosenHandle, guest: false };
-          cookie(res, sign({ sub: guestId.toString(), exp: Math.floor(Date.now()/1000) + DAY*14 }));
-          return json(res, 200, { user: cleanUser(upgraded) });
-        }
-      }
-      try { const result = await database.collection('users').insertOne({ email, passwordHash: salt + ':' + hash, handle: handle || 'your-vibe', createdAt: new Date(), adultConfirmedAt: new Date(), blockedUsers: [] }); const user = { _id: result.insertedId, email, handle: handle || 'your-vibe', createdAt: new Date() }; cookie(res, sign({ sub: user._id.toString(), exp: Math.floor(Date.now()/1000) + DAY*14 })); return json(res, 201, { user: cleanUser(user) }); }
-      catch (e) { if (e.code === 11000) return json(res, 409, { error: 'That email already has an account. Try signing in instead.' }); throw e; }
-    }
-    if (action === 'login' && req.method === 'POST') {
-      const email = String(body.email || '').trim().toLowerCase(); const password = String(body.password || '');
-      const user = await database.collection('users').findOne({ email });
-      if (!user?.passwordHash) return json(res, 401, { error: 'Email or password doesn’t match. Check it and try again.' });
-      const [salt, stored] = user.passwordHash.split(':'); const actual = (await scrypt(password, salt, 64)).toString('hex');
-      if (stored.length !== actual.length || !timingSafeEqual(Buffer.from(stored), Buffer.from(actual))) return json(res, 401, { error: 'Email or password doesn’t match. Check it and try again.' });
-      const previousSession = currentUser(req);
-      if (previousSession?.guest) {
-        const { ObjectId } = await import('mongodb');
-        const guestId = new ObjectId(previousSession.sub);
-        const connections = database.collection('connections');
-        const guestConnections = await connections.find({ memberIds: guestId }).toArray();
-        for (const c of guestConnections) {
-          const otherId = c.memberIds.find(id => !id.equals(guestId));
-          if (!otherId || otherId.equals(user._id)) continue;
-          const pairKey = [user._id.toString(), otherId.toString()].sort().join(':');
-          const existing = await connections.findOne({ pairKey });
-          if (existing) {
-            await database.collection('messages').updateMany({ connectionId: c._id }, { $set: { connectionId: existing._id } });
-            await database.collection('moments').updateMany({ connectionId: c._id }, { $set: { connectionId: existing._id } });
-            await database.collection('date_plans').deleteOne({ connectionId: c._id });
-            await connections.deleteOne({ _id: c._id });
-          } else {
-            const patch = { pairKey, memberIds: [user._id, otherId] };
-            if (c.creatorId?.equals(guestId)) patch.creatorId = user._id;
-            if (c.recipientId?.equals(guestId)) patch.recipientId = user._id;
-            await connections.updateOne({ _id: c._id }, { $set: patch });
-            await database.collection('moments').updateMany({ connectionId: c._id, userId: guestId }, { $set: { userId: user._id } });
-            const plan = await database.collection('date_plans').findOne({ connectionId: c._id });
-            if (plan?.choices?.[guestId.toString()]) {
-              const choices = { ...plan.choices, [user._id.toString()]: plan.choices[guestId.toString()] };
-              delete choices[guestId.toString()];
-              await database.collection('date_plans').updateOne({ _id: plan._id }, { $set: { choices } });
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: `Analyze this couple's private chat (including text, voice note, and live photo mood) for viewerRole="${viewerRole}". Recommend the single best matching Indian brand from Allowed brand IDs and write a witty Gen-Z Hinglish/Hyderabadi couple flirt reply.
+Allowed brand IDs: ${validBrandIds}
+
+Recent Chat:
+${chatTranscript || 'Couple connected in private chat.'}
+Draft: ${draftText || '(none)'}`,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                notificationTitle: { type: Type.STRING },
+                notificationBody: { type: Type.STRING },
+                primaryBrandId: { type: Type.STRING },
+                recommendedBrandIds: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING }
+                },
+                suggestedFlirtReply: { type: Type.STRING }
+              },
+              required: [
+                'notificationTitle',
+                'notificationBody',
+                'primaryBrandId',
+                'recommendedBrandIds',
+                'suggestedFlirtReply'
+              ]
             }
           }
-        }
-        await database.collection('invites').updateMany({ ownerId: guestId }, { $set: { ownerId: user._id } });
-        await database.collection('invites').updateMany({ recipientId: guestId }, { $set: { recipientId: user._id } });
-        await database.collection('reports').updateMany({ reporterId: guestId }, { $set: { reporterId: user._id } });
-        await database.collection('reports').updateMany({ targetUserId: guestId }, { $set: { targetUserId: user._id } });
-        await database.collection('users').deleteOne({ _id: guestId, guest: true });
-      }
-      cookie(res, sign({ sub: user._id.toString(), exp: Math.floor(Date.now()/1000) + DAY*14 })); return json(res, 200, { user: cleanUser(user) });
-    }
-    if (action === 'forgot-password' && req.method === 'POST') {
-      if (!process.env.RESEND_API_KEY || !process.env.FROM_EMAIL) return json(res, 503, { error: 'Password reset emails aren’t ready yet. Please try again later.' });
-      const email = String(body.email || '').trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(res, 400, { error: 'Enter a valid email address.' });
-      const generic = { message: 'If that email is registered, a reset link will arrive shortly. Check your inbox and spam folder.' };
-      const existing = await database.collection('users').findOne({ email }, { projection: { _id: 1 } });
-      if (!existing) return json(res, 200, generic);
-      const raw = token(32);
-      const tokenHash = createHmac('sha256', process.env.JWT_SECRET || '').update(raw).digest('hex');
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-      await database.collection('password_resets').deleteMany({ userId: existing._id });
-      await database.collection('password_resets').insertOne({ tokenHash, userId: existing._id, createdAt: new Date(), expiresAt });
-      const rawBaseUrl = process.env.APP_URL || (process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : '');
-      const baseUrl = rawBaseUrl.endsWith('/') ? rawBaseUrl.slice(0, -1) : rawBaseUrl;
-      if (!baseUrl) { await database.collection('password_resets').deleteOne({ tokenHash }); return json(res, 503, { error: 'Password reset emails aren’t ready yet. Please try again later.' }); }
-      const resetUrl = baseUrl + '/?token=' + encodeURIComponent(raw);
-      const mail = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + process.env.RESEND_API_KEY, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from: process.env.FROM_EMAIL,
-          to: [email],
-          subject: 'Reset your AFTERDARK password 🌙',
-          html: '<div style="font-family:Arial,sans-serif;background:#160f1c;color:#f8edf6;padding:32px;border-radius:18px"><h1 style="color:#ff91c4">AFTERDARK 🌙</h1><h2>Password reset requested?</h2><p>Tap below to choose a new password. This link expires in 60 minutes and can only be used once.</p><p><a href="' + resetUrl + '" style="display:inline-block;background:#ff91c4;color:#241126;padding:14px 20px;border-radius:10px;text-decoration:none;font-weight:bold">Reset my password</a></p><p>If you didn’t request this, ignore this email. Your password won’t change.</p></div>',
-          text: 'Reset your AFTERDARK password using this link (expires in 60 minutes): ' + resetUrl + '\\nIf you didn’t request this, ignore this email.'
-        })
-      });
-      if (!mail.ok) { await database.collection('password_resets').deleteOne({ tokenHash }); console.error('AFTERDARK reset email provider failed:', mail.status); return json(res, 503, { error: 'We couldn’t send the reset email just now. Try again shortly.' }); }
-      return json(res, 200, generic);
-    }
-    if (action === 'reset-password' && req.method === 'POST') {
-      const raw = String(body.token || '');
-      const password = String(body.password || '');
-      if (!raw || password.length < 10 || password.length > 128) return json(res, 400, { error: 'Use the reset link and choose a password with at least 10 characters.' });
-      const tokenHash = createHmac('sha256', process.env.JWT_SECRET || '').update(raw).digest('hex');
-      const resets = database.collection('password_resets');
-      const reset = await resets.findOne({ tokenHash, expiresAt: { $gt: new Date() } });
-      if (!reset) return json(res, 400, { error: 'This reset link has expired or was already used. Request a fresh one.' });
-      const salt = randomBytes(16).toString('hex');
-      const hash = (await scrypt(password, salt, 64)).toString('hex');
-      await database.collection('users').updateOne({ _id: reset.userId }, { $set: { passwordHash: salt + ':' + hash, passwordChangedAt: new Date() } });
-      await resets.deleteMany({ userId: reset.userId });
-      cookie(res, '', 0);
-      return json(res, 200, { message: 'Password updated. Sign in with your new password.' });
-    }
-    if (action === 'logout' && req.method === 'POST') { cookie(res, '', 0); return json(res, 200, { ok: true }); }
-    const session = currentUser(req);
+        });
 
-    // The invite URL alone never authorizes access to a chat after approval.
-    if (parts[0] === 'guest' && parts[1] === 'invites' && parts[2] && parts[3] === 'approve' && req.method === 'POST') {
-      if (body.adult !== true) return json(res, 400, { error: 'Please confirm you are 18 or older before opening a chat.' });
-      if (!process.env.JWT_SECRET) return json(res, 503, { error: 'Invite service is temporarily unavailable.' });
-      const rawInvite = parts[2];
-      const inviteHash = hashGuestToken(rawInvite);
-      const invites = database.collection('invites');
-      const invite = await invites.findOne({ tokenHash: inviteHash, expiresAt: { $gt: new Date() }, status: { $in: ['pending', 'approved'] } });
-      if (!invite) return json(res, 409, { error: 'This invite has expired or is no longer available. Ask the sender for a fresh invitation.' });
-      if (!await rateLimit(database, 'invite-code:' + invite._id.toString(), 5)) return json(res, 429, { error: 'Too many private-code attempts for this invite. Wait a minute before trying again.' });
-      const suppliedCode = String(body.code || '').replace(/\s/g, '');
-      if (!/^\d{6}$/.test(suppliedCode) || !invite.codeHash) return json(res, 401, { error: 'Enter the six-digit private code provided separately by the sender. The invitation link alone is not enough.' });
-      const expectedCodeHash = createHmac('sha256', process.env.JWT_SECRET).update(suppliedCode).digest('hex');
-      if (!timingSafeEqual(Buffer.from(expectedCodeHash), Buffer.from(invite.codeHash))) return json(res, 401, { error: 'That private code does not match. Ask the sender for the code again.' });
-      if (invite.status === 'approved' && invite.connectionId && invite.recipientId && invite.guestSessionCiphertext) {
-        try {
-          const recoveredToken = openGuestSession(invite.guestSessionCiphertext);
-          const recoveredSession = await database.collection('guest_sessions').findOne({
-            tokenHash: hashGuestToken(recoveredToken), connectionId: invite.connectionId,
-            userId: invite.recipientId, expiresAt: { $gt: new Date() }
-          });
-          const recoveredConnection = await database.collection('connections').findOne({
-            _id: invite.connectionId, memberIds: invite.recipientId, status: 'approved'
-          });
-          if (recoveredSession && recoveredConnection) {
-            const recoveredUser = await database.collection('users').findOne({ _id: invite.recipientId });
-            const owner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
-            return json(res, 200, {
-              status: 'approved', guestSessionToken: recoveredToken, expiresAt: recoveredSession.expiresAt,
-              user: recoveredUser ? cleanUser(recoveredUser) : { id: invite.recipientId.toString(), handle: 'guest', guest: true },
-              connection: { id: invite.connectionId.toString(), handle: owner?.handle || 'your person', role: 'invitee' }
+        const parsed = JSON.parse(response.text || '{}');
+        const validSet = new Set(brandCatalog.map((b) => b.id));
+        const primaryBrandId = validSet.has(parsed.primaryBrandId)
+          ? parsed.primaryBrandId
+          : localInsight.primaryBrandId;
+
+        return json(
+          res,
+          200,
+          {
+            insight: {
+              notificationTitle: parsed.notificationTitle || localInsight.notificationTitle,
+              notificationBody: parsed.notificationBody || localInsight.notificationBody,
+              primaryBrandId,
+              recommendedBrandIds: localInsight.recommendedBrandIds,
+              suggestedFlirtReply: parsed.suggestedFlirtReply || localInsight.suggestedFlirtReply
+            },
+            source: 'gemini'
+          },
+          req
+        );
+      } catch {
+        return json(res, 200, { insight: localInsight, source: 'fallback' }, req);
+      }
+    }
+
+    if (action === 'ai/discover-date-spots' && req.method === 'POST') {
+      const requestedCity = String(body.city || 'Hyderabad').trim();
+      const cityKey =
+        Object.keys(CITY_PROFILES).find(
+          (k) => k.toLowerCase() === requestedCity.toLowerCase()
+        ) ||
+        (requestedCity.toLowerCase().includes('bihar') || requestedCity.toLowerCase().includes('patna')
+          ? 'Patna'
+          : 'Hyderabad');
+      const profile = CITY_PROFILES[cityKey] || CITY_PROFILES.Hyderabad;
+
+      const fallbackSpots = (profile.cafesAndSpots || []).map((spot) => ({
+        name: spot.name,
+        vibe: `${spot.tier} · ${spot.area}`,
+        highlight: `${spot.cuisine} (${spot.avgForTwo} · ${spot.rating})`,
+        mapsUrl: spot.mapsUrl,
+        bookingUrl: spot.bookingUrl
+      }));
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return json(res, 200, { spots: fallbackSpots, city: cityKey, source: 'curated-city' }, req);
+      }
+
+      try {
+        const ai = new GoogleGenAI({
+          apiKey,
+          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+        });
+        const mood = String(body.mood || 'Romantic Cafe & Candlelight Dinner');
+        const response = await ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: `Recommend 4 real, top-rated romantic couple cafes (both top-tier and mid-tier) or candlelight dinner spots in ${requestedCity} for "${mood}". Return brief descriptions.`,
+          config: {
+            tools: [{ googleMaps: {} }, { googleSearch: {} }]
+          }
+        });
+        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        const groundedSpots = [];
+        for (const chunk of chunks) {
+          if (chunk.maps?.title) {
+            groundedSpots.push({
+              name: chunk.maps.title,
+              vibe: `Verified Google Maps Spot · ${requestedCity}`,
+              highlight: `Live grounded couple cafe/dining venue in ${requestedCity}.`,
+              mapsUrl: chunk.maps.uri || 'https://www.google.com/maps'
+            });
+          } else if (chunk.web?.title) {
+            groundedSpots.push({
+              name: chunk.web.title,
+              vibe: `Live Search Recommendation · ${requestedCity}`,
+              highlight: `Trending ${requestedCity} couple date spot.`,
+              mapsUrl: chunk.web.uri || 'https://www.google.com/maps'
             });
           }
-        } catch (recoveryError) {
-          console.error('AFTERDARK guest session recovery failed:', recoveryError?.message || 'unknown');
         }
-        return json(res, 409, { error: 'This invitation was accepted, but its private session cannot be recovered. Contact the sender to reset the invitation.' });
-      }
-      if (invite.status !== 'pending') return json(res, 409, { error: 'This invite is already being accepted. Please wait a moment and reopen the invitation.' });
-      const ownerActive = await database.collection('connections').findOne({ memberIds: invite.ownerId, status: 'approved' }, { projection: { _id: 1 } });
-      if (ownerActive) return json(res, 409, { error: 'This person already has an active AFTERDARK chat. One connection at a time.' });
-      const reserved = await invites.updateOne(
-        { _id: invite._id, status: 'pending', expiresAt: { $gt: new Date() } },
-        { $set: { status: 'approving', approvalStartedAt: new Date() } }
-      );
-      if (!reserved.modifiedCount) return json(res, 409, { error: 'This invite has just been accepted or is no longer available.' });
-      let guestId = null;
-      let connectionId = null;
-      let guestSessionToken = null;
-      try {
-        const { ObjectId } = await import('mongodb');
-        const guestHandle = 'guest-' + token(3).slice(0, 5);
-        const created = await database.collection('users').insertOne({
-          handle: guestHandle, guest: true, createdAt: new Date(), guestCreatedAt: new Date(),
-          adultConfirmedAt: new Date(), blockedUsers: []
-        });
-        guestId = created.insertedId;
-        const pair = [invite.ownerId.toString(), guestId.toString()].sort();
-        const pairKey = pair.join(':');
-        const existing = await database.collection('connections').findOne({ pairKey, status: 'approved' });
-        if (existing) throw new Error('ACTIVE_CONNECTION_EXISTS');
-        const createdConnection = await database.collection('connections').insertOne({
-          pairKey, memberIds: pair.map(id => new ObjectId(id)), creatorId: invite.ownerId,
-          recipientId: guestId, status: 'approved', createdAt: new Date()
-        });
-        connectionId = createdConnection.insertedId;
-        guestSessionToken = token(32);
-        const expiresAt = new Date(Date.now() + 30 * DAY * 1000);
-        await database.collection('guest_sessions').insertOne({
-          tokenHash: hashGuestToken(guestSessionToken), userId: guestId, connectionId,
-          createdAt: new Date(), expiresAt
-        });
-        const changed = await invites.updateOne(
-          { _id: invite._id, status: 'approving' },
-          { $set: { status: 'approved', recipientId: guestId, connectionId, guestSessionCiphertext: sealGuestSession(guestSessionToken), respondedAt: new Date() }, $unset: { approvalStartedAt: '' } }
+        return json(
+          res,
+          200,
+          {
+            spots: groundedSpots.length > 0 ? [...groundedSpots.slice(0, 3), ...fallbackSpots.slice(0, 2)] : fallbackSpots,
+            city: cityKey,
+            summaryText: response.text || '',
+            source: 'gemini-grounding'
+          },
+          req
         );
-        if (!changed.modifiedCount) throw new Error('INVITE_RESERVATION_LOST');
-        const owner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
-        return json(res, 200, {
-          status: 'approved', guestSessionToken, expiresAt,
-          user: { id: guestId.toString(), handle: guestHandle, guest: true },
-          connection: { id: connectionId.toString(), handle: owner?.handle || 'your person', role: 'invitee' }
-        });
-      } catch (error) {
-        if (guestSessionToken) await database.collection('guest_sessions').deleteOne({ tokenHash: hashGuestToken(guestSessionToken) }).catch(() => {});
-        if (connectionId) await database.collection('connections').deleteOne({ _id: connectionId }).catch(() => {});
-        if (guestId) await database.collection('users').deleteOne({ _id: guestId }).catch(() => {});
-        await invites.updateOne({ _id: invite._id, status: 'approving' }, { $set: { status: 'pending' }, $unset: { approvalStartedAt: '' } }).catch(() => {});
-        if (error?.message === 'ACTIVE_CONNECTION_EXISTS') return json(res, 409, { error: 'This person already has an active AFTERDARK chat. One connection at a time.' });
-        throw error;
+      } catch {
+        return json(res, 200, { spots: fallbackSpots, city: cityKey, source: 'fallback' }, req);
       }
     }
 
-    if (parts[0] === 'guest' && parts[1] === 'session' && req.method === 'GET') {
-      const suppliedToken = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-      if (!suppliedToken) return json(res, 401, { error: 'This private chat session is missing. Reopen your invite on the device where you accepted it.' });
-      const guestSession = await database.collection('guest_sessions').findOne({ tokenHash: hashGuestToken(suppliedToken), expiresAt: { $gt: new Date() } });
-      if (!guestSession) return json(res, 401, { error: 'This private chat session has expired. Ask the sender for a fresh invite.' });
-      const { ObjectId } = await import('mongodb');
-      const guestId = guestSession.userId instanceof ObjectId ? guestSession.userId : new ObjectId(guestSession.userId);
-      const connectionId = guestSession.connectionId instanceof ObjectId ? guestSession.connectionId : new ObjectId(guestSession.connectionId);
-      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: guestId, status: 'approved' });
-      if (!connection) return json(res, 403, { error: 'This private chat is no longer available.' });
-      const guestUser = await database.collection('users').findOne({ _id: guestId });
-      const ownerId = connection.memberIds.find(id => !id.equals(guestId));
-      const owner = ownerId ? await database.collection('users').findOne({ _id: ownerId }, { projection: { handle: 1 } }) : null;
-      return json(res, 200, {
-        user: guestUser ? cleanUser(guestUser) : { id: guestId.toString(), handle: 'guest', guest: true },
-        connection: { id: connectionId.toString(), handle: owner?.handle || 'your person', role: 'invitee' },
-        expiresAt: guestSession.expiresAt
+    // -------------------------------------------------------------------------
+    // 1. CREATOR AUTH: /api/auth/signup, /api/auth/login, /api/auth/logout
+    // -------------------------------------------------------------------------
+    if ((action === 'auth/signup' || action === 'register') && req.method === 'POST') {
+      const email = String(body.email || '').trim().toLowerCase();
+      const password = String(body.password || '');
+      const displayName =
+        String(body.displayName || body.handle || '')
+          .trim()
+          .slice(0, 40) ||
+        email.split('@')[0] ||
+        'Hyderabadi Jaan';
+
+      if (!email || !email.includes('@')) {
+        return json(res, 400, { error: 'Please enter a valid email address.' }, req);
+      }
+      if (password.length < 8) {
+        return json(res, 400, { error: 'Password must be at least 8 characters.' }, req);
+      }
+
+      const existing = await db.collection('users').findOne({ email });
+      if (existing) {
+        const sessionToken = randomToken(32);
+        await db.collection('sessions').insertOne({
+          tokenHash: hashValue(sessionToken),
+          userId: existing._id,
+          createdAt: new Date().toISOString()
+        });
+        const name = existing.displayName || displayName;
+        return json(
+          res,
+          200,
+          {
+            sessionToken,
+            user: {
+              id: existing._id.toString(),
+              email: existing.email,
+              displayName: name,
+              handle: name
+            }
+          },
+          req
+        );
+      }
+
+      const salt = randomBytes(16).toString('hex');
+      const derived = (await scrypt(password, salt, 64)).toString('hex');
+      const created = await db.collection('users').insertOne({
+        email,
+        displayName,
+        handle: displayName,
+        passwordHash: `${salt}:${derived}`,
+        createdAt: new Date().toISOString()
       });
+
+      const sessionToken = randomToken(32);
+      await db.collection('sessions').insertOne({
+        tokenHash: hashValue(sessionToken),
+        userId: created.insertedId,
+        createdAt: new Date().toISOString()
+      });
+
+      return json(
+        res,
+        201,
+        {
+          sessionToken,
+          user: {
+            id: created.insertedId.toString(),
+            email,
+            displayName,
+            handle: displayName
+          }
+        },
+        req
+      );
+    }
+
+    if ((action === 'auth/login' || action === 'login') && req.method === 'POST') {
+      const email = String(body.email || '').trim().toLowerCase();
+      const password = String(body.password || '');
+      const user = await db.collection('users').findOne({ email });
+
+      if (!user || !user.passwordHash) {
+        return json(
+          res,
+          401,
+          { error: 'Account not found. Switch to "Create Couple Account" to join!' },
+          req
+        );
+      }
+
+      const [salt, storedHash] = String(user.passwordHash).split(':');
+      const derived = (await scrypt(password, salt, 64)).toString('hex');
+      if (
+        storedHash.length !== derived.length ||
+        !timingSafeEqual(Buffer.from(storedHash), Buffer.from(derived))
+      ) {
+        return json(res, 401, { error: 'Incorrect password. Please try again.' }, req);
+      }
+
+      const sessionToken = randomToken(32);
+      await db.collection('sessions').insertOne({
+        tokenHash: hashValue(sessionToken),
+        userId: user._id,
+        createdAt: new Date().toISOString()
+      });
+
+      const name = user.displayName || user.handle || 'Jaan';
+      return json(
+        res,
+        200,
+        {
+          sessionToken,
+          user: {
+            id: user._id.toString(),
+            email: user.email,
+            displayName: name,
+            handle: name
+          }
+        },
+        req
+      );
+    }
+
+    if ((action === 'auth/logout' || action === 'logout') && req.method === 'POST') {
+      const rawToken = extractBearerToken(req);
+      if (rawToken) {
+        await db.collection('sessions').deleteMany({ tokenHash: hashValue(rawToken) });
+      }
+      return json(res, 200, { ok: true }, req);
+    }
+
+    if (action === 'me' && req.method === 'GET') {
+      const creator = await getCreatorFromRequest(req, db);
+      if (!creator) {
+        return json(res, 401, { error: 'Unauthorized session. Please sign in.' }, req);
+      }
+      return json(
+        res,
+        200,
+        {
+          user: {
+            id: creator.id,
+            email: creator.email,
+            displayName: creator.displayName,
+            handle: creator.displayName
+          }
+        },
+        req
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // 2. STRICT SINGLE-ACTIVE INVITE & QR MANAGEMENT (NO DOUBLE DATING)
+    // -------------------------------------------------------------------------
+    if (action === 'invites/current' && req.method === 'GET') {
+      const creator = await getCreatorFromRequest(req, db);
+      if (!creator) return json(res, 401, { error: 'Please sign in first.' }, req);
+
+      const existing = await db.collection('invites').findOne({
+        creatorId: creator._id,
+        status: { $in: ['pending', 'active'] }
+      });
+
+      return json(
+        res,
+        200,
+        {
+          invite: existing
+            ? {
+                inviteToken: existing.inviteToken,
+                verificationCode: existing.verificationCode,
+                creatorDisplayName: existing.creatorDisplayName || creator.displayName,
+                recipientHint: existing.recipientHint || 'Meri Jaan',
+                creatorCustomName: existing.creatorCustomName || creator.displayName,
+                partnerCustomName: existing.partnerCustomName || existing.recipientHint || 'Meri Jaan',
+                themeId: existing.themeId || 'charminar',
+                emblemStyle: existing.emblemStyle || 'dil',
+                status: existing.status,
+                createdAt: existing.createdAt,
+                expiresAt: existing.expiresAt
+              }
+            : null
+        },
+        req
+      );
+    }
+
+    if (action === 'invites/revoke' && req.method === 'POST') {
+      const creator = await getCreatorFromRequest(req, db);
+      if (!creator) return json(res, 401, { error: 'Please sign in first.' }, req);
+
+      const nowIso = new Date().toISOString();
+      await db.collection('invites').updateMany(
+        { creatorId: creator._id, status: { $in: ['pending', 'active'] } },
+        { $set: { status: 'revoked', revokedAt: nowIso } }
+      );
+
+      const activeConns = await db
+        .collection('connections')
+        .find({ creatorId: creator._id, status: 'active' })
+        .toArray();
+
+      for (const conn of activeConns) {
+        await db.collection('guest_sessions').deleteMany({ connectionId: conn._id });
+      }
+
+      await db.collection('connections').updateMany(
+        { creatorId: creator._id, status: 'active' },
+        { $set: { status: 'closed', closedAt: nowIso } }
+      );
+
+      return json(
+        res,
+        200,
+        {
+          ok: true,
+          message: 'Access revoked and QR code removed. You can now generate a fresh Couple Link & QR.'
+        },
+        req
+      );
+    }
+
+    if (action === 'invites/sync' && req.method === 'POST') {
+      const creator = await getCreatorFromRequest(req, db);
+      const inviteToken = String(body.inviteToken || body.invite || '').trim();
+      const verificationCode = String(body.verificationCode || body.inviteCode || '')
+        .replace(/\D/g, '')
+        .slice(0, 6);
+      const recipientHint = String(body.recipientHint || 'Meri Jaan').trim();
+      const creatorDisplayName =
+        creator?.displayName || String(body.creatorDisplayName || 'Tumhari Jaan').trim();
+
+      if (inviteToken && verificationCode.length === 6) {
+        const existing = await db.collection('invites').findOne({ inviteToken });
+        const creatorIp = getClientIp(req, body);
+        const creatorDeviceId = getRequestDeviceId(req, body);
+        if (!existing) {
+          await db.collection('invites').insertOne({
+            inviteToken,
+            tokenHash: hashValue(inviteToken),
+            verificationCode,
+            codeHash: hashValue(verificationCode),
+            creatorId: creator?._id || null,
+            creatorIp,
+            creatorDeviceId,
+            creatorDisplayName,
+            recipientHint,
+            creatorCustomName: body.creatorCustomName || creatorDisplayName,
+            partnerCustomName: body.partnerCustomName || recipientHint,
+            themeId: body.themeId || 'charminar',
+            emblemStyle: body.emblemStyle || 'dil',
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            expiresAt: body.expiresAt || new Date(Date.now() + 7 * 86400000).toISOString()
+          });
+        }
+      }
+      return json(res, 200, { ok: true }, req);
+    }
+
+    if (action === 'invites' && req.method === 'POST') {
+      const creator = await getCreatorFromRequest(req, db);
+      if (!creator) return json(res, 401, { error: 'Please sign in first.' }, req);
+
+      // STRICT NO-DOUBLE-DATING CHECK: Only 1 active/pending Invite + QR allowed at a time!
+      const existingInvite = await db.collection('invites').findOne({
+        creatorId: creator._id,
+        status: { $in: ['pending', 'active'] }
+      });
+      const existingConn = await db.collection('connections').findOne({
+        creatorId: creator._id,
+        status: 'active'
+      });
+
+      if (existingInvite || existingConn) {
+        return json(
+          res,
+          409,
+          {
+            error:
+              'You already have an active Couple Link & QR Code! To prevent double-dating, please click "Revoke Access & Remove QR Code" first before generating a new one.',
+            invite: existingInvite
+              ? {
+                  inviteToken: existingInvite.inviteToken,
+                  verificationCode: existingInvite.verificationCode,
+                  creatorDisplayName: existingInvite.creatorDisplayName,
+                  recipientHint: existingInvite.recipientHint,
+                  status: existingInvite.status
+                }
+              : null
+          },
+          req
+        );
+      }
+
+      const recipientHint =
+        String(body.recipientHint || body.partnerCustomName || 'Meri Jaan')
+          .trim()
+          .slice(0, 40) || 'Meri Jaan';
+      const creatorCustomName =
+        String(body.creatorCustomName || creator.displayName).trim().slice(0, 40) ||
+        creator.displayName;
+      const partnerCustomName =
+        String(body.partnerCustomName || recipientHint).trim().slice(0, 40) || recipientHint;
+      const themeId = String(body.themeId || 'charminar');
+      const emblemStyle = String(body.emblemStyle || 'dil');
+
+      const inviteToken = randomToken(24);
+      const verificationCode = String(randomInt(100000, 999999));
+      const nowIso = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
+      const creatorIp = getClientIp(req, body);
+      const creatorDeviceId = getRequestDeviceId(req, body);
+
+      await db.collection('invites').insertOne({
+        inviteToken,
+        tokenHash: hashValue(inviteToken),
+        verificationCode,
+        codeHash: hashValue(verificationCode),
+        creatorId: creator._id,
+        creatorIp,
+        creatorDeviceId,
+        creatorDisplayName: creatorCustomName,
+        recipientHint,
+        creatorCustomName,
+        partnerCustomName,
+        themeId,
+        emblemStyle,
+        status: 'pending',
+        createdAt: nowIso,
+        expiresAt
+      });
+
+      return json(
+        res,
+        201,
+        {
+          inviteToken,
+          verificationCode,
+          invite: inviteToken,
+          inviteCode: verificationCode,
+          creatorIp,
+          creatorDeviceId,
+          creatorDisplayName: creatorCustomName,
+          recipientHint,
+          creatorCustomName,
+          partnerCustomName,
+          themeId,
+          emblemStyle,
+          status: 'pending',
+          createdAt: nowIso,
+          expiresAt
+        },
+        req
+      );
+    }
+
+    // Public Invite Preview for Guest Site: GET /api/invites/:token
+    // Strictly matches ONLY the exact inviteToken and blocks Same-Device or Same-IP self-chat!
+    if (parts[0] === 'invites' && parts[1] && parts.length === 2 && req.method === 'GET') {
+      const rawToken = parts[1].trim();
+      const invite = await db.collection('invites').findOne({
+        $or: [{ inviteToken: rawToken }, { tokenHash: hashValue(rawToken) }]
+      });
+
+      const guestIp = getClientIp(req);
+      const guestDeviceId = getRequestDeviceId(req);
+      const urlCreatorIp = String(url.searchParams.get('cip') || '').trim();
+      const urlCreatorDev = String(url.searchParams.get('cdev') || '').trim();
+
+      if (!invite) {
+        const sameDev = Boolean(guestDeviceId && urlCreatorDev && guestDeviceId === urlCreatorDev);
+        const sameIp = Boolean(guestIp && urlCreatorIp && guestIp === urlCreatorIp);
+        const blocked = sameDev || sameIp;
+        return json(
+          res,
+          200,
+          {
+            invite: {
+              status: 'pending',
+              actualStatus: 'pending',
+              ownInvite: blocked,
+              sameDeviceOrIpBlocked: blocked,
+              blockReason: sameDev
+                ? '🚫 Same-Device Blocked: One device cannot chat with itself! You generated this link on this device. Send the QR or link to your partner’s phone.'
+                : sameIp
+                ? `🚫 Same IP Address Blocked (${guestIp}): The Guest cannot join from the exact same IP address as the Link Generator.`
+                : '',
+              creatorDisplayName: url.searchParams.get('creator') || 'Your Partner',
+              recipientHint: url.searchParams.get('hint') || 'Meri Jaan'
+            }
+          },
+          req
+        );
+      }
+
+      if (invite.status === 'revoked') {
+        return json(
+          res,
+          410,
+          {
+            error: 'This Couple QR Code & Invite Link has been revoked by the creator.',
+            invite: { status: 'revoked' }
+          },
+          req
+        );
+      }
+
+      const effectiveCreatorDev = invite.creatorDeviceId || urlCreatorDev;
+      const effectiveCreatorIp = invite.creatorIp || urlCreatorIp;
+      const isSameDevice = Boolean(
+        guestDeviceId && effectiveCreatorDev && guestDeviceId === effectiveCreatorDev
+      );
+      const isSameIp = Boolean(
+        guestIp && effectiveCreatorIp && guestIp === effectiveCreatorIp
+      );
+      const blocked = isSameDevice || isSameIp;
+
+      return json(
+        res,
+        200,
+        {
+          invite: {
+            status: invite.status === 'active' ? 'active' : 'pending',
+            actualStatus: invite.status,
+            ownInvite: blocked,
+            sameDeviceOrIpBlocked: blocked,
+            blockReason: isSameDevice
+              ? '🚫 Same-Device Blocked: One device cannot chat with itself! You generated this Couple Link on this device. Send the QR code or link to your partner’s separate device.'
+              : isSameIp
+              ? `🚫 Same IP Address Blocked (${guestIp}): The Guest cannot join or chat from the same IP address as the Link Generator. Please connect from a separate device/network.`
+              : '',
+            handle: invite.creatorDisplayName || 'Your Partner',
+            creatorDisplayName: invite.creatorDisplayName || 'Your Partner',
+            recipientHint: invite.recipientHint || 'Meri Jaan',
+            expiresAt: invite.expiresAt
+          }
+        },
+        req
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. GUEST OTP APPROVAL (STRICTLY ISOLATED PER UNIQUE INVITE TOKEN + OTP)
+    // -------------------------------------------------------------------------
+    // 3. GUEST OTP VERIFICATION & HOST-GUEST CHANNEL PAIRING
+    // -------------------------------------------------------------------------
+    const isGuestApproveRoute =
+      action === 'guest/verify-otp' ||
+      (parts[0] === 'guest' &&
+        parts[1] === 'invites' &&
+        parts[2] &&
+        parts[3] === 'approve') ||
+      (parts[0] === 'invites' && parts[1] && parts[2] === 'approve');
+
+    if (isGuestApproveRoute && req.method === 'POST') {
+      const rawToken =
+        action === 'guest/verify-otp'
+          ? String(body.inviteToken || body.token || 'otp-direct').trim()
+          : (parts[0] === 'guest' ? parts[2] : parts[1]).trim();
+      const suppliedOtp = String(body.verificationCode || body.code || body.otp || '')
+        .replace(/\D/g, '')
+        .slice(0, 6);
+      const guestDisplayName =
+        String(body.guestDisplayName || body.handle || '')
+          .trim()
+          .slice(0, 40) || 'Meri Jaan';
+      const hintCreatorName =
+        String(body.creatorDisplayName || '').trim().slice(0, 40) || 'Your Partner';
+
+      if (suppliedOtp.length !== 6) {
+        return json(
+          res,
+          400,
+          { error: 'Please enter the 6-digit OTP shared by your partner.' },
+          req
+        );
+      }
+
+      // Step 1: Look up the Host's generated session by inviteToken (if provided)
+      let invite = null;
+      if (rawToken && rawToken !== 'otp-direct') {
+        invite = await db.collection('invites').findOne({
+          $or: [{ inviteToken: rawToken }, { tokenHash: hashValue(rawToken) }]
+        });
+      }
+
+      // Step 2: If invite was not found by token (or guest used direct 6-digit OTP entry),
+      // look up the Host's active/pending session by the 6-digit verificationCode!
+      if (!invite) {
+        const otpMatches = await db
+          .collection('invites')
+          .find({
+            $or: [
+              { verificationCode: suppliedOtp },
+              { codeHash: hashValue(suppliedOtp) }
+            ]
+          })
+          .sort({ createdAt: -1 })
+          .toArray();
+        invite =
+          otpMatches.find((i) => i.status === 'pending' || i.status === 'active') ||
+          otpMatches[0] ||
+          null;
+      }
+
+      if (invite && invite.status === 'revoked') {
+        return json(
+          res,
+          410,
+          { error: 'This QR code / invite link was revoked by your partner and is no longer active.' },
+          req
+        );
+      }
+
+      if (invite && invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now()) {
+        return json(
+          res,
+          410,
+          { error: 'This Couple OTP has expired. Ask your partner to generate a fresh QR & OTP.' },
+          req
+        );
+      }
+
+      // Step 3: Enforce Same-Device & Same-IP Security Block (One device / same IP cannot chat with itself!)
+      const guestIp = getClientIp(req, body);
+      const guestDeviceId = getRequestDeviceId(req, body);
+      const effectiveCreatorDev = invite?.creatorDeviceId || String(body.creatorDeviceId || '').trim();
+      const effectiveCreatorIp = invite?.creatorIp || String(body.creatorIp || '').trim();
+
+      if (guestDeviceId && effectiveCreatorDev && guestDeviceId === effectiveCreatorDev) {
+        return json(
+          res,
+          403,
+          {
+            error:
+              '🚫 Security Block: One device cannot chat with itself! You generated this Couple Link on this device. Please send the QR code or link to your partner’s separate phone/device.'
+          },
+          req
+        );
+      }
+
+      if (guestIp && effectiveCreatorIp && guestIp === effectiveCreatorIp) {
+        return json(
+          res,
+          403,
+          {
+            error: `🚫 Security Block: Same IP Address Detected (${guestIp})! The Guest cannot verify or chat from the exact same IP address as the Link Generator. Please connect from your partner’s separate device/network.`
+          },
+          req
+        );
+      }
+
+      // Step 4: Validate the Guest's 6-digit entry code against the Host's generated session!
+      if (invite && !verifyOtpMatchesInvite(invite, suppliedOtp)) {
+        return json(
+          res,
+          401,
+          { error: 'Invalid 6-digit OTP! Please enter the exact 6-digit code shown on your partner’s screen.' },
+          req
+        );
+      }
+
+      // Step 4: If server cold-started and invite wasn't in DB, validate against signed QR OTP signature
+      if (!invite) {
+        let expectedOtpFromSig = '';
+        if (body.expectedSignature) {
+          try {
+            const decoded = Buffer.from(String(body.expectedSignature), 'base64').toString('utf8');
+            if (decoded.startsWith('ad:')) {
+              expectedOtpFromSig = decoded.slice(3).replace(/\D/g, '').slice(0, 6);
+            }
+          } catch {
+            expectedOtpFromSig = '';
+          }
+        }
+
+        if (!rawToken || rawToken === 'otp-direct' || !expectedOtpFromSig) {
+          return json(
+            res,
+            401,
+            {
+              error:
+                'No active host session matches this 6-digit OTP. Please check the 6-digit code on your partner’s screen or scan their QR code.'
+            },
+            req
+          );
+        }
+
+        if (expectedOtpFromSig !== suppliedOtp) {
+          return json(
+            res,
+            401,
+            { error: 'Invalid 6-digit OTP for this invite link. Please check the OTP with your partner!' },
+            req
+          );
+        }
+
+        const insertedInvite = await db.collection('invites').insertOne({
+          inviteToken: rawToken,
+          tokenHash: hashValue(rawToken),
+          verificationCode: suppliedOtp,
+          codeHash: hashValue(suppliedOtp),
+          creatorId: null,
+          creatorDisplayName: hintCreatorName,
+          recipientHint: guestDisplayName,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 7 * 86400000).toISOString()
+        });
+        invite = await db.collection('invites').findOne({ _id: insertedInvite.insertedId });
+      }
+
+      // Step 5: Pair Guest & Host into the shared Secure Chat Channel
+      const effectiveInviteToken = invite.inviteToken || rawToken;
+      const channelId = buildChannelId(effectiveInviteToken, invite._id?.toString());
+      let connection = null;
+
+      if (invite.connectionId) {
+        const connId =
+          invite.connectionId instanceof ObjectId
+            ? invite.connectionId
+            : /^[a-fA-F0-9]{24}$/.test(String(invite.connectionId))
+            ? new ObjectId(String(invite.connectionId))
+            : invite.connectionId;
+        connection = await db.collection('connections').findOne({ _id: connId });
+      }
+
+      if (!connection && effectiveInviteToken) {
+        connection = await db.collection('connections').findOne({
+          inviteToken: effectiveInviteToken,
+          status: 'active'
+        });
+      }
+
+      if (connection && connection.status === 'active') {
+        await db.collection('connections').updateOne(
+          { _id: connection._id },
+          {
+            $set: {
+              guestDisplayName: guestDisplayName || connection.guestDisplayName,
+              verificationCode: suppliedOtp,
+              channelId,
+              creatorId: connection.creatorId || invite.creatorId || null
+            }
+          }
+        );
+        connection = await db.collection('connections').findOne({ _id: connection._id });
+      } else {
+        const creatorId =
+          invite.creatorId instanceof ObjectId
+            ? invite.creatorId
+            : invite.creatorId && /^[a-fA-F0-9]{24}$/.test(String(invite.creatorId))
+            ? new ObjectId(String(invite.creatorId))
+            : invite.creatorId || null;
+
+        const nowIso = new Date().toISOString();
+        const createdConn = await db.collection('connections').insertOne({
+          creatorId,
+          creatorDisplayName: invite.creatorDisplayName || hintCreatorName,
+          guestDisplayName,
+          recipientHint: invite.recipientHint || guestDisplayName,
+          inviteId: invite._id,
+          inviteToken: effectiveInviteToken,
+          verificationCode: suppliedOtp,
+          channelId,
+          status: 'active',
+          createdAt: nowIso,
+          approvedAt: nowIso
+        });
+
+        connection = await db.collection('connections').findOne({
+          _id: createdConn.insertedId
+        });
+
+        await db.collection('invites').updateOne(
+          { _id: invite._id },
+          {
+            $set: {
+              status: 'active',
+              connectionId: createdConn.insertedId,
+              channelId,
+              guestDisplayName,
+              approvedAt: nowIso
+            }
+          }
+        );
+
+        await db.collection('messages').insertOne({
+          connectionId: createdConn.insertedId,
+          channelId,
+          senderRole: 'guest',
+          senderName: guestDisplayName,
+          body: `Hau miyaan! ${guestDisplayName} connected to our private 1-on-1 room ♥ Ab baatein shuru karein?`,
+          createdAt: nowIso
+        });
+      }
+
+      const guestSessionToken = randomToken(32);
+      await db.collection('guest_sessions').insertOne({
+        tokenHash: hashValue(guestSessionToken),
+        connectionId: connection._id,
+        inviteToken: effectiveInviteToken,
+        verificationCode: suppliedOtp,
+        channelId,
+        guestDisplayName: connection.guestDisplayName || guestDisplayName,
+        createdAt: new Date().toISOString()
+      });
+
+      const formattedConn = formatConnectionForGuest(connection);
+      return json(
+        res,
+        200,
+        {
+          status: 'active',
+          paired: true,
+          channelId: formattedConn.channelId,
+          guestSessionToken,
+          sessionToken: guestSessionToken,
+          user: {
+            id: connection._id.toString(),
+            handle: formattedConn.guestDisplayName,
+            displayName: formattedConn.guestDisplayName,
+            guest: true
+          },
+          connection: formattedConn
+        },
+        req
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // 4. GUEST SESSION & GUEST CONNECTION ENDPOINTS (/api/guest/*)
+    // -------------------------------------------------------------------------
+    if ((action === 'guest/me' || action === 'guest/session') && req.method === 'GET') {
+      const guestCtx = await getGuestFromRequest(req, db);
+      if (!guestCtx) {
+        return json(res, 401, { error: 'Guest session not active or revoked.' }, req);
+      }
+      const formatted = formatConnectionForGuest(guestCtx.connection);
+      return json(
+        res,
+        200,
+        {
+          user: {
+            id: formatted.id,
+            handle: formatted.guestDisplayName,
+            displayName: formatted.guestDisplayName,
+            guest: true
+          },
+          connection: formatted
+        },
+        req
+      );
     }
 
     if (parts[0] === 'guest' && parts[1] === 'connections' && parts[2] && parts[3]) {
-      const suppliedToken = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i)?.[1]?.trim();
-      if (!suppliedToken) return json(res, 401, { error: 'This private chat session is missing.' });
-      const { ObjectId } = await import('mongodb');
-      let connectionId;
-      try { connectionId = new ObjectId(parts[2]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
-      const guestSession = await database.collection('guest_sessions').findOne({
-        tokenHash: hashGuestToken(suppliedToken), connectionId, expiresAt: { $gt: new Date() }
-      });
-      if (!guestSession) return json(res, 403, { error: 'This session cannot access that private chat.' });
-      const guestId = guestSession.userId instanceof ObjectId ? guestSession.userId : new ObjectId(guestSession.userId);
-      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: guestId, status: 'approved' });
-      if (!connection) return json(res, 403, { error: 'This chat is not available.' });
-      const route = parts[3];
-      if (route === 'messages') {
-        const messages = database.collection('messages');
+      const guestCtx = await getGuestFromRequest(req, db);
+      let connection = guestCtx?.connection || null;
+
+      if (!connection) {
+        try {
+          const directConnId = new ObjectId(parts[2]);
+          const found = await db.collection('connections').findOne({ _id: directConnId });
+          if (found && found.status === 'active') {
+            connection = found;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!connection || connection.status !== 'active') {
+        return json(res, 401, { error: 'This private room has been closed or revoked.' }, req);
+      }
+      const connId = connection._id;
+      const subRoute = parts[3];
+
+      if (subRoute === 'messages') {
         if (req.method === 'GET') {
-          const rows = await messages.find({ connectionId }).sort({ createdAt: 1 }).limit(100).toArray();
-          return json(res, 200, { messages: rows.map(m => ({ id: m._id.toString(), text: m.text, senderId: m.senderId.toString(), createdAt: m.createdAt })) });
+          const seenNow = new Date().toISOString();
+          await db.collection('messages').updateMany(
+            { connectionId: connId, senderRole: 'creator', seenAt: null },
+            { $set: { seenAt: seenNow } }
+          );
+          const list = await db
+            .collection('messages')
+            .find({ connectionId: connId })
+            .sort({ createdAt: 1 })
+            .toArray();
+          return json(
+            res,
+            200,
+            { messages: list.map((m) => formatMessageDoc(m, 'guest')) },
+            req
+          );
         }
         if (req.method === 'POST') {
-          const text = String(body.text || '').trim();
-          if (!text || text.length > 2000) return json(res, 400, { error: 'Keep your message between 1 and 2,000 characters.' });
-          const result = await messages.insertOne({ connectionId, senderId: guestId, text, createdAt: new Date() });
-          return json(res, 201, { message: { id: result.insertedId.toString(), text, senderId: guestId.toString(), createdAt: new Date() } });
-        }
-        return json(res, 405, { error: 'This action is not available to guest users.' });
-      }
-      if (route === 'moments' && req.method === 'GET') {
-        const rows = await database.collection('moments').find({ connectionId }).sort({ createdAt: -1 }).limit(60).toArray();
-        const dayKey = String(url.searchParams.get('dayKey') || '').slice(0, 10);
-        const answers = dayKey ? await database.collection('moments').find({ connectionId, type: 'answer', dayKey }).toArray() : [];
-        const serialize = row => ({ id: row._id.toString(), type: row.type, text: row.text || '', imageData: row.imageData || null, userId: row.userId.toString(), promptId: row.promptId || null, dayKey: row.dayKey || null, createdAt: row.createdAt, updatedAt: row.updatedAt || null });
-        return json(res, 200, { moments: rows.map(serialize), answers: answers.map(serialize), currentUserId: guestId.toString() });
-      }
-      if (route === 'date-plan' && req.method === 'GET') {
-        const plan = await database.collection('date_plans').findOne({ connectionId });
-        const otherId = connection.memberIds.find(id => !id.equals(guestId));
-        const choices = plan?.choices || {};
-        const serialize = row => row ? { choices, lockedPlaceId: row.lockedPlaceId || null, lockedDateTime: row.lockedDateTime || null, myChoice: choices[guestId.toString()] || null, theirChoice: otherId ? choices[otherId.toString()] || null : null } : null;
-        return json(res, 200, { plan: serialize(plan) });
-      }
-      return json(res, 403, { error: 'Guest access is read-only for this section.' });
-    }
-
-    if (parts[0] === 'invites' && parts[1] && parts[2] && ['approve','ignore'].includes(parts[2]) && req.method === 'POST') {
-      const hash = createHmac('sha256', process.env.JWT_SECRET).update(parts[1]).digest('hex');
-      const invites = database.collection('invites');
-      const invite = await invites.findOne({ tokenHash: hash, expiresAt: { $gt: new Date() } });
-      if (!invite) return json(res, 404, { error: 'This invite has expired or is no longer available.' });
-      // Make approval safe to retry when the first response was interrupted.
-      // Only the already-approved recipient session can retrieve the existing connection.
-      if (invite.status === 'approved' && invite.connectionId && session?.sub && invite.recipientId) {
-        let approvedRecipientId = null;
-        try { approvedRecipientId = new (await import('mongodb')).ObjectId(session.sub); } catch {}
-        if (approvedRecipientId && invite.recipientId.equals(approvedRecipientId)) {
-          const existingConnection = await database.collection('connections').findOne({
-            _id: invite.connectionId, memberIds: approvedRecipientId, status: 'approved'
-          });
-          const approvedUser = await database.collection('users').findOne({ _id: approvedRecipientId });
-          const owner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
-          if (existingConnection && approvedUser) return json(res, 200, {
-            status: 'approved', user: cleanUser(approvedUser),
-            connection: { id: existingConnection._id.toString(), handle: owner?.handle || 'your person', role: 'invitee' },
-            recovered: true
-          });
-        }
-      }
-      if (invite.status !== 'pending') return json(res, 409, { error: 'This invite has already been answered. Refresh the page to see its current status.' });
-      let recipientId = null;
-      if (session?.sub) { try { recipientId = new (await import('mongodb')).ObjectId(session.sub); } catch {} }
-      if (parts[2] === 'ignore') {
-        await invites.updateOne({ _id: invite._id, status: 'pending' }, { $set: { status: 'ignored', ...(recipientId ? { recipientId } : {}), respondedAt: new Date() } });
-        return json(res, 200, { status: 'ignored' });
-      }
-      if (body.adult !== true) return json(res, 400, { error: 'Please confirm you are 18 or older before opening a chat.' });
-      const { ObjectId } = await import('mongodb');
-      if (!recipientId) {
-        const guestHandle = 'guest-' + token(3).slice(0, 5);
-        const created = await database.collection('users').insertOne({ handle: guestHandle, guest: true, createdAt: new Date(), guestCreatedAt: new Date(), adultConfirmedAt: new Date(), blockedUsers: [] });
-        recipientId = created.insertedId;
-        cookie(res, sign({ sub: recipientId.toString(), guest: true, exp: Math.floor(Date.now()/1000) + DAY*14 }));
-      }
-      if (invite.ownerId.equals(recipientId)) return json(res, 403, { error: 'You can’t approve your own invite. Send it to your person.' });
-      const existingActiveConnection = await database.collection('connections').findOne({ memberIds: recipientId, status: 'approved' });
-      if (existingActiveConnection && !existingActiveConnection.memberIds.some(id => id.equals(invite.ownerId))) {
-        return json(res, 409, { error: 'Plot twist denied: you already have an active AFTERDARK chat. One connection at a time — no double-dating side quests. 😭🔒' });
-      }
-      const recipient = await database.collection('users').findOne({ _id: recipientId });
-      if (!recipient) return json(res, 401, { error: 'This session has expired. Open the invite again.' });
-      const pair = [invite.ownerId.toString(), recipientId.toString()].sort();
-      const pairKey = pair.join(':');
-      const connection = await database.collection('connections').findOneAndUpdate({ pairKey }, { $setOnInsert: { pairKey, memberIds: pair.map(id => new ObjectId(id)), creatorId: invite.ownerId, recipientId, status: 'approved', createdAt: new Date() } }, { upsert: true, returnDocument: 'after' });
-      const connectionDoc = connection?._id ? connection : await database.collection('connections').findOne({ pairKey });
-      if (connectionDoc?._id) await database.collection('connections').updateOne({ _id: connectionDoc._id, creatorId: { $exists: false } }, { $set: { creatorId: invite.ownerId, recipientId } });
-      await invites.updateOne({ _id: invite._id, status: 'pending' }, { $set: { status: 'approved', recipientId, connectionId: connectionDoc?._id, respondedAt: new Date() } });
-      const owner = await database.collection('users').findOne({ _id: invite.ownerId }, { projection: { handle: 1 } });
-      return json(res, 200, {
-        status: 'approved',
-        user: cleanUser(recipient),
-        connection: connectionDoc?._id ? { id: connectionDoc._id.toString(), handle: owner?.handle || 'your person', role: 'invitee' } : null
-      });
-    }
-    if (action === 'me' && req.method === 'GET') { if (!session) return json(res, 200, { user: null }); const user = await database.collection('users').findOne({ _id: new (await import('mongodb')).ObjectId(session.sub) }); return json(res, 200, { user: user ? cleanUser(user) : null }); }
-    if (!session) return json(res, 401, { error: 'Sign in to continue.' });
-    const { ObjectId } = await import('mongodb'); const userId = new ObjectId(session.sub);
-    const user = await database.collection('users').findOne({ _id: userId });
-    if (!user) return json(res, 401, { error: 'Please sign in again.' });
-
-    if (action === 'invites' && req.method === 'POST') {
-      const now = new Date();
-      const activeConnection = await database.collection('connections').findOne({ memberIds: userId, status: 'approved' }, { projection: { _id: 1 } });
-      if (activeConnection) return json(res, 409, { error: 'One situationship at a time, bestie. You already have an active chat — no bonus boo QR codes. 😭🔒' });
-      const pendingInvite = await database.collection('invites').findOne({ ownerId: userId, status: 'pending', expiresAt: { $gt: now } }, { projection: { _id: 1, codeHash: 1 } });
-      if (pendingInvite?.codeHash) return json(res, 409, { error: 'Your invite is already out in the wild. No second QR until this plot resolves, bestie. 💌⏳' });
-      if (pendingInvite && !pendingInvite.codeHash) await database.collection('invites').updateOne({ _id: pendingInvite._id, status: 'pending' }, { $set: { status: 'revoked', revokedAt: new Date() } });
-      const raw = token(32); const inviteCode = String(randomInt(100000, 1000000)); const expiresAt = new Date(Date.now() + 7 * DAY * 1000);
-      await database.collection('invites').insertOne({ tokenHash: createHmac('sha256', process.env.JWT_SECRET).update(raw).digest('hex'), codeHash: createHmac('sha256', process.env.JWT_SECRET).update(inviteCode).digest('hex'), ownerId: userId, status: 'pending', createdAt: new Date(), expiresAt });
-      return json(res, 201, { invite: raw, inviteCode, expiresAt });
-    }
-    if (action === 'connections' && req.method === 'GET') {
-      const connections = await database.collection('connections').find({ memberIds: userId, status: 'approved' }).toArray();
-      const rows = await Promise.all(connections.map(async c => {
-        const otherId = c.memberIds.find(id => !id.equals(userId));
-        const other = otherId ? await database.collection('users').findOne({ _id: otherId }, { projection: { email: 1, handle: 1 } }) : null;
-        let role = c.recipientId ? (c.recipientId.equals(userId) ? 'invitee' : 'creator') : 'creator';
-        if (!c.recipientId) {
-          const originalInvite = await database.collection('invites').findOne({ connectionId: c._id, status: 'approved' }, { sort: { respondedAt: 1 } });
-          if (originalInvite?.recipientId?.equals(userId)) role = 'invitee';
-        }
-        return { id: c._id.toString(), handle: other?.handle || 'your person', role };
-      }));
-      return json(res, 200, { connections: rows });
-    }
-    if (parts[0] === 'connections' && parts[1] && parts[2] === 'date-plan') {
-      let connectionId;
-      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
-      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId, status: 'approved' });
-      if (!connection) return json(res, 403, { error: 'Date planning is only available for an approved connection.' });
-      const plans = database.collection('date_plans');
-      const otherId = connection.memberIds.find(id => !id.equals(userId));
-      const serialize = row => {
-        const choices = row?.choices || {};
-        return row ? { choices, lockedPlaceId: row.lockedPlaceId || null, lockedDateTime: row.lockedDateTime || null, myChoice: choices[userId.toString()] || null, theirChoice: otherId ? choices[otherId.toString()] || null : null } : null;
-      };
-      if (req.method === 'GET') return json(res, 200, { plan: serialize(await plans.findOne({ connectionId })) });
-      if (req.method === 'POST') {
-        const placeId = String(body.placeId || '');
-        const dateTime = String(body.dateTime || '');
-        const allowed = ['necklace-road','durgam-cheruvu','charminar','golconda','chowmahalla','lumbini-park','paradise-biryani','ramoji-film-city'];
-        const parsed = new Date(dateTime);
-        if (!allowed.includes(placeId) || !dateTime || Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) return json(res, 400, { error: 'Choose a listed public place and a future date/time.' });
-        const current = await plans.findOne({ connectionId });
-        if (current?.lockedPlaceId) return json(res, 409, { error: 'This mutual plan is already locked.' });
-        const choices = { ...(current?.choices || {}), [userId.toString()]: { placeId, dateTime } };
-        const otherChoice = otherId ? choices[otherId.toString()] : null;
-        const matches = otherChoice && otherChoice.placeId === placeId && otherChoice.dateTime === dateTime;
-        const update = { connectionId, choices, updatedAt: new Date() };
-        if (matches) { update.lockedPlaceId = placeId; update.lockedDateTime = dateTime; }
-        else { update.lockedPlaceId = null; update.lockedDateTime = null; }
-        await plans.updateOne({ connectionId }, { $set: update }, { upsert: true });
-        return json(res, 200, { plan: serialize(await plans.findOne({ connectionId })) });
-      }
-    }
-    if (parts[0] === 'connections' && parts[1] && parts[2] === 'end' && req.method === 'POST') {
-      let connectionId;
-      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
-      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId, status: 'approved' });
-      if (!connection) return json(res, 404, { error: 'This connection is already closed.' });
-      await database.collection('connections').updateOne(
-        { _id: connectionId, memberIds: userId, status: 'approved' },
-        { $set: { status: 'ended', endedBy: userId, endedAt: new Date() } }
-      );
-      // Keep message and memory records for history; ended connections no longer authorize access.
-      return json(res, 200, { ok: true, status: 'ended' });
-    }
-    if (parts[0] === 'connections' && parts[1] && parts[2] === 'block' && req.method === 'POST') {
-      let connectionId;
-      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
-      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId, status: 'approved' });
-      if (!connection) return json(res, 404, { error: 'This connection is already closed.' });
-      const otherId = connection.memberIds.find(id => !id.equals(userId));
-      await database.collection('users').updateOne({ _id: userId }, { $addToSet: { blockedUsers: otherId } });
-      await database.collection('connections').updateOne({ _id: connectionId, status: 'approved' }, { $set: { status: 'blocked', blockedBy: userId, blockedAt: new Date() } });
-      await database.collection('date_plans').deleteOne({ connectionId });
-      return json(res, 200, { ok: true });
-    }
-    if (parts[0] === 'connections' && parts[1] && parts[2] === 'report' && req.method === 'POST') {
-      let connectionId;
-      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
-      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId });
-      if (!connection) return json(res, 404, { error: 'This connection could not be found.' });
-      const reason = String(body.reason || '').trim().slice(0, 1000);
-      if (!reason) return json(res, 400, { error: 'Add a short reason for the report.' });
-      const targetUserId = connection.memberIds.find(id => !id.equals(userId));
-      await database.collection('reports').insertOne({ connectionId, reporterId: userId, targetUserId, reason, createdAt: new Date(), status: 'new' });
-      return json(res, 201, { ok: true });
-    }
-    if (parts[0] === 'connections' && parts[1] && parts[2] === 'moments') {
-      let connectionId;
-      try { connectionId = new ObjectId(parts[1]); } catch { return json(res, 400, { error: 'That connection link is not valid.' }); }
-      const connection = await database.collection('connections').findOne({ _id: connectionId, memberIds: userId, status: 'approved' });
-      if (!connection) return json(res, 403, { error: 'Shared moments are only available for an approved connection.' });
-      const moments = database.collection('moments');
-      if (parts.length === 3 && req.method === 'GET') {
-        const dayKey = String(url.searchParams.get('dayKey') || '').slice(0, 10);
-        const rows = await moments.find({ connectionId }).sort({ createdAt: -1 }).limit(60).toArray();
-        const answers = dayKey ? await moments.find({ connectionId, type: 'answer', dayKey }).toArray() : [];
-        const serialize = row => ({ id: row._id.toString(), type: row.type, text: row.text || '', imageData: row.imageData || null, userId: row.userId.toString(), promptId: row.promptId || null, dayKey: row.dayKey || null, createdAt: row.createdAt, updatedAt: row.updatedAt || null });
-        return json(res, 200, { moments: rows.map(serialize), answers: answers.map(serialize), currentUserId: userId.toString() });
-      }
-      if (parts.length === 3 && req.method === 'POST') {
-        const type = String(body.type || '');
-        const text = String(body.text || '').trim().slice(0, 1000);
-        if (!text) return json(res, 400, { error: 'Write a little something first.' });
-        if (type === 'answer') {
-          const dayKey = String(body.dayKey || '');
-          const promptId = String(body.promptId || '');
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey) || !/^[a-z0-9-]{1,64}$/.test(promptId) || text.length > 500) return json(res, 400, { error: 'Check your daily answer and try again.' });
-          await moments.updateOne(
-            { connectionId, type: 'answer', dayKey, userId },
-            { $set: { text, promptId, updatedAt: new Date() }, $setOnInsert: { connectionId, type: 'answer', dayKey, userId, createdAt: new Date() } },
-            { upsert: true }
-          );
-          const answers = await moments.find({ connectionId, type: 'answer', dayKey }).toArray();
-          return json(res, 200, { answers: answers.map(row => ({ id: row._id.toString(), type: row.type, text: row.text, userId: row.userId.toString(), promptId: row.promptId, dayKey: row.dayKey, createdAt: row.createdAt, updatedAt: row.updatedAt || null })) });
-        }
-        if (type === 'photo') {
-          const imageData = String(body.imageData || '');
-          const caption = String(body.text || '').trim().slice(0, 240);
-          if (imageData.length > 1250000 || !/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(imageData)) {
-            return json(res, 400, { error: 'Choose a JPEG, PNG, or WebP photo under 900 KB after compression.' });
+          const voiceMeta = body.voiceMeta && body.voiceMeta.dataUrl ? body.voiceMeta : null;
+          const photoMeta = body.photoMeta && body.photoMeta.dataUrl ? body.photoMeta : null;
+          const rawText = String(body.body || body.text || '').trim();
+          const text =
+            rawText ||
+            (voiceMeta ? '🎤 Sent a voice note ♥' : photoMeta ? '📷 Sent a live camera snap ♥' : '');
+          if (!text && !voiceMeta && !photoMeta) {
+            return json(res, 400, { error: 'Write a message or attach a voice/camera note first.' }, req);
           }
-          const [header, encoded] = imageData.split(',');
-          const bytes = Buffer.from(encoded, 'base64');
-          if (!bytes.length || bytes.length > 900000) return json(res, 400, { error: 'Photos must be 900 KB or smaller after compression.' });
-          const validSignature = header.includes('image/jpeg') ? bytes[0] === 0xff && bytes[1] === 0xd8 :
-            header.includes('image/png') ? bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) :
-            bytes.subarray(0, 4).toString() === 'RIFF' && bytes.subarray(8, 12).toString() === 'WEBP';
-          if (!validSignature) return json(res, 400, { error: 'That image file could not be verified. Try a JPEG or PNG.' });
-          const result = await moments.insertOne({ connectionId, type: 'photo', text: caption, imageData, userId, createdAt: new Date() });
-          return json(res, 201, { moment: { id: result.insertedId.toString(), type: 'photo', text: caption, imageData, userId: userId.toString(), createdAt: new Date() } });
+          const nowIso = new Date().toISOString();
+          const inserted = await db.collection('messages').insertOne({
+            connectionId: connId,
+            senderRole: 'guest',
+            senderName: connection.guestDisplayName || 'Meri Jaan',
+            body: text,
+            voiceMeta,
+            photoMeta,
+            seenAt: null,
+            createdAt: nowIso
+          });
+          return json(
+            res,
+            201,
+            {
+              message: {
+                id: inserted.insertedId.toString(),
+                senderRole: 'guest',
+                senderName: connection.guestDisplayName || 'Meri Jaan',
+                body: text,
+                text,
+                voiceMeta,
+                photoMeta,
+                seenAt: null,
+                createdAt: nowIso
+              }
+            },
+            req
+          );
         }
-        if (type === 'memory') {
-          if (text.length > 1000) return json(res, 400, { error: 'Keep a memory under 1,000 characters.' });
-          const result = await moments.insertOne({ connectionId, type: 'memory', text, userId, createdAt: new Date() });
-          return json(res, 201, { moment: { id: result.insertedId.toString(), type: 'memory', text, userId: userId.toString(), createdAt: new Date() } });
-        }
-        return json(res, 400, { error: 'Choose a supported shared moment.' });
       }
-      if (parts.length === 4 && req.method === 'DELETE') {
-        let momentId;
-        try { momentId = new ObjectId(parts[3]); } catch { return json(res, 400, { error: 'That memory link is not valid.' }); }
-        const result = await moments.deleteOne({ _id: momentId, connectionId, userId, type: { $in: ['memory', 'photo'] } });
-        if (!result.deletedCount) return json(res, 404, { error: 'Only your own saved moments or photos can be deleted.' });
-        return json(res, 200, { ok: true });
+
+      if (subRoute === 'orders') {
+        if (req.method === 'GET') {
+          const list = await db
+            .collection('orders')
+            .find({ connectionId: connId, orderedByRole: 'guest' })
+            .sort({ createdAt: -1 })
+            .toArray();
+          return json(
+            res,
+            200,
+            {
+              orders: list.map((o) => ({
+                id: o._id.toString(),
+                brandId: o.brandId,
+                brandName: o.brandName,
+                itemId: o.itemId,
+                itemName: o.itemName,
+                etaMinutes: o.etaMinutes,
+                phoneNumber: o.phoneNumber || '',
+                note: o.note,
+                orderedByName: o.orderedByName,
+                privateOnly: true,
+                createdAt: o.createdAt
+              }))
+            },
+            req
+          );
+        }
+        if (req.method === 'POST') {
+          const brand =
+            brandCatalog.find((b) => b.id === (body.brandId || body.brandSlug)) ||
+            brandCatalog[0];
+          const item =
+            brand.items.find((i) => i.id === body.itemId) || brand.items[0];
+          const note = String(body.note || '').trim();
+          const phoneNumber = String(body.phoneNumber || '').replace(/\D/g, '').slice(0, 10);
+          const nowIso = new Date().toISOString();
+          const orderedByName = connection.guestDisplayName || 'Meri Jaan';
+
+          // Strictly Private Order Record — NEVER insert into shared chat messages!
+          const orderDoc = {
+            connectionId: connId,
+            brandId: brand.id,
+            brandName: brand.name,
+            itemId: item.id,
+            itemName: body.itemTitle || item.name,
+            etaMinutes: item.etaMinutes,
+            phoneNumber,
+            city: body.city || 'Hyderabad',
+            address: body.address || '',
+            note,
+            orderedByRole: 'guest',
+            orderedByName,
+            privateOnly: true,
+            createdAt: nowIso
+          };
+          const inserted = await db.collection('orders').insertOne(orderDoc);
+
+          return json(
+            res,
+            201,
+            { order: { ...orderDoc, id: inserted.insertedId.toString() } },
+            req
+          );
+        }
+      }
+
+      if (subRoute === 'dates') {
+        if (req.method === 'GET') {
+          const list = await db
+            .collection('dates')
+            .find({ connectionId: connId })
+            .sort({ createdAt: -1 })
+            .toArray();
+          return json(res, 200, { dates: list }, req);
+        }
+        if (req.method === 'POST') {
+          const title = String(body.title || 'Candlelight Dinner Date ♥').trim();
+          const location = String(body.location || 'Olive Bistro, Durgam Cheruvu').trim();
+          const dateTime = String(body.dateTime || '').trim();
+          const description = String(body.description || 'Just the two of us ♥').trim();
+          const nowIso = new Date().toISOString();
+          const senderName = connection.guestDisplayName || 'Meri Jaan';
+
+          const dateMeta = {
+            title,
+            location,
+            dateTime,
+            description,
+            createdBy: senderName,
+            createdAt: nowIso
+          };
+          await db.collection('dates').insertOne({ connectionId: connId, ...dateMeta });
+
+          await db.collection('messages').insertOne({
+            connectionId: connId,
+            senderRole: 'guest',
+            senderName,
+            body: `🕯️ ${senderName} planned an upcoming date: "${title}" at ${location}! Tap below to add it directly to Google Calendar ♥`,
+            dateMeta,
+            createdAt: nowIso
+          });
+
+          return json(res, 201, { date: dateMeta }, req);
+        }
+      }
+
+      if (subRoute === 'photos') {
+        if (req.method === 'GET') {
+          const list = await db
+            .collection('photos')
+            .find({ connectionId: connId })
+            .sort({ createdAt: -1 })
+            .toArray();
+          return json(
+            res,
+            200,
+            {
+              photos: list.map((p) => ({
+                id: p._id.toString(),
+                dataUrl: p.dataUrl,
+                caption: p.caption,
+                uploadedBy: p.uploadedBy || 'guest',
+                createdAt: p.createdAt
+              }))
+            },
+            req
+          );
+        }
+        if (req.method === 'POST') {
+          const dataUrl = String(body.dataUrl || '');
+          const caption = String(body.caption || '').trim();
+          if (!dataUrl.startsWith('data:image/')) {
+            return json(res, 400, { error: 'Invalid image data.' }, req);
+          }
+          const nowIso = new Date().toISOString();
+          const senderName = connection.guestDisplayName || 'Meri Jaan';
+          const inserted = await db.collection('photos').insertOne({
+            connectionId: connId,
+            dataUrl,
+            caption,
+            uploadedBy: 'guest',
+            createdAt: nowIso
+          });
+          const photoMeta = {
+            id: inserted.insertedId.toString(),
+            dataUrl,
+            caption: caption || `Shared by ${senderName}`,
+            createdAt: nowIso
+          };
+
+          await db.collection('messages').insertOne({
+            connectionId: connId,
+            senderRole: 'guest',
+            senderName,
+            body: caption ? `📸 ${caption}` : `📸 Shared a private photo`,
+            photoMeta,
+            createdAt: nowIso
+          });
+
+          return json(res, 201, { photo: photoMeta }, req);
+        }
       }
     }
-    if (parts[0] === 'connections' && parts[1] && parts[2] === 'messages') {
-      const connection = await database.collection('connections').findOne({ _id: new ObjectId(parts[1]), memberIds: userId, status: 'approved' });
-      if (!connection) return json(res, 403, { error: 'This chat isn’t available.' });
-      const messages = database.collection('messages');
-      if (req.method === 'GET') { const rows = await messages.find({ connectionId: connection._id }).sort({ createdAt: 1 }).limit(100).toArray(); return json(res, 200, { messages: rows.map(m => ({ id: m._id.toString(), text: m.text, senderId: m.senderId.toString(), createdAt: m.createdAt })) }); }
-      if (req.method === 'POST') { const text = String(body.text || '').trim(); if (!text || text.length > 2000) return json(res, 400, { error: 'Keep your message between 1 and 2,000 characters.' }); const result = await messages.insertOne({ connectionId: connection._id, senderId: userId, text, createdAt: new Date() }); return json(res, 201, { message: { id: result.insertedId.toString(), text, senderId: userId.toString(), createdAt: new Date() } }); }
+
+    // -------------------------------------------------------------------------
+    // 5. CREATOR CONNECTION ENDPOINTS (/api/connections/*)
+    // -------------------------------------------------------------------------
+    const creator = await getCreatorFromRequest(req, db);
+    if (!creator) {
+      return json(res, 401, { error: 'Unauthorized. Please sign in.' }, req);
     }
-    if (action === 'revoke-invites' && req.method === 'POST') {
-      const result = await database.collection('invites').updateMany(
-        { ownerId: userId, status: 'pending' },
-        { $set: { status: 'revoked', revokedAt: new Date() } }
+
+    if (action === 'connections' && req.method === 'GET') {
+      const tokenHint = String(url.searchParams.get('inviteToken') || '').trim();
+      const otpHint = String(url.searchParams.get('otp') || '')
+        .replace(/\D/g, '')
+        .slice(0, 6);
+
+      // Ensure the Host's active invite is registered in the DB if server cold-started
+      if (tokenHint && otpHint.length === 6) {
+        const existingInvite = await db.collection('invites').findOne({ inviteToken: tokenHint });
+        if (!existingInvite) {
+          await db.collection('invites').insertOne({
+            inviteToken: tokenHint,
+            tokenHash: hashValue(tokenHint),
+            verificationCode: otpHint,
+            codeHash: hashValue(otpHint),
+            creatorId: creator._id,
+            creatorDisplayName: creator.displayName,
+            recipientHint: url.searchParams.get('hint') || 'Meri Jaan',
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 7 * 86400000).toISOString()
+          });
+        } else if (!existingInvite.creatorId || existingInvite.creatorId.toString() !== creator._id.toString()) {
+          await db.collection('invites').updateOne(
+            { _id: existingInvite._id },
+            { $set: { creatorId: creator._id, creatorDisplayName: creator.displayName } }
+          );
+        }
+      }
+
+      // Bind any active connection matching this Host's inviteToken or 6-digit OTP to this Host's session
+      if (tokenHint || otpHint.length === 6) {
+        const matchOr = [];
+        if (tokenHint) matchOr.push({ inviteToken: tokenHint });
+        if (otpHint.length === 6) matchOr.push({ verificationCode: otpHint });
+
+        const matchedConn = await db.collection('connections').findOne({
+          status: 'active',
+          $or: matchOr
+        });
+        if (
+          matchedConn &&
+          (!matchedConn.creatorId || matchedConn.creatorId.toString() !== creator._id.toString())
+        ) {
+          await db.collection('connections').updateOne(
+            { _id: matchedConn._id },
+            {
+              $set: {
+                creatorId: creator._id,
+                creatorDisplayName: matchedConn.creatorDisplayName || creator.displayName
+              }
+            }
+          );
+        }
+      }
+
+      const list = await db
+        .collection('connections')
+        .find({ creatorId: creator._id, status: 'active' })
+        .sort({ createdAt: -1 })
+        .toArray();
+      return json(
+        res,
+        200,
+        { connections: list.map(formatConnectionForCreator) },
+        req
       );
-      return json(res, 200, { ok: true, revokedCount: result.modifiedCount || 0 });
     }
-    if (action === 'delete-account' && req.method === 'DELETE') { const connections = await database.collection('connections').find({ memberIds: userId }).toArray(); await database.collection('messages').deleteMany({ connectionId: { $in: connections.map(c => c._id) } }); await database.collection('date_plans').deleteMany({ connectionId: { $in: connections.map(c => c._id) } }); await database.collection('connections').deleteMany({ memberIds: userId }); await database.collection('invites').deleteMany({ $or: [{ ownerId: userId }, { recipientId: userId }] }); await database.collection('users').deleteOne({ _id: userId }); cookie(res, '', 0); return json(res, 200, { ok: true }); }
-    return json(res, 404, { error: 'That page took a wrong turn. Try again.' });
+
+    if (parts[0] === 'connections' && parts[1] && parts[2]) {
+      const rawConnId = parts[1].trim();
+      const isHexObjectId = /^[a-fA-F0-9]{24}$/.test(rawConnId);
+      const idQuery = isHexObjectId
+        ? { $or: [{ _id: new ObjectId(rawConnId) }, { _id: rawConnId }] }
+        : { $or: [{ _id: rawConnId }, { id: rawConnId }, { channelId: rawConnId }] };
+
+      let connection = await db.collection('connections').findOne(idQuery);
+      if (connection && !connection.creatorId) {
+        await db.collection('connections').updateOne(
+          { _id: connection._id },
+          { $set: { creatorId: creator._id } }
+        );
+        connection.creatorId = creator._id;
+      }
+
+      if (!connection) {
+        return json(res, 404, { error: 'Connection not found.' }, req);
+      }
+      const connId = connection._id;
+      const subRoute = parts[2];
+
+      if ((subRoute === 'close' || subRoute === 'end') && req.method === 'POST') {
+        const nowIso = new Date().toISOString();
+        await db.collection('connections').updateOne(
+          { _id: connId },
+          { $set: { status: 'closed', closedAt: nowIso } }
+        );
+        await db.collection('invites').updateMany(
+          { creatorId: creator._id, status: { $in: ['pending', 'active'] } },
+          { $set: { status: 'revoked', revokedAt: nowIso } }
+        );
+        await db.collection('guest_sessions').deleteMany({ connectionId: connId });
+        return json(res, 200, { ok: true }, req);
+      }
+
+      if (subRoute === 'messages') {
+        if (req.method === 'GET') {
+          const seenNow = new Date().toISOString();
+          await db.collection('messages').updateMany(
+            { connectionId: connId, senderRole: 'guest', seenAt: null },
+            { $set: { seenAt: seenNow } }
+          );
+          const list = await db
+            .collection('messages')
+            .find({ connectionId: connId })
+            .sort({ createdAt: 1 })
+            .toArray();
+          return json(
+            res,
+            200,
+            { messages: list.map((m) => formatMessageDoc(m, 'creator')) },
+            req
+          );
+        }
+        if (req.method === 'POST') {
+          const voiceMeta = body.voiceMeta && body.voiceMeta.dataUrl ? body.voiceMeta : null;
+          const photoMeta = body.photoMeta && body.photoMeta.dataUrl ? body.photoMeta : null;
+          const rawText = String(body.body || body.text || '').trim();
+          const text =
+            rawText ||
+            (voiceMeta ? '🎤 Sent a voice note ♥' : photoMeta ? '📷 Sent a live camera snap ♥' : '');
+          if (!text && !voiceMeta && !photoMeta) {
+            return json(res, 400, { error: 'Write a message or attach a voice/camera note first.' }, req);
+          }
+          const nowIso = new Date().toISOString();
+          const inserted = await db.collection('messages').insertOne({
+            connectionId: connId,
+            senderRole: 'creator',
+            senderName: creator.displayName,
+            body: text,
+            voiceMeta,
+            photoMeta,
+            seenAt: null,
+            createdAt: nowIso
+          });
+          return json(
+            res,
+            201,
+            {
+              message: {
+                id: inserted.insertedId.toString(),
+                senderRole: 'creator',
+                senderName: creator.displayName,
+                body: text,
+                text,
+                voiceMeta,
+                photoMeta,
+                seenAt: null,
+                createdAt: nowIso
+              }
+            },
+            req
+          );
+        }
+      }
+
+      if (subRoute === 'orders') {
+        if (req.method === 'GET') {
+          const list = await db
+            .collection('orders')
+            .find({ connectionId: connId, orderedByRole: 'creator' })
+            .sort({ createdAt: -1 })
+            .toArray();
+          return json(
+            res,
+            200,
+            {
+              orders: list.map((o) => ({
+                id: o._id.toString(),
+                brandId: o.brandId,
+                brandName: o.brandName,
+                itemId: o.itemId,
+                itemName: o.itemName,
+                etaMinutes: o.etaMinutes,
+                phoneNumber: o.phoneNumber || '',
+                note: o.note,
+                orderedByName: o.orderedByName,
+                privateOnly: true,
+                createdAt: o.createdAt
+              }))
+            },
+            req
+          );
+        }
+        if (req.method === 'POST') {
+          const brand =
+            brandCatalog.find((b) => b.id === (body.brandId || body.brandSlug)) ||
+            brandCatalog[0];
+          const item =
+            brand.items.find((i) => i.id === body.itemId) || brand.items[0];
+          const note = String(body.note || '').trim();
+          const phoneNumber = String(body.phoneNumber || '').replace(/\D/g, '').slice(0, 10);
+          const nowIso = new Date().toISOString();
+          const orderedByName = creator.displayName;
+
+          // Strictly Private Order Record — NEVER insert into shared chat messages!
+          const orderDoc = {
+            connectionId: connId,
+            brandId: brand.id,
+            brandName: brand.name,
+            itemId: item.id,
+            itemName: body.itemTitle || item.name,
+            etaMinutes: item.etaMinutes,
+            phoneNumber,
+            city: body.city || 'Hyderabad',
+            address: body.address || '',
+            note,
+            orderedByRole: 'creator',
+            orderedByName,
+            privateOnly: true,
+            createdAt: nowIso
+          };
+          const inserted = await db.collection('orders').insertOne(orderDoc);
+
+          return json(
+            res,
+            201,
+            { order: { ...orderDoc, id: inserted.insertedId.toString() } },
+            req
+          );
+        }
+      }
+
+      if (subRoute === 'dates') {
+        if (req.method === 'GET') {
+          const list = await db
+            .collection('dates')
+            .find({ connectionId: connId })
+            .sort({ createdAt: -1 })
+            .toArray();
+          return json(res, 200, { dates: list }, req);
+        }
+        if (req.method === 'POST') {
+          const title = String(body.title || 'Candlelight Dinner Date ♥').trim();
+          const location = String(body.location || 'Olive Bistro, Durgam Cheruvu').trim();
+          const dateTime = String(body.dateTime || '').trim();
+          const description = String(body.description || 'Just the two of us ♥').trim();
+          const nowIso = new Date().toISOString();
+          const senderName = creator.displayName;
+
+          const dateMeta = {
+            title,
+            location,
+            dateTime,
+            description,
+            createdBy: senderName,
+            createdAt: nowIso
+          };
+          await db.collection('dates').insertOne({ connectionId: connId, ...dateMeta });
+
+          await db.collection('messages').insertOne({
+            connectionId: connId,
+            senderRole: 'creator',
+            senderName,
+            body: `🕯️ ${senderName} planned an upcoming date: "${title}" at ${location}! Tap below to add it directly to Google Calendar ♥`,
+            dateMeta,
+            createdAt: nowIso
+          });
+
+          return json(res, 201, { date: dateMeta }, req);
+        }
+      }
+
+      if (subRoute === 'photos') {
+        if (req.method === 'GET') {
+          const list = await db
+            .collection('photos')
+            .find({ connectionId: connId })
+            .sort({ createdAt: -1 })
+            .toArray();
+          return json(
+            res,
+            200,
+            {
+              photos: list.map((p) => ({
+                id: p._id.toString(),
+                dataUrl: p.dataUrl,
+                caption: p.caption,
+                uploadedBy: p.uploadedBy || 'creator',
+                createdAt: p.createdAt
+              }))
+            },
+            req
+          );
+        }
+        if (req.method === 'POST') {
+          const dataUrl = String(body.dataUrl || '');
+          const caption = String(body.caption || '').trim();
+          if (!dataUrl.startsWith('data:image/')) {
+            return json(res, 400, { error: 'Invalid image data.' }, req);
+          }
+          const nowIso = new Date().toISOString();
+          const senderName = creator.displayName;
+          const inserted = await db.collection('photos').insertOne({
+            connectionId: connId,
+            dataUrl,
+            caption,
+            uploadedBy: 'creator',
+            createdAt: nowIso
+          });
+          const photoMeta = {
+            id: inserted.insertedId.toString(),
+            dataUrl,
+            caption: caption || `Shared by ${senderName}`,
+            createdAt: nowIso
+          };
+
+          await db.collection('messages').insertOne({
+            connectionId: connId,
+            senderRole: 'creator',
+            senderName,
+            body: caption ? `📸 ${caption}` : `📸 Shared a private photo`,
+            photoMeta,
+            createdAt: nowIso
+          });
+
+          return json(res, 201, { photo: photoMeta }, req);
+        }
+      }
+    }
+
+    return json(res, 404, { error: `Endpoint /api/${action} not found.` }, req);
   } catch (error) {
-    const code = error?.message === 'DB_CONFIG' || error?.message === 'AUTH_CONFIG' ? 503 : 500;
-    console.error('AFTERDARK request failed:', { requestId, action, method: req.method, code: error?.code || null, codeName: error?.codeName || null, message: error?.message || 'unknown' });
-    return json(res, code, {
-      error: code === 503 ? 'This feature is temporarily unavailable. Check the API health status and try again.' : 'Something glitched. Please retry once. If it continues, share reference ' + requestId + ' with support.',
-      requestId
-    });
+    console.error('API Error:', error);
+    return json(
+      res,
+      500,
+      { error: error.message || 'Internal server error' },
+      req
+    );
   }
 }

@@ -4,18 +4,22 @@
   "version": "0.2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node server.js",
     "build": "vite build",
+    "start": "NODE_ENV=production node server.js",
     "preview": "vite preview",
     "android:sync": "cap sync android"
   },
   "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3",
+    "@google/genai": "^2.32.0",
+    "express": "^5.3.0",
     "mongodb": "^6.12.0",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@capacitor/android": "^7.4.3",
-    "@capacitor/core": "^7.4.3"
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "vite": "^6.4.1",

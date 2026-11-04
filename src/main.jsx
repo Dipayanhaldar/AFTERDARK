@@ -1,557 +1,1951 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import QRCode from 'qrcode';
+import { preparePhotoFiles } from './photo-helper';
+import {
+  CITY_PROFILES,
+  detectUserLiveCityAndAddress,
+  flirtyHindiDrops,
+  indianQrThemes,
+  getPersonalizedInChatBrandAd,
+  QuickDropChipBar,
+  InlineCommerceDrawer,
+  LocationTreasureHuntDrawer,
+  MessageWithBrandCards,
+  InChatBrandPromoCard,
+  IncomingMessageToast,
+  ChatMediaInputActions
+} from './commerce-catalog';
+import {
+  playIncomingMessageSound,
+  playMessageSeenSound,
+  triggerIncomingPartnerAlert
+} from './notification-sound';
+import {
+  purgeStaleServiceWorkers,
+  buildPublicInviteLinks,
+  getClientDeviceId,
+  isGuestInviteLocation,
+  mirrorInviteLocally,
+  resilientApiRequest,
+  subscribeToCoupleSync
+} from './couple-sync';
+import { GuestApp } from './GuestApp';
+import { ThreeRomanticScene } from './ThreeRomanticScene';
 import './style.css';
-import { compressPhotoToDataUrl } from './photo-helper.js';
 
-const brands = [
-  { name: 'Netflix', slug: 'netflix', category: 'Movie night', url: 'https://www.netflix.com/', keys: ['movie','film','watch','netflix','binge','series','show','k-drama'], pitch: 'Movie plan? Netflix & chill bolo, “kal dekhenge” ka season finale kabhi nahi aata 😭🍿', cta: 'Pick the watchlist', logo: 'N', color: '#e50914' },
-  { name: 'BookMyShow', slug: 'bookmyshow', category: 'Movie tickets', url: 'https://in.bookmyshow.com/', keys: ['tickets','pvr','cinema','theatre','screening','concert'], pitch: 'Talking stage se theatre stage tak? Tickets book karo, bestie. 👀🎟️', cta: 'Find a show', logo: 'B', color: '#d81f26' },
-  { name: 'Zomato', slug: 'zomato', category: 'Food cravings', url: 'https://www.zomato.com/', keys: ['zomato','food','hungry','eat','dinner','lunch','craving','pizza','biryani','momos','khana'], pitch: 'Momos ya biryani ka mood aa? Hint dena band karo miyaan, order scene set karo 🌶️🤌', cta: 'Order something cute', logo: 'zomato', color: '#e23744' },
-  { name: 'Swiggy', slug: 'swiggy', category: 'Food delivery', url: 'https://www.swiggy.com/', keys: ['swiggy','delivery','takeaway','late night food'], pitch: 'Pyaar apni jagah, late-night cravings apni jagah. Kuch mangwao aur gossip chalao 😭🍟', cta: 'Get the food scene going', logo: 'swiggy', color: '#fc8019' },
-  { name: 'Blinkit', slug: 'blinkit', category: 'Tiny surprises', url: 'https://blinkit.com/', keys: ['blinkit','snack','chocolate','surprise','midnight','ice cream','chips','craving'], pitch: 'Green-flag move: unka favourite snack yaad rakhna. Chhota surprise, full aura 💛', cta: 'Send a little treat', logo: 'blinkit', color: '#f8cb46' },
-  { name: 'Amazon', slug: 'amazon', category: 'Little something', url: 'https://www.amazon.in/', keys: ['amazon','shopping','order','buy','wishlist','headphones','book','gadget'], pitch: 'Wishlist mein hint daal diya? Ab dekhte hain tumhara person FBI-level observant hai kya 👀📦', cta: 'Browse the wishlist', logo: 'a', color: '#ff9900' },
-  { name: 'Myntra', slug: 'myntra', category: 'Fit check', url: 'https://www.myntra.com/', keys: ['myntra','outfit','fit check','dress','clothes','fashion','date outfit','wear'], pitch: 'Date ka fit ready hai ya abhi bhi “mere paas kuch nahi hai” arc chal raha? 💅✨', cta: 'Find the date fit', logo: 'M', color: '#ff3f6c' },
-  { name: 'Zudio', slug: 'zudio', category: 'Budget fits', url: 'https://www.zudio.com/', keys: ['zudio','budget fit','affordable clothes','budget shopping'], pitch: 'Cute fit, budget intact. Paisa bachao, aura badhao — Hyderabad ka asli flex 😌❤️', cta: 'Browse the fits', logo: 'Z', color: '#ed1c24' },
-  { name: 'AJIO', slug: 'ajio', category: 'Style plans', url: 'https://www.ajio.com/', keys: ['ajio','streetwear','sneakers','style','wardrobe'], pitch: 'Matching fits? Low-key couple goals. Bas dono ka drip alag level ka hona chahiye 😎', cta: 'Style the moment', logo: 'AJIO', color: '#2d1c47' },
-  { name: 'Ferns N Petals', slug: 'fnp', category: 'Flowers & gifts', url: 'https://www.fnp.com/', keys: ['flowers','bouquet','fnp','roses','flower','surprise gift'], pitch: '“Flowers nahi chahiye” bolke story pe bouquets repost karna? Chachi sab samajhti 😭🌹', cta: 'Send flowers', logo: 'fnp', color: '#6b9b42' },
-  { name: 'IGP', slug: 'igp', category: 'Thoughtful gifts', url: 'https://www.igp.com/', keys: ['igp','gift','birthday','anniversary','present','personalized'], pitch: 'Subtle hint bhi hint hota miyaan. A thoughtful gift says “I listen” 💐💌', cta: 'Find a thoughtful gift', logo: 'IGP', color: '#7c3f8c' },
-  { name: 'Archies', slug: 'archies', category: 'Cards & keepsakes', url: 'https://www.archiesonline.com/', keys: ['archies','greeting card','love letter','handwritten note','keepsake'], pitch: 'Typing “I miss you” easy hai… handwritten note? Arrey, dil jeet liya janaab 💌', cta: 'Send a little note', logo: 'A', color: '#c21e45' },
-  { name: 'Nykaa', slug: 'nykaa', category: 'Self-care treat', url: 'https://www.nykaa.com/', keys: ['nykaa','makeup','skincare','perfume','beauty','lipstick'], pitch: 'Self-care date or a tiny treat? Main character energy deserves its own shelf 💄✨', cta: 'Pick a self-care treat', logo: 'N', color: '#fc2779' },
-  { name: 'Starbucks', slug: 'starbucks', category: 'Coffee date', url: 'https://www.starbucks.in/', keys: ['starbucks','coffee','cafe','matcha','latte','chai','drink'], pitch: '“Quick coffee?” — famous last words before a 3-hour yap session ☕🫶', cta: 'Plan a coffee run', logo: '★', color: '#00754a' },
-  { name: 'Uber', slug: 'uber', category: 'Getting there', url: 'https://www.uber.com/in/en/', keys: ['uber','ride','cab','travel','pickup','drop','going there'], pitch: 'Plan toh set hai, ab “kaise aaoge?” ka plot twist mat rakho 😭🚗', cta: 'Sort the ride', logo: 'UBER', color: '#111111' },
-  { name: 'Rapido', slug: 'rapido', category: 'Quick ride', url: 'https://www.rapido.bike/', keys: ['rapido','bike taxi','scooter','pickup','drop'], pitch: '“5 min mein aata” bolke 40 min? Scene set karo, ride plan bhi 😭🏍️', cta: 'Sort your ride', logo: 'R', color: '#ffcb05' },
-  { name: 'District', slug: 'district', category: 'Date plans', url: 'https://www.district.in/', keys: ['district','date','plan','event','activity','weekend','outing'], pitch: 'Hyd lo “we should go” ante calendar lo pettu ra. Sirf reels share karne se date nahi hota 😌✨', cta: 'Find your next plan', logo: 'D', color: '#5b2be0' },
-  { name: 'Cadbury 5 Star', slug: 'cadbury', category: 'Chocolate break', url: 'https://www.cadburygifting.in/', keys: ['5 star','cadbury','bad day','rough day','tired','stress','reset'], pitch: 'Life full drama chestunda? Chocolate break teesko, jaan. Main character needs a reset 🍫', cta: 'Take a sweet break', logo: '5★', color: '#4b2678' },
-  { name: 'Spotify', slug: 'spotify', category: 'Your song', url: 'https://open.spotify.com/', keys: ['spotify','playlist','song','music','listen','soundtrack'], pitch: 'Ek playlist bana do jaan ke liye. 10 songs aur 1 soft launch — full cinema 🎧💗', cta: 'Make the playlist', logo: '≋', color: '#1db954' },
-  { name: 'MakeMyTrip', slug: 'makemytrip', category: 'Little getaway', url: 'https://www.makemytrip.com/', keys: ['trip','travel together','getaway','holiday','vacation','staycation'], pitch: '“Kabhi trip pe chalte” ko actual dates do ra. Delulu itinerary loading ✈️👀', cta: 'Dream up a getaway', logo: 'MMT', color: '#1c4e9b' }
+purgeStaleServiceWorkers();
+
+const SESSION_KEY = 'afterdark_session_token';
+const INVITE_CACHE_KEY = 'afterdark_latest_invite_v3';
+const CUSTOM_GUEST_ORIGIN_KEY = 'afterdark_custom_guest_origin';
+
+const hyderabadCandlelightVenues = [
+  'Olive Bistro, Durgam Cheruvu (Lakeview Candlelight)',
+  'Taj Falaknuma Palace — Celeste Terrace',
+  'Jewel of Nizam — The Minar (Golkonda Resort)',
+  'Exotica Rooftop, Banjara Hills Road No. 12',
+  'Tansen, Financial District (Mughlai Candlelight)',
+  'Café Niloufer Lounge, Banjara Hills (Midnight Chai Date)'
 ];
-const vibeLines = ['Acha suno… soft launch karna hai ya hard launch? 👀💋','Scene toh full filmy lag raha hai, jaan. Clock it. 💘','Arrey, this is giving “I made a playlist for you” energy. 🎧','Hyd Gen Z rule: “dekhenge” nahi, date ka time bolo. 🌙','Low-key obsessed? High-key communicate, bestie. 🫶','Aiyo, butterflies aa rahe kya? Don’t fumble the bag. 🦋'];
-const dailyPrompts = [
-  { id: 'green-flag', question: 'What tiny thing instantly makes someone a green flag?' },
-  { id: 'perfect-evening', question: 'Describe your perfect low-pressure evening together.' },
-  { id: 'comfort-food', question: 'What comfort food would fix a rough day for you?' },
-  { id: 'first-impression', question: 'What was your honest first impression of your person?' },
-  { id: 'soft-launch-song', question: 'Which song would be your soft-launch soundtrack?' },
-  { id: 'love-language', question: 'What small action makes you feel genuinely cared for?' },
-  { id: 'hyderabad-date', question: 'Pick one Hyderabad spot for a spontaneous date. Why?' },
-  { id: 'funny-memory', question: 'What moment together still makes you laugh?' },
-  { id: 'ideal-weekend', question: 'What does your ideal no-pressure weekend look like?' },
-  { id: 'communication', question: 'What helps you feel safe communicating honestly?' }
-];
-const dateSpots = [{"id":"necklace-road","name":"Necklace Road","area":"Hussain Sagar","desc":"Sunset walk and city lights"},{"id":"durgam-cheruvu","name":"Durgam Cheruvu","area":"Madhapur","desc":"Lake views and a relaxed evening"},{"id":"charminar","name":"Charminar","area":"Old City","desc":"Historic streets and local snacks"},{"id":"golconda","name":"Golconda Fort","area":"Ibrahim Bagh","desc":"Golden-hour views; check visiting hours"},{"id":"chowmahalla","name":"Chowmahalla Palace","area":"Khilwat","desc":"Architecture and a daytime culture date"},{"id":"lumbini-park","name":"Lumbini Park","area":"Hussain Sagar","desc":"Easy public-park plan"},{"id":"paradise-biryani","name":"Paradise Biryani","area":"Secunderabad","desc":"A classic Hyderabad food date"},{"id":"ramoji-film-city","name":"Ramoji Film City","area":"Abdullapurmet","desc":"Plan a full-day outing"}];
-const suggestionsFor = (text) => {
-  const lower = text.toLowerCase();
-  if (['tickets','pvr','cinema','theatre','screening','concert'].some(k => lower.includes(k))) return brands.filter(b => b.slug === 'bookmyshow');
-  if (['movie','film','netflix','series','binge','k-drama'].some(k => lower.includes(k))) return brands.filter(b => b.slug === 'netflix');
-  const match = brands.find(b => b.keys.some(k => lower.includes(k)));
-  return match ? [match] : [];
-};
-const chachiReplyFor = (text) => {
-  const lower = String(text || '').toLowerCase();
-  if (/movie|netflix|film|series|watch|cinema/.test(lower)) return 'Arrey wah, movie ka plan toh bana lo… popcorn tum, company main? 👀🍿';
-  if (/momo|biryani|food|hungry|eat|craving|khana|pizza/.test(lower)) return 'Miyaan, pehle khana order karo. Dil ki baat biryani ke baad bhi kar sakte 😌🤌';
-  if (/miss you|miss u|yaad|love you|love u|like you|feelings/.test(lower)) return 'Acha ji, itna yaad karte? Proof ke liye ek cute sa plan bhi bhejo na, hero sahab 💋';
-  if (/date|meet|milte|weekend|outing|plan/.test(lower)) return 'Hyd mein milte? Bas “dekhenge” mat bolo ra, day aur time fix karo 😭💗';
-  if (/cute|beautiful|handsome|pretty|gorgeous|sweet|compliment/.test(lower)) return 'Hayeee, itni tareef? Ab blush karun ya tumko chai pe bulaun? 👀☕';
-  if (/sorry|upset|sad|bad day|stress|tired/.test(lower)) return 'Acha suno, no pressure. Batao kya hua — main sun raha/rahi hoon. Chai aur thoda sa comfort scene? 🫶';
-  const replies = [
-    'Hau miyaan, flirting toh solid hai… ab consistency bhi dikhao, hero sahab 😌💗',
-    'Kya bolte, janaab? Itni smooth baatein karte toh dil ka Wi-Fi auto-connect ho jaata 👀📶',
-    'Acha suno, dil ko confuse nahi, thoda sa pamper karo bas 💋',
-    'Arrey wah, rizz toh full Hyderabadi hai. Ab plan bhi solid karo na 😭✨',
-    'Chachi ka kehna hai: green flags sirf bolte nahi, follow-through bhi karte hain beta 💅💌'
-  ];
-  return replies[Math.floor(Math.random() * replies.length)];
-};
-const toLocalDateTimeInput = value => { const d = new Date(value); return Number.isNaN(d.getTime()) ? '' : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
-async function request(path, options = {}) {
-  const method = String(options.method || 'GET').toUpperCase();
-  const maxAttempts = method === 'GET' ? 2 : 1;
-  let lastError;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    let response;
-    try {
-      response = await fetch('/api/' + path, {
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-        ...options
-      });
-    } catch {
-      lastError = new Error('Connection hiccup. Check your internet, then tap retry.');
-      if (attempt < maxAttempts) { await new Promise(resolve => window.setTimeout(resolve, 450)); continue; }
-      throw lastError;
+
+async function renderStyledQrDataUrl(text, options) {
+  if (!text) return '';
+  const theme = indianQrThemes.find((t) => t.id === options.themeId) || indianQrThemes[0];
+  const qrCanvas = document.createElement('canvas');
+  await QRCode.toCanvas(qrCanvas, text, {
+    width: 330,
+    margin: 2,
+    errorCorrectionLevel: 'H',
+    color: {
+      dark: theme.dark,
+      light: theme.light
     }
-    const contentType = response.headers.get('content-type') || '';
-    let data = {};
-    if (contentType.includes('application/json')) {
-      data = await response.json().catch(() => ({}));
-    } else {
-      const textBody = await response.text().catch(() => '');
-      data = { error: textBody.trim().startsWith('<') ? '' : textBody.trim().slice(0, 180) };
-    }
-    if (response.ok) return data;
-    const requestId = data.requestId ? ' Reference: ' + data.requestId + '.' : '';
-    const fallback = response.status >= 500
-      ? 'The server had a temporary problem (HTTP ' + response.status + '). Please retry in a moment.'
-      : response.status === 429
-        ? 'Too many attempts in a short time. Wait a minute, then retry.'
-        : response.status === 401
-          ? 'Your session may have expired. Refresh the page or sign in again.'
-          : response.status === 404
-            ? 'This link or item could not be found. Check that the invite link is complete and still valid.'
-            : 'The request could not be completed (HTTP ' + response.status + '). Please retry.';
-    lastError = new Error((data.error && !String(data.error).startsWith('<!DOCTYPE') ? data.error : fallback) + requestId);
-    if (attempt < maxAttempts && (response.status >= 500 || response.status === 429)) {
-      await new Promise(resolve => window.setTimeout(resolve, 450));
-      continue;
-    }
-    throw lastError;
-  }
-  throw lastError || new Error('The request could not be completed. Please retry.');
+  });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 480;
+  canvas.height = 600;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return qrCanvas.toDataURL('image/png');
+
+  const bgGrad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+  bgGrad.addColorStop(0, theme.bgStart || '#1a0b24');
+  bgGrad.addColorStop(0.55, '#12071b');
+  bgGrad.addColorStop(1, theme.bgEnd || '#2d0f3a');
+  ctx.fillStyle = bgGrad;
+  ctx.beginPath();
+  ctx.roundRect(0, 0, canvas.width, canvas.height, 32);
+  ctx.fill();
+
+  ctx.strokeStyle = theme.accent;
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  ctx.roundRect(12, 12, canvas.width - 24, canvas.height - 24, 26);
+  ctx.stroke();
+
+  ctx.fillStyle = `${theme.accent}28`;
+  ctx.beginPath();
+  ctx.roundRect(40, 26, canvas.width - 80, 38, 19);
+  ctx.fill();
+
+  ctx.fillStyle = theme.light;
+  ctx.font = 'bold 14px system-ui, -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(theme.badge || '☾ PRIVATE COUPLE PASS', canvas.width / 2, 50);
+
+  // Couple Names Header on Custom QR
+  const creatorName = (options.creatorName || 'You').slice(0, 18);
+  const partnerName = (options.partnerName || 'My Love').slice(0, 18);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 21px Georgia, serif';
+  ctx.fillText(`${creatorName}  ♥  ${partnerName}`, canvas.width / 2, 92);
+
+  ctx.fillStyle = theme.light;
+  ctx.beginPath();
+  ctx.roundRect(62, 110, 356, 356, 24);
+  ctx.fill();
+
+  ctx.drawImage(qrCanvas, 75, 123, 330, 330);
+
+  const centerX = canvas.width / 2;
+  const centerY = 288;
+  ctx.fillStyle = theme.bgStart || '#1a0b24';
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 30, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = theme.accent;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, 28, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const emblemGlyphMap = {
+    chaand: '☾',
+    kamal: '❀',
+    dil: '♥',
+    gulab: '✿'
+  };
+  const glyph = emblemGlyphMap[options.emblemStyle] || emblemGlyphMap[theme.emblem] || '♥';
+  ctx.fillStyle = theme.accent;
+  ctx.font = 'bold 24px system-ui, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(glyph, centerX, centerY + 1);
+  ctx.textBaseline = 'alphabetic';
+
+  const label = (options.label || theme.defaultLabel || 'Scan to open our private couple chat ♥').slice(0, 44);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 16px Georgia, serif';
+  ctx.fillText(label, canvas.width / 2, 496);
+
+  ctx.fillStyle = `${theme.accent}33`;
+  ctx.beginPath();
+  ctx.roundRect(96, 512, canvas.width - 192, 36, 18);
+  ctx.fill();
+
+  ctx.fillStyle = theme.light;
+  ctx.font = 'bold 14px system-ui, sans-serif';
+  ctx.fillText('🔐 Scan QR · Enter Private Passcode ♥', canvas.width / 2, 535);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.72)';
+  ctx.font = '12px system-ui, sans-serif';
+  ctx.fillText('One-to-One Private Room · Couples & Best Friends', canvas.width / 2, 572);
+
+  return canvas.toDataURL('image/png');
 }
+
+function readCachedInvite() {
+  try {
+    const raw = localStorage.getItem(INVITE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || parsed.status === 'revoked') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function App() {
-  const resetToken = useMemo(() => new URLSearchParams(window.location.search).get('token') || '', []);
-  const [tab, setTab] = useState(() => resetToken ? 'account' : 'home');
+  const [token, setToken] = useState(() => localStorage.getItem(SESSION_KEY) || '');
   const [user, setUser] = useState(null);
-  const [authMode, setAuthMode] = useState(() => resetToken ? 'reset' : 'register');
-  const [resetMessage, setResetMessage] = useState('');
-  const [bursts, setBursts] = useState([]);
-  const [auth, setAuth] = useState({ email: '', password: '', handle: '', adult: false, consent: false });
-  const [authError, setAuthError] = useState('');
-  const [toast, setToast] = useState('');
+  const [tab, setTab] = useState('invite');
+  const [statusMessage, setStatusMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
   const [busy, setBusy] = useState(false);
-  const [inviteCreating, setInviteCreating] = useState(false);
-  const [invite, setInvite] = useState(() => { try { const code = localStorage.getItem('afterdark_pending_invite_code'); if (!code) { localStorage.removeItem('afterdark_pending_invite'); localStorage.removeItem('afterdark_pending_qr'); return ''; } return localStorage.getItem('afterdark_pending_invite') || ''; } catch { return ''; } });
-  const [qr, setQr] = useState(() => { try { if (!localStorage.getItem('afterdark_pending_invite_code')) return ''; return localStorage.getItem('afterdark_pending_qr') || ''; } catch { return ''; } });
-  const [inviteCode, setInviteCode] = useState(() => { try { return localStorage.getItem('afterdark_pending_invite_code') || ''; } catch { return ''; } });
-  const [customQrName, setCustomQrName] = useState('');
-  const [customQrTheme, setCustomQrTheme] = useState('rose');
-  const [customQrImage, setCustomQrImage] = useState('');
-  const customQrGeneratingRef = useRef(false);
-  const [inviteInfo, setInviteInfo] = useState(null);
-  const [connections, setConnections] = useState([]);
-  const [activeConnection, setActiveConnection] = useState('');
+
+  const [authMode, setAuthMode] = useState('signup');
+  const [authForm, setAuthForm] = useState({
+    email: '',
+    password: '',
+    displayName: '',
+    ageConfirmed: true
+  });
+
+  const [activeConnection, setActiveConnection] = useState(null);
+  const [activeInvite, setActiveInvite] = useState(() => readCachedInvite());
+
+  const [customGuestOrigin, setCustomGuestOrigin] = useState(
+    () => localStorage.getItem(CUSTOM_GUEST_ORIGIN_KEY) || ''
+  );
+  const [showCustomDomainConfig, setShowCustomDomainConfig] = useState(false);
+
+  // Single-Invite Generator Form (only accessible when NO invite is active)
+  const [generatorForm, setGeneratorForm] = useState({
+    creatorCustomName: '',
+    partnerCustomName: '',
+    themeId: 'charminar',
+    emblemStyle: 'dil',
+    customLabel: 'Scan karke seedha humare chat mein aao ♥'
+  });
+
+  const [standardQrDataUrl, setStandardQrDataUrl] = useState('');
+  const [customQrDataUrl, setCustomQrDataUrl] = useState('');
+  const [showCustomQrCard, setShowCustomQrCard] = useState(false);
+
+  // Private Chat State & Hidden Tool Drawers
   const [messages, setMessages] = useState([]);
-  const [draft, setDraft] = useState('');
-  const [moments, setMoments] = useState([]);
-  const [dailyAnswers, setDailyAnswers] = useState([]);
-  const [dailyAnswer, setDailyAnswer] = useState('');
-  const dailyAnswerDirty = useRef(false);
-  const [memoryDraft, setMemoryDraft] = useState('');
-  const [photoFile, setPhotoFile] = useState(null);
-  const [inviteReply, setInviteReply] = useState('');
-  const [inviteLookupFailed, setInviteLookupFailed] = useState(false);
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
-  const [chatSuggestionShown, setChatSuggestionShown] = useState({});
-  const [dismissedSuggestions, setDismissedSuggestions] = useState({});
-  const [chachiReply, setChachiReply] = useState('');
-  const [inviteAccepted, setInviteAccepted] = useState(false);
-  const [installPrompt, setInstallPrompt] = useState(null);
-  const [datePlan, setDatePlan] = useState(null);
-  const [planDateTime, setPlanDateTime] = useState(() => { const d = new Date(Date.now() + 7 * 86400000); d.setHours(17, 0, 0, 0); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); });
-  const inviteToken = useMemo(() => window.location.pathname.match(/^\/invite\/([A-Za-z0-9_-]+)\/?$/)?.[1] || '', []);
-  function handleMicroReaction(e) {
-    const target = e.target.closest('button, .brand-card');
-    if (!target || target.disabled) return;
-    const rect = target.getBoundingClientRect();
-    const emojis = ['💗','💋','🦋','✨','🫶','💌','👀','💘'];
-    const id = Date.now() + Math.random();
-    setBursts(prev => [...prev, { id, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, emoji: emojis[Math.floor(Math.random() * emojis.length)] }].slice(-8));
-    setTimeout(() => setBursts(prev => prev.filter(item => item.id !== id)), 900);
+  const [messageInput, setMessageInput] = useState('');
+  const [photos, setPhotos] = useState([]);
+  const [photoCaption, setPhotoCaption] = useState('');
+
+  // Collapsible drawers inside chat so nothing is clumsy or expanded unnecessarily
+  const [activeChatDrawer, setActiveChatDrawer] = useState('none'); // 'none' | 'photos' | 'calendar' | 'rooftop3d' | 'flirt' | 'store' | 'treasure'
+  const [activeBrandId, setActiveBrandId] = useState('flipkart_minutes');
+  const [userCity, setUserCity] = useState('Hyderabad');
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [incomingToast, setIncomingToast] = useState(null);
+  const [aiInsight, setAiInsight] = useState(null);
+  const [elapsedChatMinutes, setElapsedChatMinutes] = useState(0);
+  const [treasurePromptDismissed, setTreasurePromptDismissed] = useState(false);
+  const chatStartTimeRef = useRef(Date.now());
+  const lastSeenMsgIdRef = useRef(null);
+  const initializedMsgStreamRef = useRef(false);
+  const seenByPartnerIdsRef = useRef(new Set());
+  const lastAnalyzedCountRef = useRef(0);
+
+  useEffect(() => {
+    if (!activeConnection) return undefined;
+    const baseStart =
+      (activeConnection.approvedAt && Date.parse(activeConnection.approvedAt)) ||
+      (messages[0]?.createdAt && Date.parse(messages[0].createdAt)) ||
+      chatStartTimeRef.current;
+    const updateElapsed = () => {
+      const mins = Math.max(0, Math.floor((Date.now() - baseStart) / 60000));
+      setElapsedChatMinutes(mins);
+    };
+    updateElapsed();
+    const timer = setInterval(updateElapsed, 15000);
+    return () => clearInterval(timer);
+  }, [activeConnection?.id, messages.length]);
+
+  // Candlelight Dinner / Google Calendar Form
+  const [dateForm, setDateForm] = useState({
+    title: 'Romantic Candlelight Dinner ♥',
+    location: hyderabadCandlelightVenues[0],
+    dateTime: '',
+    description: 'Dress up for a magical evening — just the two of us.'
+  });
+  const [groundedSpots, setGroundedSpots] = useState([]);
+  const [loadingSpots, setLoadingSpots] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    detectUserLiveCityAndAddress().then((detected) => {
+      if (mounted && detected?.city) {
+        setUserCity(detected.city);
+        const firstSpot = CITY_PROFILES[detected.city]?.cafesAndSpots?.[0]?.name;
+        if (firstSpot) {
+          setDateForm((prev) => ({ ...prev, location: firstSpot }));
+        }
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const chatEndRef = useRef(null);
+
+  const inviteLinks = useMemo(() => {
+    if (!activeInvite?.inviteToken) {
+      return { primaryUrl: '', guestAppUrl: '', rootDirectUrl: '', sameOriginUrl: '' };
+    }
+    return buildPublicInviteLinks({
+      inviteToken: activeInvite.inviteToken,
+      verificationCode: activeInvite.verificationCode,
+      creatorDisplayName:
+        activeInvite.creatorCustomName ||
+        user?.displayName ||
+        activeInvite.creatorDisplayName ||
+        'Partner',
+      recipientHint:
+        activeInvite.partnerCustomName || activeInvite.recipientHint || 'Meri Jaan',
+      creatorDeviceId: activeInvite.creatorDeviceId || getClientDeviceId(),
+      creatorIp: activeInvite.creatorIp || '',
+      customGuestOrigin
+    });
+  }, [activeInvite, user?.displayName, customGuestOrigin]);
+
+  const guestInviteLink = inviteLinks.primaryUrl;
+
+  useEffect(() => {
+    try {
+      if (activeInvite && activeInvite.status !== 'revoked') {
+        localStorage.setItem(INVITE_CACHE_KEY, JSON.stringify(activeInvite));
+        mirrorInviteLocally(activeInvite);
+      } else {
+        localStorage.removeItem(INVITE_CACHE_KEY);
+      }
+    } catch {
+      // Ignore storage issues
+    }
+  }, [activeInvite]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (!guestInviteLink || !activeInvite) {
+      setStandardQrDataUrl('');
+      setCustomQrDataUrl('');
+      return undefined;
+    }
+
+    QRCode.toDataURL(guestInviteLink, {
+      width: 300,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: {
+        dark: '#14081c',
+        light: '#ffffff'
+      }
+    })
+      .then((url) => {
+        if (mounted) setStandardQrDataUrl(url);
+      })
+      .catch(() => {
+        if (mounted) setStandardQrDataUrl('');
+      });
+
+    renderStyledQrDataUrl(guestInviteLink, {
+      themeId: activeInvite.themeId || generatorForm.themeId || 'charminar',
+      emblemStyle: activeInvite.emblemStyle || generatorForm.emblemStyle || 'dil',
+      creatorName: activeInvite.creatorCustomName || user?.displayName || 'You',
+      partnerName: activeInvite.partnerCustomName || activeInvite.recipientHint || 'My Love',
+      label: generatorForm.customLabel,
+      otpCode: activeInvite.verificationCode || ''
+    })
+      .then((customUrl) => {
+        if (mounted) setCustomQrDataUrl(customUrl);
+      })
+      .catch(() => {
+        if (mounted) setCustomQrDataUrl('');
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [
+    guestInviteLink,
+    activeInvite,
+    user?.displayName,
+    generatorForm.themeId,
+    generatorForm.emblemStyle,
+    generatorForm.customLabel
+  ]);
+
+  async function loadWorkspace(currentToken = token) {
+    if (!currentToken) return;
+    try {
+      const queryParams = new URLSearchParams();
+      if (activeInvite?.inviteToken) queryParams.set('inviteToken', activeInvite.inviteToken);
+      if (activeInvite?.verificationCode) queryParams.set('otp', activeInvite.verificationCode);
+      if (activeInvite?.partnerCustomName || activeInvite?.recipientHint) {
+        queryParams.set('hint', activeInvite.partnerCustomName || activeInvite.recipientHint);
+      }
+      const qs = queryParams.toString();
+
+      const [meData, currentInviteData, connectionData] = await Promise.all([
+        resilientApiRequest('/me', {}, currentToken),
+        resilientApiRequest('/invites/current', {}, currentToken).catch(() => ({ invite: null })),
+        resilientApiRequest(`/connections${qs ? `?${qs}` : ''}`, {}, currentToken)
+      ]);
+
+      setUser(meData.user);
+      if (meData.user?.displayName && !generatorForm.creatorCustomName) {
+        setGeneratorForm((prev) => ({
+          ...prev,
+          creatorCustomName: meData.user.displayName
+        }));
+      }
+
+      if (currentInviteData?.invite) {
+        setActiveInvite(currentInviteData.invite);
+      }
+
+      const list = connectionData.connections || [];
+      const active = list.find((item) => item.status === 'active') || null;
+      setActiveConnection(active);
+    } catch {
+      localStorage.removeItem(SESSION_KEY);
+      setToken('');
+      setUser(null);
+    }
+  }
+
+  async function loadConnectionDetails(connection, currentToken = token) {
+    if (!connection || connection.status !== 'active' || !currentToken) {
+      setMessages([]);
+      setPhotos([]);
+      return;
+    }
+
+    try {
+      const [msgData, photoData] = await Promise.all([
+        resilientApiRequest(`/connections/${connection.id}/messages`, {}, currentToken),
+        resilientApiRequest(`/connections/${connection.id}/photos`, {}, currentToken)
+      ]);
+      const nextMessages = msgData.messages || [];
+      setMessages(nextMessages);
+      setPhotos(photoData.photos || []);
+
+      // Detect newly arrived message from partner (Guest) and trigger chime + visual toast
+      if (nextMessages.length > 0) {
+        const latest = nextMessages[nextMessages.length - 1];
+        if (!initializedMsgStreamRef.current) {
+          initializedMsgStreamRef.current = true;
+          lastSeenMsgIdRef.current = latest.id;
+          nextMessages.forEach((m) => {
+            if (m.senderRole === 'creator' && m.seenAt) {
+              seenByPartnerIdsRef.current.add(m.id);
+            }
+          });
+        } else {
+          if (latest.id && latest.id !== lastSeenMsgIdRef.current) {
+            lastSeenMsgIdRef.current = latest.id;
+            if (latest.senderRole && latest.senderRole !== 'creator') {
+              const partnerName = connection.peerDisplayName || 'Your Partner';
+              const textPreview =
+                latest.body || latest.text || 'Sent you a voice note / live snap ♥';
+              triggerIncomingPartnerAlert({
+                senderName: partnerName,
+                messageText: textPreview,
+                soundEnabled
+              });
+              setIncomingToast({
+                id: latest.id,
+                senderName: partnerName,
+                text: textPreview
+              });
+            }
+          }
+
+          // Detect when partner reads our sent message (seenAt transitions from null -> timestamp)
+          let newlySeen = false;
+          for (const m of nextMessages) {
+            if (m.senderRole === 'creator' && m.seenAt && !seenByPartnerIdsRef.current.has(m.id)) {
+              seenByPartnerIdsRef.current.add(m.id);
+              newlySeen = true;
+            }
+          }
+          if (newlySeen) {
+            playMessageSeenSound(soundEnabled);
+          }
+        }
+
+        // Background Free Server-Side Gemini Chat Analysis when message count changes
+        if (nextMessages.length !== lastAnalyzedCountRef.current) {
+          lastAnalyzedCountRef.current = nextMessages.length;
+          resilientApiRequest(
+            '/ai/analyze-chat',
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                messages: nextMessages.slice(-6),
+                viewerRole: 'creator'
+              })
+            },
+            currentToken
+          )
+            .then((res) => {
+              if (res?.insight) setAiInsight(res.insight);
+            })
+            .catch(() => {});
+        }
+      }
+    } catch {
+      // Ignore transient poll errors
+    }
   }
 
   useEffect(() => {
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
-    const onInstallPrompt = (event) => { event.preventDefault(); setInstallPrompt(event); };
-    const onInstalled = () => { setInstallPrompt(null); setToast('AFTERDARK is on your home screen. Keep it mutual 💗'); };
-    window.addEventListener('beforeinstallprompt', onInstallPrompt);
-    window.addEventListener('appinstalled', onInstalled);
-    return () => { window.removeEventListener('beforeinstallprompt', onInstallPrompt); window.removeEventListener('appinstalled', onInstalled); };
-  }, []);
-  async function installApp() {
-    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true) {
-      setToast('You already have AFTERDARK installed. 💗'); return;
+    if (token) {
+      loadWorkspace(token);
     }
-    if (installPrompt) {
+  }, [token]);
+
+  useEffect(() => {
+    if (activeConnection && token) {
+      loadConnectionDetails(activeConnection, token);
+    }
+  }, [activeConnection?.id, activeConnection?.status, token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+
+    const refresh = async () => {
       try {
-        await installPrompt.prompt();
-        const choice = await installPrompt.userChoice;
-        setToast(choice?.outcome === 'accepted' ? 'Installing AFTERDARK… 💗' : 'No pressure. You can install it whenever you want.');
-      } catch { setToast('Open your browser menu and choose Install app.'); }
-      setInstallPrompt(null); return;
-    }
-    if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
-      setToast('On iPhone: tap Share ↑, then “Add to Home Screen”.'); return;
-    }
-    if (/android/i.test(navigator.userAgent)) {
-      window.location.href = 'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk';
-      return;
-    }
-    setToast('Open your browser menu (⋮) and choose “Install app” or “Add to Home screen”.');
-  }
-  // Refresh previously saved QR links to the static-host-safe query route.
-  // This keeps the six-digit access code requirement intact.
-  useEffect(() => {
-    if (!invite || !inviteCode) return;
-    let token = '';
-    try {
-      const saved = new URL(invite, window.location.origin);
-      token = saved.pathname.match(/^\/invite\/([A-Za-z0-9_-]{12,160})\/?$/)?.[1]
-        || saved.searchParams.get('invite')
-        || '';
-    } catch { return; }
-    if (!/^[A-Za-z0-9_-]{12,160}$/.test(token)) return;
-    const nextLink = 'https://afterdark-guest-connector.onrender.com/?invite=' + encodeURIComponent(token);
-    if (invite === nextLink) return;
-    let cancelled = false;
-    QRCode.toDataURL(nextLink, { width: 600, margin: 2, color: { dark: '#251226', light: '#ffffff' }, errorCorrectionLevel: 'H' })
-      .then(image => {
-        if (cancelled) return;
-        setInvite(nextLink);
-        setQr(image);
-        try {
-          localStorage.setItem('afterdark_pending_invite', nextLink);
-          localStorage.setItem('afterdark_pending_qr', image);
-        } catch {}
-        setToast('Your saved invite QR was refreshed. Download the new QR before sharing it. 💌');
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [invite, inviteCode]);
-  useEffect(() => { request('me').then(data => { setUser(data.user); if (data.user) loadConnections(); }).catch(() => {}); }, []);
-  useEffect(() => {
-    if (inviteToken) request('invites/' + inviteToken).then(d => { setInviteInfo(d.invite); setInviteLookupFailed(false); }).catch(e => { setInviteLookupFailed(true); setInviteReply(e.message); });
-  }, [inviteToken, user]);
-  useEffect(() => {
-    if (!activeConnection || !user) { setMessages([]); return; }
-    let alive = true;
-    const loadMessages = () => request('connections/' + activeConnection + '/messages').then(d => { if (alive) setMessages(d.messages || []); }).catch(e => { if (alive) setToast(e.message); });
-    setMessages([]); loadMessages();
-    const timer = window.setInterval(loadMessages, 7000);
-    return () => { alive = false; window.clearInterval(timer); };
-  }, [activeConnection, user]);
-  const dailyKey = new Date().toISOString().slice(0, 10);
-  const dailyPrompt = dailyPrompts[Math.floor(Date.parse(dailyKey) / 86400000) % dailyPrompts.length];
-  useEffect(() => {
-    if (!activeConnection || !user) { dailyAnswerDirty.current = false; setMoments([]); setDailyAnswers([]); setDailyAnswer(''); return; }
-    let alive = true;
-    dailyAnswerDirty.current = false;
-    const loadMoments = () => request('connections/' + activeConnection + '/moments?dayKey=' + dailyKey).then(d => {
-      if (!alive) return;
-      setMoments(d.moments || []); setDailyAnswers(d.answers || []);
-      if (!dailyAnswerDirty.current) { const mine = (d.answers || []).find(a => a.userId === d.currentUserId); setDailyAnswer(mine?.text || ''); }
-    }).catch(() => {});
-    loadMoments();
-    const timer = window.setInterval(loadMoments, 15000);
-    return () => { alive = false; window.clearInterval(timer); };
-  }, [activeConnection, user, dailyKey]);
-  useEffect(() => { if (tab === 'date' && activeConnection && user) request('connections/' + activeConnection + '/date-plan').then(d => { setDatePlan(d.plan || null); if (d.plan?.theirChoice && !d.plan?.lockedPlaceId) setPlanDateTime(toLocalDateTimeInput(d.plan.theirChoice.dateTime)); }).catch(e => setToast(e.message)); }, [tab, activeConnection, user]);
-  async function loadConnections() { try { const d = await request('connections'); setConnections(d.connections || []); if (!activeConnection && d.connections?.[0]) setActiveConnection(d.connections[0].id); if (d.connections?.[0]?.role === 'invitee') setTab('chat'); } catch {} }
-  async function submitAuth(e) {
-    e.preventDefault(); setAuthError(''); setResetMessage(''); setBusy(true);
-    try {
-      if (authMode === 'forgot') {
-        const data = await request('forgot-password', { method: 'POST', body: JSON.stringify({ email: auth.email }) });
-        setResetMessage(data.message || 'If that email is registered, a reset link will arrive shortly. Check your inbox and spam folder.');
-      } else if (authMode === 'reset') {
-        const data = await request('reset-password', { method: 'POST', body: JSON.stringify({ token: resetToken, password: auth.password }) });
-        setResetMessage(data.message || 'Password updated. Sign in with your new password.');
-        setAuth(p => ({ ...p, password: '' })); setAuthMode('login'); history.replaceState({}, '', '/');
-      } else {
-        const data = await request(authMode === 'register' ? 'register' : 'login', { method: 'POST', body: JSON.stringify({ ...auth, adult: auth.adult || ageConfirmed, consent: auth.consent || ageConfirmed }) });
-        setUser(data.user); setToast(authMode === 'register' ? 'You’re in. Now make it mutual ✨' : 'You’re back, bestie.');
-        if (inviteToken) { const d = await request('invites/' + inviteToken); setInviteInfo(d.invite); } else setTab('invite');
-        await loadConnections();
-      }
-    } catch (e) { setAuthError(e.message); }
-    finally { setBusy(false); }
-  }
-  async function createInvite() {
-    if (inviteCreating) {
-      setToast('ONE situationship at a time, bestie. The QR is still in the oven. 🚫💘');
-      return;
-    }
-    setInviteCreating(true); setToast('');
-    try {
-      const latest = await request('connections');
-      setConnections(latest.connections || []);
-      if ((latest.connections || []).length > 0) {
-        setToast('An approved chat is still active. End that connection before generating another QR.');
-        return;
-      }
-      const data = await request('invites', { method: 'POST', body: '{}' });
-      const link = 'https://afterdark-guest-connector.onrender.com/?invite=' + encodeURIComponent(data.invite);
-      const image = await QRCode.toDataURL(link, { width: 600, margin: 2, color: { dark: '#251226', light: '#ffffff' }, errorCorrectionLevel: 'H' });
-      setInvite(link);
-      setInviteCode(data.inviteCode || '');
-      setQr(image);
-      try {
-        localStorage.setItem('afterdark_pending_invite', link);
-        localStorage.setItem('afterdark_pending_qr', image);
-        localStorage.setItem('afterdark_pending_invite_code', data.inviteCode || '');
-      } catch { /* The download button remains available if browser storage is full or blocked. */ }
-      setToast('Invite ready. Download your QR now so it is saved in your gallery. One person, one plotline. 💌');
-    } catch (e) { setToast(e.message); }
-    finally { setInviteCreating(false); }
-  }
-  async function createCustomQr() {
-    if (customQrGeneratingRef.current) return;
-    if (!invite || !qr) { setToast('Generate your invite first.'); return; }
-    customQrGeneratingRef.current = true;
-    const palettes = {
-      rose: [
-        { bg1: '#4b1234', bg2: '#a91e61', accent: '#ff8fbd', ink: '#5b1239', paper: '#ffd0e3', petal: '#ff4f91', leaf: '#2b9b68' },
-        { bg1: '#64123e', bg2: '#d13c83', accent: '#ffc0d9', ink: '#581235', paper: '#ffe0ed', petal: '#ec367c', leaf: '#23865a' },
-        { bg1: '#35102e', bg2: '#9d286e', accent: '#ffb0d0', ink: '#45102d', paper: '#f9bfd9', petal: '#ff659e', leaf: '#2b9664' },
-        { bg1: '#741843', bg2: '#e45b98', accent: '#ffe0ec', ink: '#62143d', paper: '#ffd5e6', petal: '#e82d78', leaf: '#23865a' }
-      ],
-      violet: [
-        { bg1: '#3b1647', bg2: '#a43f8a', accent: '#f5a9df', ink: '#4d174b', paper: '#f7cbed', petal: '#ff5b9c', leaf: '#26885c' },
-        { bg1: '#50134e', bg2: '#bb4a9b', accent: '#ffc3ed', ink: '#481344', paper: '#f8d9f3', petal: '#ec4c9a', leaf: '#2d9665' }
-      ],
-      midnight: [
-        { bg1: '#41132e', bg2: '#a72f69', accent: '#ffa8d0', ink: '#4e1235', paper: '#f8c9df', petal: '#ff4e91', leaf: '#26885c' },
-        { bg1: '#2e1738', bg2: '#8e3d7c', accent: '#f5b8e3', ink: '#401335', paper: '#f6d6e9', petal: '#f45b9b', leaf: '#26885c' }
-      ],
-      sunset: [
-        { bg1: '#57162f', bg2: '#cb4b73', accent: '#ffd0bb', ink: '#591b34', paper: '#ffdfd8', petal: '#f34b82', leaf: '#25885b' },
-        { bg1: '#6c1b40', bg2: '#d64f82', accent: '#ffe0d4', ink: '#5a1737', paper: '#ffe6e6', petal: '#ed3e7d', leaf: '#27895c' }
-      ]
-    };
-    const choices = palettes[customQrTheme] || palettes.rose;
-    const theme = choices[Math.floor(Math.random() * choices.length)];
-    const seed = Math.random().toString(36).slice(2, 10).toUpperCase();
-    try {
-      const qrImage = await QRCode.toDataURL(invite, {
-        width: 600, margin: 2,
-        color: { dark: theme.ink, light: theme.paper },
-        errorCorrectionLevel: 'H'
-      });
-      const img = new Image();
-      img.onload = () => {
-        try {
-          const canvas = document.createElement('canvas');
-          canvas.width = 900; canvas.height = 1080;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) throw new Error('Canvas is unavailable');
-          const bg = ctx.createLinearGradient(0, 0, 900, 1080);
-          bg.addColorStop(0, theme.bg1); bg.addColorStop(0.52, theme.bg2); bg.addColorStop(1, theme.bg1);
-          ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
-          const glow = ctx.createRadialGradient(450, 510, 50, 450, 510, 500);
-          glow.addColorStop(0, 'rgba(255,190,220,.24)'); glow.addColorStop(1, 'rgba(255,190,220,0)');
-          ctx.fillStyle = glow; ctx.fillRect(0, 0, 900, 1080);
-          ctx.strokeStyle = theme.accent; ctx.lineWidth = 3;
-          ctx.beginPath(); ctx.roundRect(22, 22, 856, 1036, 38); ctx.stroke();
-          ctx.globalAlpha = .45; ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.roundRect(34, 34, 832, 1012, 30); ctx.stroke(); ctx.globalAlpha = 1;
-          for (let i = 0; i < 34; i++) {
-            const x = 58 + Math.random() * 784, y = 55 + Math.random() * 965;
-            const radius = 1.5 + Math.random() * 3.5;
-            ctx.globalAlpha = .25 + Math.random() * .55;
-            ctx.fillStyle = i % 3 === 0 ? '#fff0f7' : theme.accent;
-            ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
-          }
-          ctx.globalAlpha = 1; ctx.textAlign = 'center';
-          ctx.fillStyle = theme.accent; ctx.font = '700 29px Arial'; ctx.fillText('✦ AFTERDARK ✦', 450, 100);
-          ctx.fillStyle = '#fff1f7'; ctx.font = '700 43px "Space Grotesk", Arial, sans-serif';
-          ctx.fillText((customQrName.trim() || user?.handle || 'YOUR PERSON').slice(0, 26), 450, 166);
-          ctx.fillStyle = '#ffe0ec'; ctx.font = '19px Arial';
-          ctx.fillText('ONE LINK  ·  ONE PERSON  ·  ONE PLOTLINE', 450, 207);
-          // Blush QR panel — deliberately not white.
-          ctx.shadowColor = 'rgba(25,0,15,.25)'; ctx.shadowBlur = 24;
-          ctx.fillStyle = theme.paper; ctx.beginPath(); ctx.roundRect(143, 235, 614, 614, 28); ctx.fill();
-          ctx.shadowBlur = 0; ctx.drawImage(img, 150, 242, 600, 600);
-          // Rose emblem in the centre; H-level correction preserves scan reliability.
-          const cx = 450, cy = 542;
-          ctx.fillStyle = theme.paper; ctx.strokeStyle = theme.accent; ctx.lineWidth = 5;
-          ctx.beginPath(); ctx.arc(cx, cy, 57, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-          ctx.save(); ctx.translate(cx, cy);
-          const petalColors = [theme.petal, '#ff8ab5', '#f52f80', '#ffb2d0', '#d91f6a'];
-          for (let i = 0; i < 7; i++) {
-            ctx.save(); ctx.rotate((Math.PI * 2 * i) / 7);
-            ctx.fillStyle = petalColors[i % petalColors.length];
-            ctx.beginPath(); ctx.ellipse(0, -19, 12, 21, 0, 0, Math.PI * 2); ctx.fill();
-            ctx.restore();
-          }
-          ctx.fillStyle = '#7f1747'; ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = theme.leaf;
-          ctx.beginPath(); ctx.ellipse(-19, 25, 8, 15, -.85, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.ellipse(19, 25, 8, 15, .85, 0, Math.PI * 2); ctx.fill();
-          ctx.restore();
-          ctx.fillStyle = theme.accent; ctx.font = '700 25px Arial'; ctx.fillText('SCAN FOR YOUR LITTLE LOVE STORY', 450, 910);
-          ctx.fillStyle = '#fff0f7'; ctx.font = '20px Arial'; ctx.fillText('Keep it mutual. Keep it AFTERDARK. ♥', 450, 954);
-          ctx.globalAlpha = .78; ctx.font = '12px Arial'; ctx.fillText('EDITION ' + seed, 450, 1000); ctx.globalAlpha = 1;
-          setCustomQrImage(canvas.toDataURL('image/png'));
-          setToast('A one-of-a-kind rose QR is ready 🌹 Each generation gets its own colourway and design.');
-        } catch {
-          setToast('Could not render this QR design. Please try generating it again.');
-        } finally { customQrGeneratingRef.current = false; }
-      };
-      img.onerror = () => { customQrGeneratingRef.current = false; setToast('Could not render the QR design. Try again.'); };
-      img.src = qrImage;
-    } catch {
-      customQrGeneratingRef.current = false;
-      setToast('Could not create the custom QR. Try again.');
-    }
-  }
-  async function retryInvitePreview() {
-    if (!inviteToken) return;
-    setInviteReply('');
-    setInviteLookupFailed(false);
-    try {
-      const data = await request('invites/' + inviteToken);
-      setInviteInfo(data.invite);
-    } catch (error) {
-      setInviteLookupFailed(true);
-      setInviteReply(error.message || 'Could not load this invite. Check the link or ask the sender to create a new one.');
-    }
-  }
-  async function respondToInvite(action) {
-    if (action === 'approve' && !ageConfirmed) { setToast('Please confirm you are 18 or older first.'); return; }
-    setBusy(true); setInviteLookupFailed(false);
-    try {
-      const result = await request('invites/' + inviteToken + '/' + action, { method: 'POST', body: JSON.stringify({ adult: ageConfirmed }) });
-      setInviteReply(action === 'approve' ? 'Approved! The vibe is mutual 💗 Your chat is ready — no account needed.' : 'Aiyo bro, ee saari scene set avvaledhu 💔');
-      if (action === 'approve') {
-        setInviteAccepted(true);
-        if (result.user) setUser(result.user);
-        if (result.connection?.id) {
-          setConnections(previous => [result.connection, ...previous.filter(connection => connection.id !== result.connection.id)]);
-          setActiveConnection(result.connection.id);
-        } else {
-          await loadConnections();
+        const queryParams = new URLSearchParams();
+        if (activeInvite?.inviteToken) queryParams.set('inviteToken', activeInvite.inviteToken);
+        if (activeInvite?.verificationCode) queryParams.set('otp', activeInvite.verificationCode);
+        if (activeInvite?.partnerCustomName || activeInvite?.recipientHint) {
+          queryParams.set('hint', activeInvite.partnerCustomName || activeInvite.recipientHint);
         }
-        setTab('chat');
+        const qs = queryParams.toString();
+        const connectionData = await resilientApiRequest(
+          `/connections${qs ? `?${qs}` : ''}`,
+          {},
+          token
+        );
+        const list = connectionData.connections || [];
+        const active = list.find((item) => item.status === 'active') || null;
+
+        if (active) {
+          const justConnected =
+            !activeConnection ||
+            activeConnection.status !== 'active' ||
+            activeConnection.id !== active.id;
+          setActiveConnection(active);
+          if (justConnected) {
+            setStatusMessage(
+              `🎉 ${active.peerDisplayName} connected to your private 1-on-1 room! Start chatting ♥`
+            );
+            setTab('chat');
+          }
+          await loadConnectionDetails(active, token);
+        } else if (activeConnection) {
+          setActiveConnection(null);
+        }
+      } catch {
+        // Ignore transient poll errors
       }
-    } catch (e) { setInviteLookupFailed(true); setInviteReply(e.message); }
-    finally { setBusy(false); }
+    };
+
+    const interval = setInterval(refresh, 2000);
+    const unsubscribe = subscribeToCoupleSync(refresh);
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
+  }, [token, activeConnection?.id, activeConnection?.status, activeInvite?.inviteToken]);
+
+  function clearBanners() {
+    setErrorMessage('');
+    setStatusMessage('');
   }
-  async function sendMessage(e) {
-    e.preventDefault(); const text = draft.trim(); if (!text || !activeConnection) return;
+
+  async function handleAuthSubmit(event) {
+    event.preventDefault();
+    clearBanners();
     setBusy(true);
-    try { const d = await request('connections/' + activeConnection + '/messages', { method: 'POST', body: JSON.stringify({ text }) }); setMessages(prev => [...prev, d.message]); setDraft(''); const matched = suggestionsFor(text); if (matched.length && !chatSuggestionShown[activeConnection]) { setChatSuggestionShown(prev => ({ ...prev, [activeConnection]: true })); setToast(vibeLines[Math.floor(Math.random() * vibeLines.length)]); } }
-    catch (e) { setToast(e.message); }
-    finally { setBusy(false); }
-  }
-  async function saveDailyAnswer(e) {
-    e.preventDefault();
-    if (!activeConnection || !dailyAnswer.trim()) return;
     try {
-      const data = await request('connections/' + activeConnection + '/moments', { method: 'POST', body: JSON.stringify({ type: 'answer', dayKey: dailyKey, promptId: dailyPrompt.id, text: dailyAnswer.trim() }) });
-      setDailyAnswers(data.answers || []); dailyAnswerDirty.current = false; setToast('Daily answer saved for you two 💗');
-    } catch (e) { setToast(e.message); }
-  }
-  async function saveSharedMemory(e) {
-    e.preventDefault();
-    if (!activeConnection || !memoryDraft.trim()) return;
-    try {
-      const data = await request('connections/' + activeConnection + '/moments', { method: 'POST', body: JSON.stringify({ type: 'memory', text: memoryDraft.trim() }) });
-      setMoments(prev => [data.moment, ...prev]); setMemoryDraft(''); setToast('Memory saved in your private space ✨');
-    } catch (e) { setToast(e.message); }
-  }
-  async function saveSharedPhoto(e) {
-    e.preventDefault();
-    if (!activeConnection || !photoFile) return;
-    try {
-      setBusy(true);
-      const imageData = await compressPhotoToDataUrl(photoFile);
-      const data = await request('connections/' + activeConnection + '/moments', { method: 'POST', body: JSON.stringify({ type: 'photo', imageData, text: '' }) });
-      setMoments(prev => [data.moment, ...prev]);
-      setPhotoFile(null);
-      const input = document.getElementById('shared-photo-file');
-      if (input) input.value = '';
-      setToast('Photo shared inside your private space ✨');
-    } catch (e) { setToast(e.message); }
-    finally { setBusy(false); }
-  }
-  async function deleteSharedMemory(id) {
-    if (!confirm('Delete this memory from your private space?')) return;
-    try { await request('connections/' + activeConnection + '/moments/' + id, { method: 'DELETE' }); setMoments(prev => prev.filter(m => m.id !== id)); setToast('Memory deleted.'); }
-    catch (e) { setToast(e.message); }
-  }
-  function generateChachiReply() { const incoming = [...messages].reverse().find(m => m.senderId !== user?.id)?.text || messages[messages.length - 1]?.text || ''; setChachiReply(chachiReplyFor(incoming)); }
-  async function sendGamePrompt(prompt) {
-    if (!activeConnection) return;
-    try { const data = await request('connections/' + activeConnection + '/messages', { method: 'POST', body: JSON.stringify({ text: prompt }) }); setMessages(prev => [...prev, data.message]); setToast('Game prompt sent. Your person’s turn 👀'); }
-    catch (e) { setToast(e.message); }
-  }
-  async function chooseDateSpot(placeId) {
-    if (!activeConnection) { setToast('First connect with your person after they approve your invite.'); return; }
-    if (!planDateTime || new Date(planDateTime).getTime() <= Date.now()) { setToast('Choose a future date and time first.'); return; }
-    try {
-      const data = await request('connections/' + activeConnection + '/date-plan', { method: 'POST', body: JSON.stringify({ placeId, dateTime: new Date(planDateTime).toISOString() }) });
-      setDatePlan(data.plan);
-      setToast(data.plan?.lockedPlaceId ? 'Mutual plan locked! Date is on 💗' : 'Your choice is saved. Your person chooses too. 💌');
-    } catch (e) { setToast(e.message); }
-  }
-  function downloadDateCalendar() {
-    if (!datePlan?.lockedPlaceId) return;
-    const place = dateSpots.find(p => p.id === datePlan.lockedPlaceId);
-    if (!place) return;
-    const start = new Date(datePlan.lockedDateTime);
-    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
-    const fmt = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-    const ics = 'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//AFTERDARK//Date Plan//EN\r\nBEGIN:VEVENT\r\nUID:afterdark-' + activeConnection + '@afterdark\r\nDTSTAMP:' + fmt(new Date()) + '\r\nDTSTART:' + fmt(start) + '\r\nDTEND:' + fmt(end) + '\r\nSUMMARY:AFTERDARK date 💗\r\nLOCATION:' + place.name + ', Hyderabad\r\nDESCRIPTION:Your mutually chosen AFTERDARK date. Meet in public and respect each other’s boundaries.\r\nEND:VEVENT\r\nEND:VCALENDAR';
-    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
-    const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'afterdark-date.ics'; a.click(); URL.revokeObjectURL(url);
-  }
-  async function endActiveConnection() {
-    if (!activeConnection || !confirm('End this connection for both people? The chat will close, but its existing history will remain stored. You can then create a new QR.')) return;
-    try {
-      await request('connections/' + activeConnection + '/end', { method: 'POST', body: '{}' });
-      setConnections(prev => prev.filter(c => c.id !== activeConnection));
-      setActiveConnection(''); setMessages([]); setMoments([]); setDailyAnswers([]); setDatePlan(null); setDraft('');
-      await loadConnections();
+      const endpoint = authMode === 'signup' ? '/auth/signup' : '/auth/login';
+      const data = await resilientApiRequest(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(authForm)
+      });
+      localStorage.setItem(SESSION_KEY, data.sessionToken);
+      setToken(data.sessionToken);
+      setUser(data.user);
+      setGeneratorForm((prev) => ({
+        ...prev,
+        creatorCustomName: data.user?.displayName || ''
+      }));
       setTab('invite');
-      setToast('Connection ended. Previous chat history is retained, and a new QR can now be generated.');
-    } catch (e) { setToast(e.message); }
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
   }
-  async function blockActiveConnection() {
-    if (!activeConnection || !confirm('Block this person? Your private chat will close for both accounts.')) return;
-    try { await request('connections/' + activeConnection + '/block', { method: 'POST', body: '{}' }); setConnections(prev => prev.filter(c => c.id !== activeConnection)); setActiveConnection(''); setMessages([]); setDatePlan(null); setToast('Blocked. This connection is now closed.'); }
-    catch (e) { setToast(e.message); }
+
+  async function handleLogout() {
+    clearBanners();
+    try {
+      if (token) {
+        await resilientApiRequest('/auth/logout', { method: 'POST' }, token);
+      }
+    } catch {
+      // Ignore
+    }
+    localStorage.removeItem(SESSION_KEY);
+    setToken('');
+    setUser(null);
+    setActiveConnection(null);
   }
-  async function reportActiveConnection() {
+
+  async function handleGenerateSingleInvite(event) {
+    event.preventDefault();
+    clearBanners();
+
+    if (activeInvite || activeConnection) {
+      setErrorMessage(
+        'You already have an active Couple Link & QR Code. Revoke access and remove your current QR code first!'
+      );
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const creatorCustomName =
+        generatorForm.creatorCustomName.trim() || user?.displayName || 'You';
+      const partnerCustomName =
+        generatorForm.partnerCustomName.trim() || 'Meri Jaan';
+
+      const data = await resilientApiRequest(
+        '/invites',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            recipientHint: partnerCustomName,
+            creatorCustomName,
+            partnerCustomName,
+            deviceId: getClientDeviceId(),
+            themeId: generatorForm.themeId,
+            emblemStyle: generatorForm.emblemStyle
+          })
+        },
+        token
+      );
+
+      setActiveInvite(data);
+      setStatusMessage(
+        `✨ Unique Couple Link, QR Code & OTP (${data.verificationCode}) generated for ${creatorCustomName} ♥ ${partnerCustomName}!`
+      );
+    } catch (error) {
+      setErrorMessage(error.message);
+      await loadWorkspace(token);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRevokeInviteAndQr() {
+    clearBanners();
+    setBusy(true);
+    try {
+      await resilientApiRequest('/invites/revoke', { method: 'POST' }, token);
+      localStorage.removeItem(INVITE_CACHE_KEY);
+      setActiveInvite(null);
+      setActiveConnection(null);
+      setMessages([]);
+      setPhotos([]);
+      setShowCustomQrCard(false);
+      setStatusMessage(
+        '🔒 Access revoked and QR code removed! The previous link & OTP are now permanently disabled. You can generate a new one now.'
+      );
+      setTab('invite');
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSendMessage(event) {
+    event.preventDefault();
+    if (!messageInput.trim() || !activeConnection) return;
+    clearBanners();
+    try {
+      const textToSend = messageInput;
+      setMessageInput('');
+      await resilientApiRequest(
+        `/connections/${activeConnection.id}/messages`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ body: textToSend, text: textToSend })
+        },
+        token
+      );
+      await loadConnectionDetails(activeConnection, token);
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 80);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  async function handleSendQuickFlirt(text) {
     if (!activeConnection) return;
-    const reason = prompt('What should our safety team know? Do not include passwords or private financial details.');
-    if (!reason || !reason.trim()) return;
-    try { await request('connections/' + activeConnection + '/report', { method: 'POST', body: JSON.stringify({ reason: reason.trim().slice(0, 1000) }) }); setToast('Report submitted. Thanks for helping keep this space safer.'); }
-    catch (e) { setToast(e.message); }
+    clearBanners();
+    try {
+      await resilientApiRequest(
+        `/connections/${activeConnection.id}/messages`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ body: text, text })
+        },
+        token
+      );
+      setActiveChatDrawer('none');
+      await loadConnectionDetails(activeConnection, token);
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 80);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
   }
-  async function signOut() { try { await request('logout', { method: 'POST', body: '{}' }); } catch {} setUser(null); setConnections([]); setMessages([]); setActiveConnection(''); setInvite(''); setQr(''); setToast('Signed out. Take care, bestie.'); }
-  const active = connections.find(c => c.id === activeConnection);
-  const isInvitee = active?.role === 'invitee';
-  const contextualBrands = suggestionsFor(messages.slice(-3).map(m => m.text).join(' '));
-  const showInviteLanding = Boolean(inviteToken && !isInvitee && !inviteAccepted);
-  return <div className="app-shell" onClick={handleMicroReaction}>
-    <header className="topbar"><a className="wordmark" href="/" onClick={e => { e.preventDefault(); history.pushState({}, '', '/'); setTab('home'); }} aria-label="AFTERDARK home"><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><div className="top-actions"><span className="adult-pill">18+ ONLY</span>{user ? <><span className="user-pill">@{user.handle}</span><button className="ghost-btn" onClick={signOut}>Log out</button></> : <button className="ghost-btn" onClick={() => { setAuthMode('login'); setTab('account'); }}>Sign in</button>}<button className="ghost-btn" onClick={() => setTab('safety')}>Safety</button><button className="install-btn" onClick={installApp} aria-label="Install or download AFTERDARK app">↓ <span>Download App</span></button></div></header>
-    <main>
-      {!ageConfirmed && <section className="age-note"><div><strong>Adults only. Always.</strong><p>AFTERDARK is for people aged 18 and above. Keep it consensual.</p></div><button className="primary-btn small" onClick={() => setAgeConfirmed(true)}>I’m 18 or older</button></section>}
-      {showInviteLanding ? <section className="invite-landing glass-panel"><span className="eyebrow">SOMEONE THOUGHT OF YOU ✦</span><h1>Ohooo, <em>you got a vibe invite.</em></h1>{inviteReply ? <><p className="invite-result">{inviteReply}</p>{inviteLookupFailed && <><p className="guest-note">The invite preview failed to load. You can still try the secure approval action directly; the server will validate the invite before opening any chat.</p><div className="hero-actions"><button className="primary-btn" disabled={busy || !ageConfirmed} onClick={() => respondToInvite('approve')}>Try approval 💗</button><button className="secondary-btn" onClick={() => respondToInvite('ignore')}>Not my scene</button><button className="text-btn" type="button" onClick={retryInvitePreview}>Retry invite preview ↻</button></div></>}</> : inviteInfo ? <><p>{inviteInfo.status === 'approved' ? 'This invite has already been accepted. One plotline is already active. If this is your chat, sign in on the device where you accepted it.' : inviteInfo.ownInvite ? 'This is your link, bestie. Share it with your person to let them choose.' : 'One person. One choice. No pressure. Approve only if you want to.'}</p>{!inviteInfo.ownInvite && inviteInfo.status === 'pending' && <><p className="guest-note">No sign-up needed. Confirm you’re 18+, choose approve or ignore, then chat privately.</p><div className="hero-actions"><button className="primary-btn" disabled={busy || !ageConfirmed} onClick={() => respondToInvite('approve')}>Approve the vibe 💗</button><button className="secondary-btn" disabled={busy} onClick={() => respondToInvite('ignore')}>Not my scene</button></div></>}</> : <p>{inviteReply || 'Checking this invite…'}</p>}</section> : !inviteToken && <section className="hero"><div className="eyebrow"><span className="pulse"></span> YOUR LITTLE WORLD, OFF THE TIMELINE</div><h1>It’s giving <em>butterflies.</em><br/>Not another <span className="gradient-text">almost-love.</span></h1><p className="hero-copy">Soft launch the feelings. Drop the “wyd?” at 1:13 AM. Turn “we should” into “I booked it.” Your little corner of romance, chaos and mutual vibes. 💋</p><div className="hero-flirt"><span>“u up?”</span><span>“only for you 👀”</span><span>delulu? maybe. mutual? hopefully. 💗</span></div><div className="hero-actions"><button className="primary-btn" onClick={() => { setTab(isInvitee ? 'chat' : user ? 'invite' : 'account'); document.getElementById('workspace')?.scrollIntoView({ behavior: 'smooth' }); }}>{isInvitee ? 'Open your private chat' : user ? 'Create your invite' : 'Get your invite link'} <span>↗</span></button></div><div className="trust-row"><span>✦ Consent first</span><span>✦ Private by design</span><span>✦ No public discovery</span></div><div className="orb orb-one"></div><div className="orb orb-two"></div><div className="heart-3d" aria-hidden="true"><div className="heart-core">♥</div><span className="heart-chip chip-one">💌</span><span className="heart-chip chip-two">🦋</span><span className="heart-chip chip-three">💋</span></div></section>}
-      <section className="workspace" id="workspace" style={inviteToken && !inviteAccepted && !isInvitee ? {display:'none'} : undefined}><div className="section-heading"><div><div className="eyebrow">THE AFTERDARK SPACE</div><h2>Your connection, your rules.</h2></div><span className="preview-tag">YOUR PRIVATE SPACE</span></div>
-        <nav className="tabs" aria-label="App sections">{[['home','Overview'],['account',user?.guest ? 'Save your chat' : 'Sign in / Join'],['invite','Invite + QR'],['chat','Your chat'],['date','Date plan'],['privacy','Privacy'],['safety','Boundaries']].filter(([id]) => inviteToken ? id === 'chat' : (!isInvitee || ['chat','date','privacy','safety'].includes(id))).map(([id,label]) => <button key={id} className={tab === id ? 'tab active' : 'tab'} onClick={() => setTab(id)}>{label}</button>)}</nav>
-        {tab === 'home' && <div className="feature-grid"><article className="feature-card invite-card"><div className="card-icon">↗</div><span className="card-kicker">START WITH YOUR PERSON</span><h3>One link.<br/>One intentional choice.</h3><p>Share a link or QR through WhatsApp or Instagram. They decide whether to approve or ignore. No approval, no chat.</p><button className="text-btn" onClick={() => setTab(user ? 'invite' : 'account')}>Make an invite <span>→</span></button></article><article className="feature-card"><div className="card-icon pink">♡</div><span className="card-kicker">WHEN IT'S MUTUAL</span><h3>A space for just you two.</h3><p>Private chat, daily questions, mini games, dares, shared memories and boundaries — unlocked only after approval.</p><span className="coming-label">MORE MOMENTS COMING</span></article><article className="feature-card"><div className="card-icon lilac">✧</div><span className="card-kicker">LESS “WHAT NOW?”</span><h3>Turn the vibe into a plan.</h3><p>Matcha this Sunday? Movie night? A small gift? Tiny suggestions can turn “we should” into an actual plan.</p></article></div>}
-        {tab === 'account' && <div className="auth-layout"><div><span className="card-kicker">YOUR SPACE STARTS HERE</span><h3>{authMode === 'register' ? 'Join the private side.' : authMode === 'forgot' ? 'Lost the password, bestie?' : authMode === 'reset' ? 'New password, new chapter.' : 'Back for the plot?'}</h3><p>{authMode === 'forgot' ? 'We’ll send a one-time reset link to your email if an account matches. Check spam too.' : authMode === 'reset' ? 'Pick a strong new password. Your reset link expires after one hour.' : 'Your person gets your vibe, never your password. Keep your account yours.'}</p><button className="text-btn" onClick={() => { setAuthMode(authMode === 'register' ? 'login' : 'register'); setAuthError(''); setResetMessage(''); }}>{authMode === 'register' ? 'Already here? Sign in →' : 'New here? Create an account →'}</button></div><form className="auth-form" onSubmit={submitAuth}>{authMode !== 'reset' && <label>Email<input type="email" required autoComplete="email" value={auth.email} onChange={e => setAuth({...auth,email:e.target.value})} placeholder="you@example.com"/></label>}{authMode === 'register' && <label>Your handle (optional)<input value={auth.handle} onChange={e => setAuth({...auth,handle:e.target.value})} maxLength="24" placeholder="maincharacter"/></label>}{(authMode === 'register' || authMode === 'login' || authMode === 'reset') && <label>{authMode === 'reset' ? 'New password' : 'Password'}<input type="password" required minLength="10" autoComplete={authMode === 'register' || authMode === 'reset' ? 'new-password' : 'current-password'} value={auth.password} onChange={e => setAuth({...auth,password:e.target.value})} placeholder="At least 10 characters"/></label>}{authMode === 'register' && <div className="checks"><label className="check"><input type="checkbox" checked={auth.adult} onChange={e => setAuth({...auth,adult:e.target.checked})}/> I’m 18 or older.</label><label className="check"><input type="checkbox" checked={auth.consent} onChange={e => setAuth({...auth,consent:e.target.checked})}/> I agree to use this space respectfully.</label></div>}{authError && <p className="form-error" role="alert">💔 {authError}</p>}{resetMessage && <p className="form-success" role="status">💌 {resetMessage}</p>}{authMode === 'login' && <button type="button" className="text-btn forgot-link" onClick={() => { setAuthMode('forgot'); setAuthError(''); setResetMessage(''); }}>Forgot password? Get a reset link →</button>}{authMode === 'forgot' ? <button className="primary-btn full" disabled={busy}>{busy ? 'Sending the love note…' : 'Email me a reset link 💌'}</button> : authMode === 'reset' ? <button className="primary-btn full" disabled={busy}>{busy ? 'Saving…' : 'Set new password 💗'}</button> : <button className="primary-btn full" disabled={busy}>{busy ? 'One sec…' : authMode === 'register' ? 'Create my account ↗' : 'Sign in ↗'}</button>}{authMode === 'forgot' && <button type="button" className="text-btn" onClick={() => { setAuthMode('login'); setAuthError(''); setResetMessage(''); }}>Back to sign in →</button>}</form></div>}
-        {tab === 'invite' && <div className="panel invite-panel"><div className="panel-copy"><span className="card-kicker">YOUR PERSONAL INVITE</span><h3>Make the first move.<br/><em>Keep it mutual.</em></h3><p>Only signed-in users can create an invite. Your person can scan the QR or open your link, then choose for themselves.</p><button className="primary-btn" disabled={!user} onClick={createInvite}>{!user ? 'Sign in to make an invite' : inviteCreating ? 'Making your link…' : connections.length ? 'Already boo’d up 🔒' : 'Generate my invite'} <span>↗</span></button>{user && connections.length > 0 && <><p className="guest-note">You have an approved chat. Revoking pending invites does not end an approved connection.</p><button type="button" className="danger-btn" onClick={endActiveConnection}>End current connection & unlock new QR</button></>}{user && inviteCreating && <p className="guest-note">The QR is still in the oven. Please don’t order a second situationship. 🍳💘</p>}{!user && <button className="text-btn" onClick={() => setTab('account')}>Join or sign in →</button>}</div><div className="invite-box"><div className="link-symbol">⌁</div><strong>Your invite + QR</strong><p className="muted">One link for your person. Valid for 7 days.</p>{invite && qr ? <><div className="generated-link">{invite}</div><div className="invite-code-panel"><strong>🔐 PRIVATE ACCESS CODE</strong><p>Send this six-digit code to your person separately from the QR/link. The link alone cannot start the chat.</p><div className="invite-code-value">{inviteCode || 'Generate a fresh invite to get a code'}</div>{inviteCode && <button className="text-btn" onClick={async()=>{try{await navigator.clipboard.writeText(inviteCode);setToast('Private code copied. Send it separately from the QR. 🔐')}catch{setToast('Please copy the six-digit code manually.')}}}>Copy private code</button>}</div><div className="qr-download-notice"><strong>💌 YOUR QR IS READY</strong><span>The QR opens the private guest connector. The recipient must also enter the separate six-digit code. A copied link alone does not grant chat access.</span><b>One invite. One person. No double-dating side quests. 🔒💘</b></div><div className="invite-actions"><button className="secondary-btn" onClick={async()=>{try{await navigator.clipboard.writeText(invite);setToast('Copied! Now drop it in their DMs 💌')}catch{setToast('Copy not available. Long-press the link to copy.')}}}>Copy link</button><a className="secondary-btn" href={qr} download="afterdark-invite-qr.png" onClick={()=>setToast('Standard QR download started! 💗')}>Download QR ↓</a></div><img className="qr-image" src={qr} alt="Scannable AFTERDARK invitation QR code"/><div className="custom-qr-studio"><span className="card-kicker">CUSTOM QR STUDIO</span><h4>Make it personal. 💗</h4><p className="muted">Free for everyone. Choose a colour, add a nickname, and download your design. It keeps the same invite link — no extra invite is created.</p><label className="custom-qr-label">Name or nickname<input maxLength={26} value={customQrName} onChange={e=>setCustomQrName(e.target.value)} placeholder={user?.handle || 'Your name'} /></label><label className="custom-qr-label">Design theme<select value={customQrTheme} onChange={e=>setCustomQrTheme(e.target.value)}><option value="rose">Neon Rose</option><option value="violet">Velvet Violet</option><option value="midnight">Midnight Blue</option><option value="sunset">Sunset Glow</option></select></label><button className="primary-btn full" onClick={createCustomQr} disabled={customQrGeneratingRef.current}>Create my custom QR ✨</button>{customQrImage && <div className="custom-qr-result"><img src={customQrImage} alt="Personalized AFTERDARK QR design preview"/><a className="secondary-btn full" href={customQrImage} download="afterdark-custom-qr.png">Download custom QR ↓</a></div>}</div><p className="qr-hint">Refreshing keeps the invite on this device. Browser storage is not a backup. One active invite only. 😭</p></> : invite ? <div className="empty-link">Restoring your QR…</div> : <div className="empty-link">Your private link and QR will show up here</div>}</div></div>}
-        {tab === 'chat' && <div className="chat-layout"><aside className="chat-sidebar"><span className="card-kicker">YOUR PEOPLE</span>{connections.length ? connections.map(c => <button key={c.id} className={'connection-item '+(activeConnection===c.id?'selected':'')} onClick={()=>setActiveConnection(c.id)}><span className="avatar-dot">♡</span><span>{c.handle}</span><span className="online-dot"/></button>) : <p className="muted">No mutual vibes yet. Your chat unlocks after your person approves an invite.</p>}</aside><div className="chat-main"><div className="chat-title"><span className="avatar-dot">♡</span><div><strong>{active?.handle || 'Your private chat'}</strong><small>Just you two. Keep it kind.</small></div>{activeConnection && <div className="chat-safety-actions"><button type="button" className="text-btn" onClick={reportActiveConnection}>Report</button><button type="button" className="secondary-btn" onClick={endActiveConnection}>End connection</button><button type="button" className="danger-btn" onClick={blockActiveConnection}>Block</button></div>}</div><div className="message-list">{activeConnection ? messages.map((m, index) => <React.Fragment key={m.id}><div className={'message '+(m.senderId===user?.id?'mine':'theirs')}><p>{m.text}</p><small>{new Date(m.createdAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></div>{suggestionsFor(m.text).map(b => <article className={'chat-brand-card brand-'+b.slug} style={{borderLeft: '3px solid ' + b.color}} key={b.slug}><span className="chat-brand-logo" style={{background:b.color}}>{b.logo}</span><div className="chat-brand-copy"><small>THE CHAT IS GIVING… · {b.name.toUpperCase()}</small><p>{b.pitch}</p><a href={b.url} target="_blank" rel="noreferrer">{b.cta} <span aria-hidden="true">↗</span></a></div></article>)}{user?.guest && index === 3 && <aside className="guest-account-nudge"><span>💌</span><div><strong>Want to keep your vibe?</strong><p>Chat works without an account. Sign up or sign in whenever you feel like saving your space.</p><button type="button" className="text-btn" onClick={() => { setAuthMode('register'); setTab('account'); }}>Optional account · no pressure →</button><button type="button" className="text-btn" onClick={() => { setAuthMode('login'); setTab('account'); }}>Already have an account? Sign in →</button></div></aside>}</React.Fragment>) : <div className="chat-empty"><span>☾</span><strong>Chat unlocks when the vibe is mutual.</strong><p>Share your invite. They choose. Then the conversation is yours.</p></div>}</div>{activeConnection && <section className="ritual-panel"><div className="ritual-head"><span className="card-kicker">TODAY’S LITTLE RITUAL</span><span className="ritual-date">{dailyKey}</span></div><h4>Daily question 💌</h4><p className="ritual-question">{dailyPrompt.question}</p><form className="ritual-answer-form" onSubmit={saveDailyAnswer}><textarea value={dailyAnswer} onChange={e=>{dailyAnswerDirty.current = true; setDailyAnswer(e.target.value);}} maxLength="500" rows="2" placeholder="Your honest answer, no pressure…"/><button className="primary-btn" disabled={!dailyAnswer.trim()}>Save answer</button></form><div className="ritual-answers">{dailyAnswers.map(a=><div className="ritual-answer" key={a.id}><strong>{a.userId===user?.id?'Your answer':'Their answer'}</strong><p>{a.text}</p></div>)}</div><div className="ritual-games"><strong>Quick game starters</strong><div><button type="button" className="secondary-btn" onClick={()=>sendGamePrompt('THIS OR THAT 💗: Matcha date or biryani date? Tell me your pick and why.')}>This or that</button><button type="button" className="secondary-btn" onClick={()=>sendGamePrompt('TWO TRUTHS & A LIE 👀: Send me three statements — two true, one false. I’ll guess the lie.')}>Two truths & a lie</button><button type="button" className="secondary-btn" onClick={()=>sendGamePrompt('TINY DARE 🦋: Send me a song that matches your current mood. No pressure to share anything private.')}>Tiny dare</button></div></div><form className="ritual-memory-form" onSubmit={saveSharedMemory}><label htmlFor="memory-draft">Save a little memory</label><div><input id="memory-draft" value={memoryDraft} onChange={e=>setMemoryDraft(e.target.value)} maxLength="1000" placeholder="That funny thing we want to remember…"/><button className="primary-btn" disabled={!memoryDraft.trim()}>Save</button></div></form><form className="ritual-memory-form photo-share-form" onSubmit={saveSharedPhoto}><label htmlFor="shared-photo-file">Share a picture privately</label><div><input id="shared-photo-file" type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>setPhotoFile(e.target.files?.[0] || null)}/><button className="primary-btn" disabled={!photoFile || busy}>{busy ? 'Preparing…' : 'Share photo'}</button></div><small>JPEG, PNG or WebP · compressed to 900 KB · visible only to this approved connection.</small></form>{moments.filter(m=>m.type==='photo').map(m=><article className="saved-memory saved-photo" key={m.id}>{m.imageData && <img src={m.imageData} alt="A private shared moment"/>}{m.text && <p>{m.text}</p>}<small>{new Date(m.createdAt).toLocaleDateString()} · {m.userId===user?.id?'You shared this':'Your person shared this'}</small>{m.userId===user?.id && <button type="button" className="text-btn" onClick={()=>deleteSharedMemory(m.id)}>Delete</button>}</article>)}{moments.filter(m=>m.type==='memory').map(m=><article className="saved-memory" key={m.id}><p>{m.text}</p><small>{new Date(m.createdAt).toLocaleDateString()} · {m.userId===user?.id?'You saved this':'Your person saved this'}</small>{m.userId===user?.id && <button type="button" className="text-btn" onClick={()=>deleteSharedMemory(m.id)}>Delete</button>}</article>)}</section>}{activeConnection && messages.length > 0 && <section className="chachi-helper"><div className="chachi-helper-heading"><span className="chachi-avatar">✦</span><div><strong>Chachi AI</strong><small>Hyderabadi reply ideas · no API key needed</small></div><button type="button" className="secondary-btn chachi-generate" onClick={generateChachiReply}>Chachi, reply kya doon? ✨</button></div>{chachiReply && <div className="chachi-reply"><p>{chachiReply}</p><div><button type="button" className="primary-btn small" onClick={() => { setDraft(chachiReply); setToast('Reply added to your draft. Send it only if it feels like you 💗'); }}>Use this reply</button><button type="button" className="text-btn" onClick={generateChachiReply}>One more line ↻</button></div></div>}</section>}
-        <form className="chat-composer" onSubmit={sendMessage}><input value={draft} onChange={e=>setDraft(e.target.value)} maxLength="2000" placeholder={activeConnection ? 'Drop a message, bestie…' : 'Your chat unlocks after approval'} disabled={!activeConnection || busy}/><button className="primary-btn" disabled={!activeConnection || !draft.trim() || busy}>Send ↗</button></form></div></div>}
-        {tab === 'date' && <div className="date-planner">
-          <div className="explore-intro"><span className="card-kicker">HYDERABAD DATE PLANNER</span><h3>Make a plan, not a <em>“we should.”</em></h3><p>Pick a public place and a future time. Your plan locks only when both people choose the same place and time.</p></div>
-          {!activeConnection ? <div className="empty-link">Your date planner unlocks after your person approves an invite and you have a mutual connection.</div> : <>
-            <label className="date-time-label">Choose a date & time <input type="datetime-local" value={planDateTime} min={toLocalDateTimeInput(Date.now() + 60000)} onChange={e=>setPlanDateTime(e.target.value)} disabled={Boolean(datePlan?.lockedPlaceId)} /></label>
-            {datePlan?.lockedPlaceId ? <div className="date-locked"><span className="card-kicker">MUTUAL PLAN LOCKED 💗</span><h4>{dateSpots.find(p=>p.id===datePlan.lockedPlaceId)?.name || 'Your date'} · Hyderabad</h4><p>{new Date(datePlan.lockedDateTime).toLocaleString([], {dateStyle:'medium',timeStyle:'short'})}</p><a className="secondary-btn" href={'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent((dateSpots.find(p=>p.id===datePlan.lockedPlaceId)?.name || 'Hyderabad')+', Hyderabad')} target="_blank" rel="noreferrer">Open Google Maps ↗</a><a className="secondary-btn" href={'https://calendar.google.com/calendar/render?action=TEMPLATE&text='+encodeURIComponent('AFTERDARK date 💗')+'&dates='+encodeURIComponent(new Date(datePlan.lockedDateTime).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'')+'/'+new Date(new Date(datePlan.lockedDateTime).getTime()+7200000).toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,''))+'&location='+encodeURIComponent((dateSpots.find(p=>p.id===datePlan.lockedPlaceId)?.name || 'Hyderabad')+', Hyderabad')} target="_blank" rel="noreferrer">Add to Google Calendar ↗</a><button className="primary-btn" onClick={downloadDateCalendar}>Download .ics calendar</button></div> : <p className="date-status">{datePlan?.myChoice ? 'Your choice is saved. ' : ''}{datePlan?.theirChoice ? <>Your person picked <strong>{dateSpots.find(p=>p.id===datePlan.theirChoice.placeId)?.name || 'a place'}</strong> for {new Date(datePlan.theirChoice.dateTime).toLocaleString([], {dateStyle:'medium',timeStyle:'short'})}. Choose the same place and time to lock it.</> : 'Your person still needs to choose. No pressure, no lock until it matches.'}</p>}
-            <div className="date-grid">{dateSpots.map(p=><article className={'date-card '+(datePlan?.myChoice?.placeId===p.id?'date-card-selected':'')} key={p.id}><span className="date-pin">♡</span><small>{p.area}</small><h4>{p.name}</h4><p>{p.desc}</p><div className="date-card-actions"><a href={'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(p.name+', Hyderabad')} target="_blank" rel="noreferrer">Map ↗</a><button className="secondary-btn" onClick={()=>chooseDateSpot(p.id)} disabled={Boolean(datePlan?.lockedPlaceId)}>{datePlan?.myChoice?.placeId===p.id?'Chosen ✓':'Choose this'}</button></div></article>)}</div>
-          </>}
-        </div>}
-        {tab === 'privacy' && <div className="safety-grid"><div><span className="card-kicker">YOUR DATA, YOUR BOUNDARIES</span><h3>Private by design.<br/><em>Clear by choice.</em></h3><p>AFTERDARK is for adults 18+. Your account and messages are used to provide invite-only chat and date planning. We do not offer public people search.</p><p>Messages are automatically deleted after 30 days. Invitation links expire after 7 days. Passwords are stored as salted hashes, not plain text.</p><p>Reports are stored for safety review. Do not send passwords, financial details, or sensitive personal information in a report.</p>{user && <button className="danger-btn" onClick={async()=>{if(!confirm('Delete your account and associated chats? This cannot be undone.'))return;try{await request('delete-account',{method:'DELETE',body:'{}'});setUser(null);setConnections([]);setMessages([]);setDatePlan(null);setToast('Account deleted. Take care.')}catch(e){setToast(e.message)}}}>Delete my account and associated data</button>}</div><ul className="safety-list"><li><span>✓</span><div><strong>Invite-only</strong><p>Profiles are not searchable or listed publicly.</p></div></li><li><span>✓</span><div><strong>7-day invites</strong><p>Invitation tokens expire and are stored as hashes.</p></div></li><li><span>✓</span><div><strong>30-day message retention</strong><p>Messages expire automatically through the database TTL policy.</p></div></li><li><span>✓</span><div><strong>Account deletion</strong><p>Use the button to delete your account, chats, and associated invitations.</p></div></li></ul></div>}
-        {tab === 'safety' && <div className="safety-grid"><div><span className="card-kicker">YOUR SPACE, YOUR CALL</span><h3>Consent isn't a setting.<br/><em>It's the foundation.</em></h3><p>Boundaries are real. No approval means no chat, no pressure, no chasing.</p>{user && <><button className="secondary-btn" onClick={async()=>{try{const result=await request('revoke-invites',{method:'POST',body:'{}'});setInvite('');setQr('');setInviteCode('');setCustomQrImage('');setCustomQrName('');setInviteInfo(null);setInviteCreating(false);try{localStorage.removeItem('afterdark_pending_invite');localStorage.removeItem('afterdark_pending_qr');localStorage.removeItem('afterdark_pending_invite_code')}catch{}await loadConnections();setTab('invite');setToast((result.revokedCount||0)+' pending invite(s) revoked. Account state refreshed. '+(connections.length?'Your approved chat is still active; end it separately before making a new QR.':'You can now generate a fresh QR.'))}catch(e){setToast(e.message)}}}>Revoke pending invites</button><button className="danger-btn" onClick={async()=>{if(!confirm('Delete your account and associated chats? This cannot be undone.'))return;try{await request('delete-account',{method:'DELETE',body:'{}'});setUser(null);setConnections([]);setMessages([]);setToast('Account deleted. Take care.')}catch(e){setToast(e.message)}}}>Delete my account</button></>}</div><ul className="safety-list"><li><span>✓</span><div><strong>Explicit approval</strong><p>Ignoring an invite never unlocks chat.</p></div></li><li><span>✓</span><div><strong>Private by default</strong><p>Only approved people can open their chat.</p></div></li><li><span>✓</span><div><strong>Block and report</strong><p>Use the chat controls to block or report a person.</p></div></li><li><span>✓</span><div><strong>Your call, always</strong><p>Revoke pending invites and delete your account.</p></div></li></ul></div>}
-      </section>
-      <section className="coming-section" style={inviteToken ? {display:'none'} : undefined}><div className="eyebrow">THE AFTERDARK VIBE</div><h2>Little moments. <em>Big energy.</em></h2><div className="roadmap-grid">{[['01','The invite','A personal link + QR, approve or ignore'],['02','The private space','Messages for approved connections only'],['03','The archive','Memories, milestones, boundaries and shared plans'],['04','The little nudge','Opt-in reminders that never spam your peace']].map(([n,title,desc])=><div className="roadmap-item" key={n}><span>{n}</span><div><strong>{title}</strong><p>{desc}</p></div></div>)}</div></section>
-    </main>
-    {!inviteToken && <footer><a className="wordmark" href="/" onClick={e=>{e.preventDefault();setTab('home')}}><span className="moon">☾</span> AFTERDARK<span className="dot">.</span></a><span>For adults, by choice. Not by pressure.</span><div className="footer-links"><button onClick={()=>setTab('safety')}>Safety</button><button onClick={()=>setTab('privacy')}>Privacy</button></div></footer>}
-    {bursts.map(b => <span key={b.id} className="emoji-burst" style={{ left: b.x, top: b.y }}>{b.emoji}</span>)}
-    {toast && <div className="toast" role="status">{toast}<button onClick={()=>setToast('')} aria-label="Dismiss">×</button></div>}
-  </div>;
+
+  async function handleSendVoiceNote(voiceMeta) {
+    if (!activeConnection || !voiceMeta?.dataUrl) return;
+    clearBanners();
+    try {
+      await resilientApiRequest(
+        `/connections/${activeConnection.id}/messages`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            body: `🎤 Sent a private voice note (${voiceMeta.durationSec || 1}s) ♥`,
+            voiceMeta
+          })
+        },
+        token
+      );
+      await loadConnectionDetails(activeConnection, token);
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 80);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  async function handleSendLiveCameraSnap(photoMeta) {
+    if (!activeConnection || !photoMeta?.dataUrl) return;
+    clearBanners();
+    try {
+      await resilientApiRequest(
+        `/connections/${activeConnection.id}/messages`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            body: `📷 ${photoMeta.caption || 'Live Camera Snap ♥'}`,
+            photoMeta
+          })
+        },
+        token
+      );
+      await loadConnectionDetails(activeConnection, token);
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 80);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  async function handleDiscoverGroundedSpots() {
+    setLoadingSpots(true);
+    try {
+      const res = await resilientApiRequest(
+        '/ai/discover-date-spots',
+        {
+          method: 'POST',
+          body: JSON.stringify({ city: userCity || 'Hyderabad', mood: dateForm.title })
+        },
+        token
+      );
+      setGroundedSpots(res.spots || []);
+    } catch {
+      // Ignore
+    } finally {
+      setLoadingSpots(false);
+    }
+  }
+
+  async function handleBookAffiliateOrder({
+    brandId,
+    itemId,
+    itemTitle,
+    phoneNumber,
+    city,
+    address,
+    note
+  }) {
+    if (!activeConnection) return;
+    clearBanners();
+    try {
+      const res = await resilientApiRequest(
+        `/connections/${activeConnection.id}/orders`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            brandId,
+            itemId,
+            itemTitle,
+            phoneNumber,
+            city: city || userCity,
+            address,
+            note,
+            privateOnly: true
+          })
+        },
+        token
+      );
+      setStatusMessage(
+        `🔒 Private order details saved for "${res.order.itemName}" on ${res.order.brandName} (Hidden from partner chat). Click "Proceed to Official ${res.order.brandName}" to complete payment!`
+      );
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  async function handleShareCafeDateInChat(customDateMeta) {
+    if (!activeConnection || !customDateMeta) return;
+    clearBanners();
+    try {
+      await resilientApiRequest(
+        `/connections/${activeConnection.id}/dates`,
+        {
+          method: 'POST',
+          body: JSON.stringify(customDateMeta)
+        },
+        token
+      );
+      setStatusMessage(
+        '🕯️ Cafe / Dinner Date shared in chat with direct Google Calendar button!'
+      );
+      await loadConnectionDetails(activeConnection, token);
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } catch (error) {
+      setErrorMessage(error.message);
+    }
+  }
+
+  async function handleScheduleCandlelightDate(event) {
+    event.preventDefault();
+    if (!activeConnection) return;
+    clearBanners();
+    setBusy(true);
+    try {
+      await resilientApiRequest(
+        `/connections/${activeConnection.id}/dates`,
+        {
+          method: 'POST',
+          body: JSON.stringify(dateForm)
+        },
+        token
+      );
+      setActiveChatDrawer('none');
+      setStatusMessage(
+        '🕯️ Candlelight Dinner Date shared in chat! Click "Add to Google Calendar" on the card in chat.'
+      );
+      await loadConnectionDetails(activeConnection, token);
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handlePhotoUpload(event) {
+    const fileList = event.target.files;
+    if (!fileList?.length || !activeConnection) return;
+    clearBanners();
+    setBusy(true);
+    try {
+      const prepared = await preparePhotoFiles(fileList);
+      for (const item of prepared) {
+        await resilientApiRequest(
+          `/connections/${activeConnection.id}/photos`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              dataUrl: item.dataUrl,
+              caption: photoCaption || item.name
+            })
+          },
+          token
+        );
+      }
+      setPhotoCaption('');
+      setActiveChatDrawer('none');
+      await loadConnectionDetails(activeConnection, token);
+      setStatusMessage('📸 Photo sent to your private couple chat!');
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleOpenBrandDrawer(brandId) {
+    setActiveBrandId(brandId || 'blinkit');
+    setActiveChatDrawer('store');
+  }
+
+  async function copyText(value, label) {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setStatusMessage(`${label} copied to clipboard!`);
+    } catch {
+      setErrorMessage(`Could not copy ${label.toLowerCase()}.`);
+    }
+  }
+
+  function downloadDataUrl(dataUrl, filename) {
+    if (!dataUrl) return;
+    const anchor = document.createElement('a');
+    anchor.href = dataUrl;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.appendChild && document.body.removeChild(anchor);
+  }
+
+  return (
+    <div className="ad-shell">
+      <div className="ad-ambient ad-ambient-one" />
+      <div className="ad-ambient ad-ambient-two" />
+
+      <header className="ad-header">
+        <div className="ad-brand">
+          <span className="ad-brand-mark">☾</span>
+          <div>
+            <p className="ad-brand-title">AFTERDARK</p>
+            <p className="ad-brand-subtitle">
+              One-to-One Private Couple Link · Encrypted OTP &amp; QR Room
+            </p>
+          </div>
+        </div>
+
+        {/* Clean Navigation: Once signed in, never show Sign-In again, and never mix the Guest Site into the Main Site */}
+        <nav className="ad-nav" aria-label="Creator Workspace Navigation">
+          {user && (
+            <>
+              <button
+                type="button"
+                className={tab === 'invite' ? 'active' : ''}
+                onClick={() => setTab('invite')}
+              >
+                1. My Couple Link &amp; QR
+              </button>
+              <button
+                type="button"
+                className={tab === 'chat' ? 'active' : ''}
+                onClick={() => setTab('chat')}
+              >
+                2. Private Couple Chat {activeConnection?.status === 'active' ? '● Live' : ''}
+              </button>
+            </>
+          )}
+          {user && (
+            <div className="ad-user-chip">
+              <span>♥ {user.displayName}</span>
+              <button type="button" className="ad-signout-mini" onClick={handleLogout}>
+                Sign Out
+              </button>
+            </div>
+          )}
+        </nav>
+      </header>
+
+      <IncomingMessageToast
+        notification={incomingToast}
+        soundEnabled={soundEnabled}
+        onToggleSound={() => setSoundEnabled((prev) => !prev)}
+        onTestSound={() => playIncomingMessageSound(true)}
+        onDismiss={() => setIncomingToast(null)}
+      />
+
+      {(statusMessage || errorMessage) && (
+        <div className="ad-banner-stack">
+          {statusMessage && (
+            <div className="ad-banner success" onClick={() => setStatusMessage('')}>
+              <span>{statusMessage}</span>
+              <small style={{ marginLeft: 12, cursor: 'pointer' }}>✕</small>
+            </div>
+          )}
+          {errorMessage && (
+            <div className="ad-banner error" onClick={() => setErrorMessage('')}>
+              <span>{errorMessage}</span>
+              <small style={{ marginLeft: 12, cursor: 'pointer' }}>✕</small>
+            </div>
+          )}
+        </div>
+      )}
+
+      <main className="ad-main">
+        {/* VIEW 1: BEFORE SIGN-IN -> Clean Landing + Sign In / Create Account (No clumsy extra tabs) */}
+        {!user ? (
+          <section className="ad-hero">
+            <div className="ad-hero-copy">
+              <div className="ad-pill-row">
+                <span className="ad-pill">STRICTLY ONE-TO-ONE</span>
+                <span className="ad-pill">COUPLES &amp; BEST FRIENDS (BOY–GIRL DUOS)</span>
+                <span className="ad-pill">GUEST CHATS WITHOUT LOGIN</span>
+              </div>
+              <h1>
+                One Private Link. One QR Code. <br />
+                <span>For Couples &amp; Best Friends ♥</span>
+              </h1>
+              <p className="ad-lead">
+                Whether you are <strong>romantic partners</strong> or <strong>two best friends (boy &amp; girl dosts)</strong>, sign in to generate your single active <strong>Guest Website Link, 6-Digit Passcode &amp; Custom QR Code</strong>. When your partner or bestie scans the QR on their phone, it opens a login-free private 1-on-1 room — with voice notes, live snaps, location treasure hunts, and surprise perks.
+              </p>
+
+              <div className="ad-stat-grid">
+                <div>
+                  <small>Strict Single-Partner Rule</small>
+                  <strong>1 Active QR &amp; OTP at a time (Revoke required to reset)</strong>
+                </div>
+                <div>
+                  <small>Partner Experience</small>
+                  <strong>Scans QR → Enters Consent &amp; OTP → Instant Chat</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="ad-card">
+              <div className="ad-tab-pills">
+                <button
+                  type="button"
+                  className={authMode === 'signup' ? 'active' : ''}
+                  onClick={() => setAuthMode('signup')}
+                >
+                  Create Account
+                </button>
+                <button
+                  type="button"
+                  className={authMode === 'login' ? 'active' : ''}
+                  onClick={() => setAuthMode('login')}
+                >
+                  Sign In
+                </button>
+              </div>
+
+              <h2>
+                {authMode === 'signup'
+                  ? 'Create Your Creator Account'
+                  : 'Welcome Back'}
+              </h2>
+              <p className="ad-muted">
+                Sign in to generate your unique 1-on-1 partner QR code and OTP.
+              </p>
+
+              <form className="ad-form" onSubmit={handleAuthSubmit}>
+                {authMode === 'signup' && (
+                  <label>
+                    <span>Your Name / Nickname</span>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Ayaan"
+                      value={authForm.displayName}
+                      onChange={(e) =>
+                        setAuthForm({ ...authForm, displayName: e.target.value })
+                      }
+                    />
+                  </label>
+                )}
+
+                <label>
+                  <span>Email Address</span>
+                  <input
+                    type="email"
+                    required
+                    placeholder="you@example.com"
+                    value={authForm.email}
+                    onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
+                  />
+                </label>
+
+                <label>
+                  <span>Password (8+ characters)</span>
+                  <input
+                    type="password"
+                    required
+                    minLength={8}
+                    placeholder="••••••••"
+                    value={authForm.password}
+                    onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
+                  />
+                </label>
+
+                {authMode === 'signup' && (
+                  <label className="ad-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={authForm.ageConfirmed}
+                      onChange={(e) =>
+                        setAuthForm({ ...authForm, ageConfirmed: e.target.checked })
+                      }
+                    />
+                    <span>I confirm I am 18+ and creating a mutual 1-on-1 couple link.</span>
+                  </label>
+                )}
+
+                <button type="submit" className="ad-btn ad-btn-primary" disabled={busy}>
+                  {busy
+                    ? 'Please wait...'
+                    : authMode === 'signup'
+                    ? 'Create Account & Generate Couple QR →'
+                    : 'Sign In →'}
+                </button>
+              </form>
+            </div>
+          </section>
+        ) : tab === 'invite' ? (
+          /* VIEW 2: SIGNED-IN CREATOR -> STRICT 1-AT-A-TIME LINK + QR + OTP PASS */
+          <section className="ad-section">
+            {!activeInvite ? (
+              <div className="ad-card ad-narrow">
+                <span className="ad-tag">STEP 1 · ONE-AT-A-TIME COUPLE LINK GENERATOR</span>
+                <h2>Generate Your Unique Partner Link, QR &amp; OTP</h2>
+                <p className="ad-muted">
+                  You can only have <strong>one active QR code and invite link at a time</strong>. Enter both your names and choose a color theme for your Custom Couple QR.
+                </p>
+
+                <form className="ad-form" onSubmit={handleGenerateSingleInvite}>
+                  <div className="ad-two-col-inputs">
+                    <label>
+                      <span>Your Name (Printed on Custom QR)</span>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Ayaan"
+                        value={generatorForm.creatorCustomName}
+                        onChange={(e) =>
+                          setGeneratorForm({
+                            ...generatorForm,
+                            creatorCustomName: e.target.value
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      <span>Partner&apos;s Name (Printed on Custom QR)</span>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Zoya"
+                        value={generatorForm.partnerCustomName}
+                        onChange={(e) =>
+                          setGeneratorForm({
+                            ...generatorForm,
+                            partnerCustomName: e.target.value
+                          })
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <label>
+                    <span>Custom QR Color &amp; Romantic Theme</span>
+                    <div className="ad-indian-theme-grid">
+                      {indianQrThemes.map((t) => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          className={`ad-indian-theme-card ${
+                            generatorForm.themeId === t.id ? 'active' : ''
+                          }`}
+                          onClick={() =>
+                            setGeneratorForm({
+                              ...generatorForm,
+                              themeId: t.id,
+                              emblemStyle: t.emblem,
+                              customLabel: t.defaultLabel
+                            })
+                          }
+                        >
+                          <div className="ad-theme-swatch-row">
+                            <span
+                              className="ad-theme-dot"
+                              style={{ background: t.dark, borderColor: t.accent }}
+                            />
+                            <span
+                              className="ad-theme-dot"
+                              style={{ background: t.accent }}
+                            />
+                            <span
+                              className="ad-theme-dot"
+                              style={{ background: t.light }}
+                            />
+                          </div>
+                          <strong>{t.name}</strong>
+                          <small>{t.flavor}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </label>
+
+                  <label>
+                    <span>Romantic Message on Custom QR</span>
+                    <input
+                      type="text"
+                      maxLength={44}
+                      value={generatorForm.customLabel}
+                      onChange={(e) =>
+                        setGeneratorForm({ ...generatorForm, customLabel: e.target.value })
+                      }
+                    />
+                  </label>
+
+                  <button type="submit" className="ad-btn ad-btn-primary" disabled={busy}>
+                    {busy
+                      ? 'Generating Unique Link, OTP & QR...'
+                      : '✨ Generate Unique Link, QR Code & 6-Digit OTP →'}
+                  </button>
+                </form>
+              </div>
+            ) : (
+              /* ACTIVE SINGLE INVITE + QR CARD (Generator is locked until Revoked!) */
+              <div className="ad-card">
+                <div className="ad-qr-hub-grid">
+                  <div className="ad-qr-hub-info">
+                    <div className="ad-pill-row">
+                      <span className="ad-pill">🔒 SINGLE ACTIVE COUPLE PASS</span>
+                      <span className="ad-pill">
+                        {activeConnection?.status === 'active'
+                          ? `● CONNECTED WITH ${activeConnection.peerDisplayName.toUpperCase()}`
+                          : '⏳ WAITING FOR PARTNER OTP'}
+                      </span>
+                    </div>
+
+                    <h2>
+                      {activeInvite.creatorCustomName || user.displayName} ♥{' '}
+                      {activeInvite.partnerCustomName || activeInvite.recipientHint}
+                    </h2>
+                    <p className="ad-muted">
+                      Send this unique Second App (Guest) Link or QR code to your partner. Scanning the QR code opens the dedicated login-free Guest Chat Page where they enter this <strong>6-Digit OTP</strong> to connect with you.
+                    </p>
+
+                    <div className="ad-otp-highlight">
+                      <div>
+                        <span className="ad-otp-label">UNIQUE 6-DIGIT COUPLE OTP</span>
+                        <div className="ad-otp-digits">{activeInvite.verificationCode}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="ad-btn ad-btn-secondary"
+                        onClick={() => copyText(activeInvite.verificationCode, '6-Digit OTP')}
+                      >
+                        Copy OTP
+                      </button>
+                    </div>
+
+                    <div className="ad-copy-box">
+                      <small>
+                        Partner Invite Link (Share Only With Your Partner — Cannot Be Opened on This Device/IP)
+                      </small>
+                      <code>{guestInviteLink}</code>
+                    </div>
+
+                    <div className="ad-cta-row">
+                      <button
+                        type="button"
+                        className="ad-btn ad-btn-primary"
+                        onClick={() => copyText(guestInviteLink, 'Partner Invite Link')}
+                      >
+                        📋 Copy Link to Send to Partner
+                      </button>
+
+                      {typeof navigator !== 'undefined' && navigator.share && (
+                        <button
+                          type="button"
+                          className="ad-btn ad-btn-secondary"
+                          onClick={() => {
+                            navigator
+                              .share({
+                                title: 'Our Private AFTERDARK Couple Chat ♥',
+                                text: `Join our private 1-on-1 chat! Use 6-digit OTP: ${activeInvite.verificationCode}`,
+                                url: guestInviteLink
+                              })
+                              .catch(() => {});
+                          }}
+                        >
+                          📲 Share to Partner’s Phone
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="ad-btn ad-btn-secondary"
+                        onClick={() => setShowCustomDomainConfig((prev) => !prev)}
+                      >
+                        ⚙️ Custom Second App Domain
+                      </button>
+
+                      {activeConnection?.status === 'active' && (
+                        <button
+                          type="button"
+                          className="ad-btn ad-btn-secondary"
+                          onClick={() => setTab('chat')}
+                        >
+                          Open Private Chat with {activeConnection.peerDisplayName} ♥
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="ad-btn ad-btn-danger"
+                        onClick={handleRevokeInviteAndQr}
+                        disabled={busy}
+                      >
+                        🔒 Revoke Access &amp; Remove QR Code
+                      </button>
+                    </div>
+
+                    {showCustomDomainConfig && (
+                      <div className="ad-collapsible-drawer" style={{ marginTop: 12 }}>
+                        <div className="ad-drawer-head">
+                          <strong>🌐 Custom Second App Base URL (Optional)</strong>
+                          <button
+                            type="button"
+                            className="ad-btn-close"
+                            onClick={() => setShowCustomDomainConfig(false)}
+                          >
+                            ✕ Close
+                          </button>
+                        </div>
+                        <p className="ad-muted" style={{ fontSize: '0.84rem', margin: '4px 0 8px' }}>
+                          Leave blank to use this domain automatically (guaranteed zero 404). Or enter a separate deployed Guest App URL if you hosted <code>guest-site</code> separately:
+                        </p>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <input
+                            type="url"
+                            placeholder="https://your-guest-app.vercel.app (leave empty for default)"
+                            value={customGuestOrigin}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setCustomGuestOrigin(val);
+                              localStorage.setItem(CUSTOM_GUEST_ORIGIN_KEY, val);
+                            }}
+                            style={{ flex: 1 }}
+                          />
+                          {customGuestOrigin && (
+                            <button
+                              type="button"
+                              className="ad-btn ad-btn-secondary"
+                              onClick={() => {
+                                setCustomGuestOrigin('');
+                                localStorage.removeItem(CUSTOM_GUEST_ORIGIN_KEY);
+                              }}
+                            >
+                              Reset to Default
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    <p className="ad-lock-notice">
+                      * Strict 1-on-1 Privacy: You cannot generate another link or QR code while this one is active. Click <strong>Revoke Access &amp; Remove QR Code</strong> to disable this link and generate a new one.
+                    </p>
+                  </div>
+
+                  <div className="ad-qr-hub-visual">
+                    <span className="ad-tag">
+                      {showCustomQrCard
+                        ? 'CUSTOM COLORFUL COUPLE QR (WITH NAMES)'
+                        : 'STANDARD GUEST LINK QR CODE'}
+                    </span>
+
+                    {!showCustomQrCard && standardQrDataUrl && (
+                      <div className="ad-qr-single-box">
+                        <img
+                          src={standardQrDataUrl}
+                          alt="Standard Partner Invite QR"
+                          className="ad-qr-img-standard"
+                        />
+                        <button
+                          type="button"
+                          className="ad-btn ad-btn-secondary"
+                          onClick={() =>
+                            downloadDataUrl(
+                              standardQrDataUrl,
+                              `afterdark-qr-${activeInvite.verificationCode}.png`
+                            )
+                          }
+                        >
+                          ⬇ Download Standard QR
+                        </button>
+                      </div>
+                    )}
+
+                    {showCustomQrCard && customQrDataUrl && (
+                      <div className="ad-qr-single-box">
+                        <img
+                          src={customQrDataUrl}
+                          alt="Custom Named Couple QR"
+                          className="ad-qr-img-custom"
+                        />
+                        <button
+                          type="button"
+                          className="ad-btn ad-btn-primary"
+                          onClick={() =>
+                            downloadDataUrl(
+                              customQrDataUrl,
+                              `afterdark-couple-qr-${activeInvite.verificationCode}.png`
+                            )
+                          }
+                        >
+                          ⬇ Download Custom Named QR
+                        </button>
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 12, width: '100%' }}>
+                      <button
+                        type="button"
+                        className={`ad-custom-qr-toggle-btn ${showCustomQrCard ? 'open' : ''}`}
+                        onClick={() => setShowCustomQrCard((prev) => !prev)}
+                      >
+                        {showCustomQrCard
+                          ? 'Switch to Standard QR Code'
+                          : '🎨 View Custom Colorful QR with Couple Names'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        ) : (
+          /* VIEW 3: FOCUSED, UNCLUTTERED PRIVATE COUPLE CHAT */
+          <section className="ad-section">
+            {!activeConnection || activeConnection.status !== 'active' ? (
+              <div className="ad-card ad-narrow">
+                <span className="ad-tag">WAITING FOR PARTNER</span>
+                <h2>Your Partner Hasn&apos;t Entered the OTP Yet</h2>
+                <p className="ad-muted">
+                  Share your unique QR code or Guest Website Link and the 6-digit OTP (
+                  <strong>{activeInvite?.verificationCode || '—'}</strong>) with your partner. As soon as they verify the OTP on the Guest Website, your private chat will open here automatically!
+                </p>
+                <div className="ad-cta-row">
+                  <button
+                    type="button"
+                    className="ad-btn ad-btn-primary"
+                    onClick={() => setTab('invite')}
+                  >
+                    ← Back to My Link &amp; QR Code
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="ad-card ad-focused-chat-shell">
+                {/* Clean Chat Topbar with Hidden/Toggleable Actions (No private Channel ID or OTP exposed) */}
+                <div className="ad-chat-header">
+                  <div>
+                    <span className="ad-tag">
+                      ● PRIVATE 1-ON-1 ROOM · END-TO-END ISOLATED · COUPLES &amp; BESTIES
+                    </span>
+                    <h2>
+                      {activeInvite?.creatorCustomName || user.displayName} &amp;{' '}
+                      {activeConnection.peerDisplayName} ♥
+                    </h2>
+                  </div>
+
+                  <div className="ad-chat-toolbar">
+                    <button
+                      type="button"
+                      className={`ad-tool-btn ${activeChatDrawer === 'treasure' ? 'active' : ''}`}
+                      onClick={() =>
+                        setActiveChatDrawer((prev) => (prev === 'treasure' ? 'none' : 'treasure'))
+                      }
+                      style={{
+                        borderColor:
+                          elapsedChatMinutes >= 10
+                            ? 'rgba(251, 191, 36, 0.75)'
+                            : 'rgba(167, 139, 250, 0.45)',
+                        background:
+                          elapsedChatMinutes >= 10
+                            ? 'rgba(251, 191, 36, 0.16)'
+                            : undefined
+                      }}
+                    >
+                      🗺️ {elapsedChatMinutes >= 10 ? 'Treasure Hunt Unlocked!' : 'Treasure Hunt & Tasks'}
+                    </button>
+                    <button
+                      type="button"
+                      className={`ad-tool-btn ${activeChatDrawer === 'store' ? 'active' : ''}`}
+                      onClick={() =>
+                        setActiveChatDrawer((prev) => (prev === 'store' ? 'none' : 'store'))
+                      }
+                    >
+                      🛍️ Private Offers &amp; Cafes ({userCity === 'Patna' ? 'Patna/Bihar' : userCity})
+                    </button>
+                    <button
+                      type="button"
+                      className={`ad-tool-btn ${activeChatDrawer === 'photos' ? 'active' : ''}`}
+                      onClick={() =>
+                        setActiveChatDrawer((prev) => (prev === 'photos' ? 'none' : 'photos'))
+                      }
+                    >
+                      📸 Photos ({photos.length})
+                    </button>
+                    <button
+                      type="button"
+                      className={`ad-tool-btn ${activeChatDrawer === 'calendar' ? 'active' : ''}`}
+                      onClick={() =>
+                        setActiveChatDrawer((prev) => (prev === 'calendar' ? 'none' : 'calendar'))
+                      }
+                    >
+                      🕯️ Plan Outing / Date
+                    </button>
+                    <button
+                      type="button"
+                      className={`ad-tool-btn ${activeChatDrawer === 'rooftop3d' ? 'active' : ''}`}
+                      onClick={() =>
+                        setActiveChatDrawer((prev) =>
+                          prev === 'rooftop3d' ? 'none' : 'rooftop3d'
+                        )
+                      }
+                    >
+                      🌙 3D Rooftop
+                    </button>
+                    <button
+                      type="button"
+                      className={`ad-tool-btn ${activeChatDrawer === 'flirt' ? 'active' : ''}`}
+                      onClick={() =>
+                        setActiveChatDrawer((prev) => (prev === 'flirt' ? 'none' : 'flirt'))
+                      }
+                    >
+                      💬 Fun &amp; Flirt Lines
+                    </button>
+                    <button
+                      type="button"
+                      className={`ad-tool-btn ${soundEnabled ? 'active' : ''}`}
+                      onClick={() => {
+                        const next = !soundEnabled;
+                        setSoundEnabled(next);
+                        if (next) playIncomingMessageSound(true);
+                      }}
+                      title="Toggle incoming partner message sound alert"
+                    >
+                      {soundEnabled ? '🔔 Sound: ON' : '🔇 Sound: OFF'}
+                    </button>
+                    <button
+                      type="button"
+                      className="ad-tool-btn danger"
+                      onClick={handleRevokeInviteAndQr}
+                    >
+                      🔒 Revoke &amp; End
+                    </button>
+                  </div>
+                </div>
+
+                {/* COLLAPSIBLE DRAWER 1: SEND & SAVE PHOTOS */}
+                {activeChatDrawer === 'photos' && (
+                  <div className="ad-collapsible-drawer">
+                    <div className="ad-drawer-head">
+                      <strong>📸 Send or Save Private Couple Photos</strong>
+                      <button
+                        type="button"
+                        className="ad-btn-close"
+                        onClick={() => setActiveChatDrawer('none')}
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+                    <div className="ad-photo-upload-bar">
+                      <input
+                        type="text"
+                        placeholder="Add a sweet caption (optional)..."
+                        value={photoCaption}
+                        onChange={(e) => setPhotoCaption(e.target.value)}
+                      />
+                      <label className="ad-upload-btn">
+                        <span>+ Choose Photo to Send</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={handlePhotoUpload}
+                        />
+                      </label>
+                    </div>
+                    {photos.length > 0 && (
+                      <div className="ad-photo-grid">
+                        {photos.map((photo) => (
+                          <figure key={photo.id} className="ad-photo-item">
+                            <img src={photo.dataUrl} alt={photo.caption || 'Shared photo'} />
+                            <figcaption>
+                              <span>{photo.caption || 'Photo'}</span>
+                              <button
+                                type="button"
+                                className="ad-save-photo-btn"
+                                onClick={() =>
+                                  downloadDataUrl(photo.dataUrl, `couple-photo-${photo.id}.jpg`)
+                                }
+                              >
+                                ⬇ Save
+                              </button>
+                            </figcaption>
+                          </figure>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* COLLAPSIBLE DRAWER 2: CANDLELIGHT DINNER / GOOGLE CALENDAR PLANNER */}
+                {activeChatDrawer === 'calendar' && (
+                  <div className="ad-collapsible-drawer">
+                    <div className="ad-drawer-head">
+                      <strong>🕯️ Plan an Upcoming Candlelight Dinner / Date (Google Calendar)</strong>
+                      <button
+                        type="button"
+                        className="ad-btn-close"
+                        onClick={() => setActiveChatDrawer('none')}
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+                    <form className="ad-form" onSubmit={handleScheduleCandlelightDate}>
+                      <div className="ad-two-col-inputs">
+                        <label>
+                          <span>Date / Occasion Name</span>
+                          <input
+                            type="text"
+                            required
+                            value={dateForm.title}
+                            onChange={(e) =>
+                              setDateForm({ ...dateForm, title: e.target.value })
+                            }
+                          />
+                        </label>
+                        <label>
+                          <span>Date &amp; Time</span>
+                          <input
+                            type="datetime-local"
+                            required
+                            value={dateForm.dateTime}
+                            onChange={(e) =>
+                              setDateForm({ ...dateForm, dateTime: e.target.value })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <div className="ad-two-col-inputs">
+                        <label>
+                          <span>Venue / Restaurant</span>
+                          <input
+                            type="text"
+                            required
+                            list="hyd-venues"
+                            value={dateForm.location}
+                            onChange={(e) =>
+                              setDateForm({ ...dateForm, location: e.target.value })
+                            }
+                          />
+                          <datalist id="hyd-venues">
+                            {hyderabadCandlelightVenues.map((v) => (
+                              <option key={v} value={v} />
+                            ))}
+                          </datalist>
+                        </label>
+                        <label>
+                          <span>Romantic Note / Dress Code</span>
+                          <input
+                            type="text"
+                            value={dateForm.description}
+                            onChange={(e) =>
+                              setDateForm({ ...dateForm, description: e.target.value })
+                            }
+                          />
+                        </label>
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button type="submit" className="ad-btn ad-btn-primary" disabled={busy}>
+                          📅 Send Date Invite to Chat &amp; Google Calendar →
+                        </button>
+                        <button
+                          type="button"
+                          className="ad-btn ad-btn-secondary"
+                          onClick={handleDiscoverGroundedSpots}
+                          disabled={loadingSpots}
+                        >
+                          {loadingSpots
+                            ? 'Searching Google Maps...'
+                            : `📍 Discover Live ${userCity} Cafes & Couple Spots`}
+                        </button>
+                      </div>
+                    </form>
+                    {groundedSpots.length > 0 && (
+                      <div className="ad-grounded-spots-list" style={{ marginTop: 10 }}>
+                        {groundedSpots.map((spot, i) => (
+                          <div key={i} className="ad-grounded-spot-item">
+                            <div>
+                              <strong>{spot.name}</strong>
+                              <small>{spot.vibe} — {spot.highlight}</small>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              {spot.mapsUrl && (
+                                <a
+                                  href={spot.mapsUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="ad-tool-btn"
+                                  style={{ textDecoration: 'none' }}
+                                >
+                                  📍 Maps ↗
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                className="ad-tool-btn"
+                                onClick={() => setDateForm((prev) => ({ ...prev, location: spot.name }))}
+                              >
+                                Select Venue
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* COLLAPSIBLE DRAWER 3: INTERACTIVE 3D ROOFTOP SCENE */}
+                {activeChatDrawer === 'rooftop3d' && (
+                  <div className="ad-collapsible-drawer">
+                    <div className="ad-drawer-head">
+                      <strong>🌙 3D Moonlit Candlelight Rooftop Preview</strong>
+                      <button
+                        type="button"
+                        className="ad-btn-close"
+                        onClick={() => setActiveChatDrawer('none')}
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+                    <ThreeRomanticScene
+                      creatorName={activeInvite?.creatorCustomName || user.displayName}
+                      partnerName={activeConnection.peerDisplayName}
+                      onSelectMoodVenue={(venue) => {
+                        setDateForm((prev) => ({ ...prev, location: venue }));
+                        setActiveChatDrawer('calendar');
+                      }}
+                    />
+                  </div>
+                )}
+
+                {/* COLLAPSIBLE DRAWER 4: QUICK FLIRT & BESTIE BANTER LINES */}
+                {activeChatDrawer === 'flirt' && (
+                  <div className="ad-collapsible-drawer">
+                    <div className="ad-drawer-head">
+                      <strong>💬 Tap to Send a Fun Bestie Banter or Flirt Line</strong>
+                      <button
+                        type="button"
+                        className="ad-btn-close"
+                        onClick={() => setActiveChatDrawer('none')}
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+                    <QuickDropChipBar
+                      drops={flirtyHindiDrops}
+                      onSendQuickFlirt={handleSendQuickFlirt}
+                    />
+                  </div>
+                )}
+
+                {/* COLLAPSIBLE DRAWER 5: 10-MINUTE LOCATION TREASURE HUNT & DUO TASK GAME */}
+                <LocationTreasureHuntDrawer
+                  open={activeChatDrawer === 'treasure'}
+                  userCity={userCity}
+                  elapsedMinutes={elapsedChatMinutes}
+                  onClose={() => setActiveChatDrawer('none')}
+                  onSendChallengeToChat={(challengeText) => {
+                    handleSendQuickFlirt(challengeText);
+                    setActiveChatDrawer('none');
+                  }}
+                />
+
+                {/* 10-Minute Milestone Auto-Suggestion Banner */}
+                {(elapsedChatMinutes >= 10 || messages.length >= 12) &&
+                  !treasurePromptDismissed &&
+                  activeChatDrawer !== 'treasure' && (
+                    <div
+                      style={{
+                        margin: '6px 0 10px',
+                        padding: '10px 14px',
+                        borderRadius: '14px',
+                        background:
+                          'linear-gradient(135deg, rgba(251, 191, 36, 0.16), rgba(244, 63, 94, 0.16))',
+                        border: '1px solid rgba(251, 191, 36, 0.45)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '10px',
+                        flexWrap: 'wrap'
+                      }}
+                    >
+                      <span style={{ fontSize: '0.82rem', color: '#fef3c7' }}>
+                        🗺️ <strong>10+ Min Vibe Milestone!</strong> Unlock your live{' '}
+                        <strong>{userCity} Treasure Hunt &amp; Secret Duo Task</strong> (for couples &amp; best friends).
+                      </span>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          type="button"
+                          className="ad-tool-btn"
+                          style={{
+                            background: 'linear-gradient(135deg, #f59e0b, #ec4899)',
+                            color: '#fff',
+                            border: 'none',
+                            fontWeight: 700
+                          }}
+                          onClick={() => setActiveChatDrawer('treasure')}
+                        >
+                          🎯 Play {userCity} Treasure Hunt
+                        </button>
+                        <button
+                          type="button"
+                          className="ad-btn-close"
+                          onClick={() => setTreasurePromptDismissed(true)}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                {/* CENTERED PRIVATE MODAL: ONE-SIDED PARTNER CHECKOUT & LOCAL CAFE DISCOVERY */}
+                <InlineCommerceDrawer
+                  open={activeChatDrawer === 'store'}
+                  activeBrandId={activeBrandId}
+                  onSelectBrand={setActiveBrandId}
+                  onClose={() => setActiveChatDrawer('none')}
+                  onBookFreeItem={handleBookAffiliateOrder}
+                  onShareDateInChat={handleShareCafeDateInChat}
+                  userCity={userCity}
+                  onChangeCity={setUserCity}
+                />
+
+                {/* MAIN CHAT STREAM WITH RATE-LIMITED, STRICTLY CONTEXTUAL ONE-SIDED BRAND PROMOTIONS */}
+                <div className="ad-messages">
+                  {messages.length === 0 ? (
+                    <p className="ad-empty">
+                      Say hi to {activeConnection.peerDisplayName} ♥ Send a message, voice note (🎤), live camera snap (📷), or plan a candlelight dinner!
+                    </p>
+                  ) : (
+                    messages.map((msg, idx) => {
+                      const inStreamAd = getPersonalizedInChatBrandAd(
+                        messages,
+                        idx,
+                        'creator',
+                        userCity,
+                        aiInsight
+                      );
+                      return (
+                        <React.Fragment key={msg.id}>
+                          <div
+                            className={`ad-bubble ${
+                              msg.senderRole === 'creator' ? 'mine' : 'theirs'
+                            }`}
+                          >
+                            <MessageWithBrandCards
+                              messageId={msg.id}
+                              body={msg.body || msg.text}
+                              dateMeta={msg.dateMeta}
+                              photoMeta={msg.photoMeta}
+                              voiceMeta={msg.voiceMeta}
+                              isMine={msg.senderRole === 'creator'}
+                              seenAt={msg.seenAt}
+                              onOpenBrandDrawer={handleOpenBrandDrawer}
+                              onSavePhoto={downloadDataUrl}
+                            />
+                            <small>
+                              {msg.senderRole === 'creator'
+                                ? activeInvite?.creatorCustomName || user.displayName
+                                : activeConnection.peerDisplayName}{' '}
+                              ·{' '}
+                              {new Date(msg.createdAt).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </small>
+                          </div>
+
+                          {/* In-Between Chat Brand Promotion Card (Creator-Personalized, Invisible Click -> Opens In-Website Affiliate Sheet) */}
+                          {inStreamAd && (
+                            <InChatBrandPromoCard
+                              adData={inStreamAd}
+                              onOpenBrandDrawer={handleOpenBrandDrawer}
+                            />
+                          )}
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                  <div ref={chatEndRef} />
+                </div>
+
+                {aiInsight?.suggestedFlirtReply && (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '4px 10px',
+                      fontSize: '0.75rem'
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="ad-flirt-chip"
+                      onClick={() => handleSendQuickFlirt(aiInsight.suggestedFlirtReply)}
+                      title="Tap to send AI-crafted Hinglish flirt reply"
+                    >
+                      ✨ {aiInsight.suggestedFlirtReply}
+                    </button>
+                  </div>
+                )}
+
+                <form className="ad-chat-input" onSubmit={handleSendMessage}>
+                  <ChatMediaInputActions
+                    onSendVoiceNote={handleSendVoiceNote}
+                    onSendLiveCameraSnap={handleSendLiveCameraSnap}
+                    disabled={busy}
+                  />
+                  <input
+                    type="text"
+                    placeholder={`Message ${activeConnection.peerDisplayName}...`}
+                    value={messageInput}
+                    onChange={(e) => setMessageInput(e.target.value)}
+                  />
+                  <button type="submit" className="ad-btn ad-btn-primary">
+                    Send ♥
+                  </button>
+                </form>
+              </div>
+            )}
+          </section>
+        )}
+      </main>
+    </div>
+  );
 }
-createRoot(document.getElementById('root')).render(<App />);
+
+// Automatic Second-App (Guest) Routing:
+// Whenever a Guest scans the QR Code or opens the link (`/?invite=<token>` or `/guest` or `/invite/<token>`),
+// mount ONLY the standalone login-free <GuestApp /> so it NEVER returns 404 on any host!
+const rootElement = document.getElementById('root');
+if (isGuestInviteLocation()) {
+  createRoot(rootElement).render(<GuestApp />);
+} else {
+  createRoot(rootElement).render(<App />);
+}

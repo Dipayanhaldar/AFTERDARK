@@ -1,0 +1,11 @@
+{
+  "name": "AFTERDARK — Couples Private Link & In-Chat Commerce",
+  "description": "An 18+ invite-only Hyderabad couples space featuring dual-site QR + 6-digit OTP linking, AI-analyzed contextual chat recommendations, floating Zomato/Blinkit-style alerts, OYO & stay bookings, and inline in-chat ordering.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
