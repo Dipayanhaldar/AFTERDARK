@@ -1,8 +1,11 @@
-// Real-time Smooth Audio Engine for AFTERDARK (Distinct Host vs. Guest Message Chimes,
-// Tactile Outgoing Send Whoosh-Pop, & "Seen" Shimmer)
-// Uses Web Audio API with Butterworth low-pass filtering for silky, click-free mobile & desktop sound.
+// Real-time 3-Mode Smooth Audio & Android APK Notification Engine for AFTERDARK (v2.0.2.3)
+// Provides three completely distinct, Butterworth-filtered acoustic signatures:
+// 1. Android APK Native Chime ('apk'): Crystal Santoor & Warm Sub-Bass Shimmer (528Hz -> 660Hz -> 792Hz -> 1056Hz + 264Hz Sub-Bass + Haptics)
+// 2. Website Main Host Chime ('creator'): Velvet Rose Marimba & Warm Bell Chord (D5 -> F#5 -> A5 -> D6)
+// 3. Website Guest Partner Chime ('guest'): Moonlight Celestial Harp Glissando (E5 -> G#5 -> B5 -> E6 -> G#6)
 
 let sharedAudioCtx = null;
+const APK_SOUND_MODE_KEY = 'afterdark_apk_sound_mode_v2';
 
 function getAudioContext() {
   if (typeof window === 'undefined') return null;
@@ -18,12 +21,149 @@ function getAudioContext() {
 }
 
 /**
- * Plays a distinct, ultra-smooth incoming message chime depending on `viewerRole`:
- * - 'creator' (Main Host App): Velvet Rose Marimba & Warm Bell Chord (D5 -> F#5 -> A5 -> D6)
- * - 'guest' (Guest Partner App): Moonlight Celestial Harp Glissando (E5 -> G#5 -> B5 -> E6 -> G#6)
+ * Detects whether the user is running inside the AFTERDARK Android APK / Capacitor wrapper,
+ * Android WebView (`; wv)`), installed standalone APK/PWA, or has enabled APK Sound Mode.
  */
-export function playIncomingMessageSound(enabled = true, viewerRole = 'creator') {
+export function isAndroidApkEnvironment() {
+  if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
+  try {
+    const savedPref = window.localStorage?.getItem(APK_SOUND_MODE_KEY);
+    if (savedPref === 'apk') return true;
+    if (savedPref === 'web') return false;
+  } catch {
+    // ignore storage errors
+  }
+  const ua = String(navigator.userAgent || '');
+  const isCapacitor = Boolean(
+    window.Capacitor ||
+      ua.includes('Capacitor') ||
+      ua.includes('; wv)') ||
+      ua.includes('AfterDarkAPK')
+  );
+  const isAndroidStandalone =
+    /Android/i.test(ua) &&
+    Boolean(window.matchMedia?.('(display-mode: standalone)')?.matches);
+  return isCapacitor || isAndroidStandalone;
+}
+
+export const isAndroidApkRuntime = isAndroidApkEnvironment;
+
+export function setPreferredSoundProfile(mode = 'auto') {
+  if (typeof window === 'undefined') return;
+  try {
+    if (mode === 'apk' || mode === 'web') {
+      window.localStorage?.setItem(APK_SOUND_MODE_KEY, mode);
+    } else {
+      window.localStorage?.removeItem(APK_SOUND_MODE_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function setSimulatedApkNotificationMode(enableApk = true) {
+  setPreferredSoundProfile(enableApk ? 'apk' : 'web');
+}
+
+export function getActiveSoundProfileLabel(viewerRole = 'creator') {
+  if (isAndroidApkEnvironment()) {
+    return '📱 Android APK · Crystal Santoor & Sub-Bass Chime';
+  }
+  return viewerRole === 'guest'
+    ? '🌙 Guest Web · Moonlight Celestial Harp'
+    : '🌹 Host Web · Velvet Rose Marimba';
+}
+
+/**
+ * Dedicated Android APK Notification Sound:
+ * "Crystal Santoor & Warm Sub-Bass Shimmer" (528Hz Solfeggio C5 -> E5 -> G5 -> C6 -> E6)
+ * Distinct from both Website Host and Website Guest chimes, engineered to cut through
+ * mobile phone speakers cleanly while feeling warm and luxurious.
+ */
+export function playAndroidApkNotificationSound(enabled = true) {
   if (!enabled || typeof window === 'undefined') return false;
+  try {
+    // Trigger Android native haptic pulse rhythm if supported on device
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      try {
+        navigator.vibrate([90, 45, 140, 40, 90]);
+      } catch {
+        // ignore vibrate restriction
+      }
+    }
+
+    const ctx = getAudioContext();
+    if (!ctx) return false;
+
+    const now = ctx.currentTime;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(2850, now);
+    filter.Q.setValueAtTime(1.15, now);
+    filter.connect(ctx.destination);
+
+    // 6-Note Crystal Santoor Double-Strike + Warm Sub-Octave Resonance (Distinct APK Signature)
+    const apkSantoorNotes = [
+      { freq: 528.0, detuneFreq: 530.2, subFreq: 264.0, start: 0.0, duration: 0.26, gain: 0.19 },
+      { freq: 660.0, detuneFreq: 662.5, subFreq: 330.0, start: 0.07, duration: 0.28, gain: 0.20 },
+      { freq: 792.0, detuneFreq: 795.0, subFreq: 396.0, start: 0.14, duration: 0.32, gain: 0.21 },
+      { freq: 1056.0, detuneFreq: 1059.5, subFreq: 528.0, start: 0.22, duration: 0.42, gain: 0.22 },
+      { freq: 1320.0, detuneFreq: 1324.0, subFreq: 660.0, start: 0.32, duration: 0.48, gain: 0.17 },
+      { freq: 1584.0, detuneFreq: 1588.0, subFreq: 792.0, start: 0.41, duration: 0.62, gain: 0.14 }
+    ];
+
+    apkSantoorNotes.forEach(({ freq, detuneFreq, subFreq, start, duration, gain }) => {
+      const mainOsc = ctx.createOscillator();
+      const shimmerOsc = ctx.createOscillator();
+      const subOsc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      mainOsc.type = 'triangle';
+      mainOsc.frequency.setValueAtTime(freq, now + start);
+
+      shimmerOsc.type = 'sine';
+      shimmerOsc.frequency.setValueAtTime(detuneFreq, now + start);
+
+      subOsc.type = 'sine';
+      subOsc.frequency.setValueAtTime(subFreq, now + start);
+
+      gainNode.gain.setValueAtTime(0.0001, now + start);
+      gainNode.gain.linearRampToValueAtTime(gain, now + start + 0.016);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, now + start + duration);
+
+      mainOsc.connect(gainNode);
+      shimmerOsc.connect(gainNode);
+      subOsc.connect(gainNode);
+      gainNode.connect(filter);
+
+      mainOsc.start(now + start);
+      shimmerOsc.start(now + start);
+      subOsc.start(now + start);
+
+      mainOsc.stop(now + start + duration + 0.03);
+      shimmerOsc.stop(now + start + duration + 0.03);
+      subOsc.stop(now + start + duration + 0.03);
+    });
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Plays a distinct, ultra-smooth incoming message chime depending on platform & `viewerRole`:
+ * - Android APK ('apk' or `isAndroidApkEnvironment()`): Crystal Santoor & Sub-Bass Shimmer
+ * - Website 'creator' (Main Host App): Velvet Rose Marimba & Warm Bell Chord (D5 -> F#5 -> A5 -> D6)
+ * - Website 'guest' (Guest Partner App): Moonlight Celestial Harp Glissando (E5 -> G#5 -> B5 -> E6 -> G#6)
+ */
+export function playIncomingMessageSound(enabled = true, viewerRole = 'creator', forceApk = false) {
+  if (!enabled || typeof window === 'undefined') return false;
+
+  if (forceApk || viewerRole === 'apk' || isAndroidApkEnvironment()) {
+    return playAndroidApkNotificationSound(true);
+  }
+
   try {
     const ctx = getAudioContext();
     if (!ctx) return false;
@@ -35,7 +175,7 @@ export function playIncomingMessageSound(enabled = true, viewerRole = 'creator')
     filter.Q.setValueAtTime(0.8, now);
     filter.connect(ctx.destination);
 
-    // Distinct melodic signatures for Main Host vs. Guest Site
+    // Distinct melodic signatures for Main Host vs. Guest Site on Website
     const notes =
       viewerRole === 'guest'
         ? [
@@ -87,7 +227,7 @@ export function playIncomingMessageSound(enabled = true, viewerRole = 'creator')
 
 /**
  * Plays a smooth, tactile acoustic bubble-pop when sending a message
- * (slightly warmer pitch on Host, airier pitch on Guest).
+ * (distinct pitch contour for APK vs Host Web vs Guest Web).
  */
 export function playOutgoingMessageSound(enabled = true, viewerRole = 'creator') {
   if (!enabled || typeof window === 'undefined') return false;
@@ -95,14 +235,15 @@ export function playOutgoingMessageSound(enabled = true, viewerRole = 'creator')
     const ctx = getAudioContext();
     if (!ctx) return false;
 
+    const isApk = isAndroidApkEnvironment();
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gainNode = ctx.createGain();
 
-    const startFreq = viewerRole === 'guest' ? 350 : 295;
-    const endFreq = viewerRole === 'guest' ? 720 : 610;
+    const startFreq = isApk ? 420 : viewerRole === 'guest' ? 350 : 295;
+    const endFreq = isApk ? 840 : viewerRole === 'guest' ? 720 : 610;
 
-    osc.type = 'sine';
+    osc.type = isApk ? 'triangle' : 'sine';
     osc.frequency.setValueAtTime(startFreq, now);
     osc.frequency.exponentialRampToValueAtTime(endFreq, now + 0.075);
 
@@ -160,9 +301,6 @@ export function playMessageSeenSound(enabled = true) {
   }
 }
 
-/**
- * Funny, romantic Gen-Z Hinglish/Hyderabadi read-receipt lines (instead of boring "Seen" or blue ticks!)
- */
 const GENZ_SEEN_SLANG_LINES = [
   '🫣 Caught in 4K blushing · Padh ke smile aa gayi 😏',
   '👀 Ankhiyon se गोली maar di · Chupke se padh liya ♥',
@@ -182,20 +320,24 @@ export function getGenZSeenStatusText(messageId = '') {
 }
 
 /**
- * Triggers a browser system notification (if granted) + flashes the document tab title.
+ * Dispatches a native Android / OS notification via ServiceWorker or Notification API
+ * and plays the platform-appropriate incoming sound (APK Santoor vs Web Host vs Web Guest).
  */
 let titleResetTimer = null;
 const ORIGINAL_TITLE =
   typeof document !== 'undefined' ? document.title : 'AFTERDARK · Private Couple Chat';
 
-export function triggerIncomingPartnerAlert({
+export async function triggerIncomingPartnerAlert({
   senderName = 'Your Partner',
   messageText = 'Sent you a private message ♥',
   soundEnabled = true,
-  viewerRole = 'creator'
+  viewerRole = 'creator',
+  forceApkMode = false
 }) {
+  const isApk = forceApkMode || isAndroidApkEnvironment();
+
   if (soundEnabled) {
-    playIncomingMessageSound(true, viewerRole);
+    playIncomingMessageSound(true, viewerRole, isApk);
   }
 
   if (typeof document !== 'undefined') {
@@ -206,18 +348,39 @@ export function triggerIncomingPartnerAlert({
     }, 6000);
   }
 
+  const cleanPreview = String(messageText || 'Sent you a private E2EE message ♥').slice(0, 110);
+  const notifTitle = isApk
+    ? `☾ AFTERDARK APK · ${senderName}`
+    : `💌 New message from ${senderName}`;
+
   if (typeof window !== 'undefined' && 'Notification' in window) {
-    if (Notification.permission === 'granted' && document.hidden) {
+    if (Notification.permission === 'granted' && (document.hidden || isApk)) {
+      const notifOptions = {
+        body: cleanPreview,
+        icon: '/icon-192.svg',
+        badge: '/icon-192.svg',
+        tag: 'afterdark-partner-msg',
+        renotify: true,
+        vibrate: [90, 45, 140, 40, 90],
+        data: { senderName, viewerRole, version: '2.0.2.3' }
+      };
+
       try {
-        new Notification(`💌 New message from ${senderName}`, {
-          body: String(messageText || '').slice(0, 90),
-          tag: 'afterdark-partner-msg'
-        });
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg && typeof reg.showNotification === 'function') {
+            await reg.showNotification(notifTitle, notifOptions);
+            return { ok: true, mode: isApk ? 'apk' : 'web' };
+          }
+        }
+        new Notification(notifTitle, notifOptions);
       } catch {
-        // Ignore notification errors in restricted iframes
+        // Fallback handled by in-app animated heads-up notification banner
       }
     }
   }
+
+  return { ok: true, mode: isApk ? 'apk' : 'web' };
 }
 
 export async function requestBrowserNotificationPermission() {
@@ -229,3 +392,6 @@ export async function requestBrowserNotificationPermission() {
     return 'denied';
   }
 }
+
+export const requestNativeNotificationPermission = requestBrowserNotificationPermission;
+

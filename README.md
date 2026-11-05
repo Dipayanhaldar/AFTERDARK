@@ -60,3 +60,20 @@ Before inviting real users, configure the runtime variables, test registration a
 - The direct APK download URL is `https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk`. It becomes available after the first successful release workflow.
 - Message records are configured for automatic deletion after 30 days using a MongoDB TTL index. Invite links expire after 7 days.
 - Date plans lock only after both approved connection members choose the same Hyderabad location and date/time. The chat includes block and report actions.
+
+---
+
+## Developer-Only Version Manifest & Update Locations (GitHub Reference)
+
+> **Note:** Version numbers and update location metadata are maintained strictly in GitHub (`README.md`, `package.json`, `src/version-manifest.js`) for developer tracking and are hidden from the user-facing website UI.
+
+### Current Version: `2.0.2.4` (Previous: `2.0.2.3`)
+**Format:** `MAJOR_GEN . STORE_CHANNEL . FEATURE_MILESTONE . UPDATE_PATCH_LOC`
+
+| Segment | Value | Meaning | Update Locations |
+| :--- | :--- | :--- | :--- |
+| **1. `MAJOR_GEN`** | `2` | Generation 2 Dual-Site Host + Guest 1-on-1 Architecture | `src/main.jsx`, `src/GuestApp.jsx`, `src/couple-sync.js` |
+| **2. `STORE_CHANNEL`** | `0` | Universal Cross-Device & Multi-Store Production Channel (Web, PWA, Android APK, Amazon Appstore, PhonePe Indus, Samsung Galaxy Store) | `manifest.webmanifest`, `capacitor.config.json`, `scripts/configure-android-apk.mjs` |
+| **3. `FEATURE_MILESTONE`** | `2` | 100 Top Indian Brands In-Chat Catalog + Google Account Auth + Adaptive Surge Traffic Control | `src/indian-brands-100.js`, `src/google-auth.js`, `src/traffic-control.js` |
+| **4. `UPDATE_PATCH_LOC`** | `4` | Clean User UI (Removed user-facing version & E2EE badges) + Guaranteed Audible & Visual Incoming Message Notifications (Web Audio unlock + PCM WAV fallback + first-message trigger) | `src/notification-sound.js`, `src/main.jsx`, `src/GuestApp.jsx`, `src/commerce-catalog.jsx` |
+

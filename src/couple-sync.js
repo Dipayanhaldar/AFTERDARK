@@ -1,4 +1,10 @@
 import { brandCatalog, CITY_PROFILES, analyzeChatContextLocally } from './commerce-data.js';
+import { APP_VERSION } from './version-manifest.js';
+import {
+  classifyEndpointPriority,
+  executeWithTrafficControl,
+  recordServerTrafficHeaders
+} from './traffic-control.js';
 import {
   encodeOtpSignature,
   verifyOtpSignature,
@@ -459,6 +465,7 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
   if (
     (cleanPath === 'auth/signup' ||
       cleanPath === 'auth/login' ||
+      cleanPath === 'auth/google' ||
       cleanPath === 'register' ||
       cleanPath === 'login') &&
     method === 'POST'
@@ -474,6 +481,8 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
         id: 'usr_' + Math.random().toString(36).slice(2, 10),
         email,
         displayName,
+        photoURL: body.photoURL || '',
+        authProvider: cleanPath === 'auth/google' ? 'google' : 'password',
         sessionToken: 'tok_' + Math.random().toString(36).slice(2, 14)
       };
       state.users.push(user);
@@ -481,7 +490,13 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
     }
     return {
       sessionToken: user.sessionToken,
-      user: { id: user.id, email: user.email, displayName: user.displayName }
+      user: {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL || '',
+        authProvider: user.authProvider || 'password'
+      }
     };
   }
 
@@ -704,9 +719,7 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
         channelId,
         senderRole: 'guest',
         senderName: guestDisplayName,
-        body: `Hau miyaan! ${guestDisplayName} connected to our private 1-on-1 E2EE room ♥ Ab baatein shuru karein?`,
-        e2ee: true,
-        keyFingerprint: deriveE2eeFingerprint(suppliedOtp),
+        body: `Hau miyaan! ${guestDisplayName} connected to our private 1-on-1 room ♥ Ab baatein shuru karein?`,
         createdAt: nowIso
       });
     } else {
@@ -1106,36 +1119,25 @@ async function postProcessE2eeResponse(data, cleanPath, urlContext = {}) {
 }
 
 export async function resilientApiRequest(path, options = {}, token = '', urlContext = {}) {
-  const cleanPath = String(path || '').split('?')[0].replace(/^\/+/, '');
+  const rawStr = String(path || '');
+  const qIndex = rawStr.indexOf('?');
+  const querySuffix = qIndex >= 0 ? rawStr.slice(qIndex) : '';
+  const cleanPath = (qIndex >= 0 ? rawStr.slice(0, qIndex) : rawStr)
+    .replace(/^\/+/, '')
+    .replace(/^api\/+/, '');
+  const normalizedPath = `/${cleanPath}${querySuffix}`;
   const method = (options.method || 'GET').toUpperCase();
   const connId = extractConnectionIdFromPath(cleanPath);
   const requestOptions = { ...options };
 
-  // Client-side AES-256-GCM E2EE Encryption BEFORE message leaves the device!
-  if (
-    method === 'POST' &&
-    connId &&
-    cleanPath.endsWith('/messages') &&
-    typeof requestOptions.body === 'string' &&
-    requestOptions.body
-  ) {
-    try {
-      const parsedBody = JSON.parse(requestOptions.body);
-      const keyCtx = resolveActiveE2eeKeyContext(urlContext?.token || '', connId);
-      if (keyCtx.verificationCode && !keyCtx.locked) {
-        const encryptedPayload = await encryptMessageRecord(parsedBody, keyCtx);
-        requestOptions.body = JSON.stringify(encryptedPayload);
-      }
-    } catch {
-      // ignore parse errors
-    }
-  }
-
+  const priorityLane = classifyEndpointPriority(cleanPath, method);
   const headers = { ...(requestOptions.headers || {}) };
   if (!(requestOptions.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
   headers['X-Device-Id'] = getClientDeviceId();
+  headers['X-AfterDark-Version'] = APP_VERSION;
+  headers['X-AfterDark-Priority'] = priorityLane;
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -1162,8 +1164,6 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
       candidateBases.push(`${cleanOrigin}/api`);
     }
   }
-  // The Render guest connector is a static site and has no /api backend.
-  // Route guest requests to the shared Vercel Social Universe API instead.
   if (typeof window !== 'undefined' && /(^|\.)afterdark-guest-connector\.onrender\.com$/i.test(window.location.hostname)) {
     candidateBases.push(`${STABLE_PUBLIC_ORIGIN}/api`);
   }
@@ -1174,10 +1174,18 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
 
   for (const base of candidateBases) {
     try {
-      const response = await fetch(`${base}${path}`, {
-        ...requestOptions,
-        headers
-      });
+      const reqStartedAt = Date.now();
+      const response = await executeWithTrafficControl(
+        `${base}${normalizedPath}`,
+        method,
+        priorityLane,
+        () =>
+          fetch(`${base}${normalizedPath}`, {
+            ...requestOptions,
+            headers
+          })
+      );
+      recordServerTrafficHeaders(response, Date.now() - reqStartedAt);
       const contentType = String(response.headers.get('content-type') || '');
       if (contentType.includes('application/json')) {
         const data = await response.json();

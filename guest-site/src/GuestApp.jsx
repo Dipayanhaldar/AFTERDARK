@@ -13,7 +13,12 @@ import {
   IncomingMessageToast,
   ChatMediaInputActions,
   FlipkartBrandQuickStrip,
-  E2eeSecurityDrawer
+  E2eeSecurityDrawer,
+  VersionHeaderBadge,
+  VersionAndTrafficControlDrawer,
+  GoogleSignInButton,
+  APP_VERSION_TAG,
+  brandCatalog
 } from './commerce-catalog';
 import {
   playIncomingMessageSound,
@@ -31,6 +36,8 @@ import {
   saveSessionE2eeContext,
   setSessionHistoryLocked
 } from './couple-sync';
+import { signInWithGoogleAccount } from './google-auth';
+import { getAdaptivePollIntervalMs } from './traffic-control';
 import { ThreeRomanticScene } from './ThreeRomanticScene';
 import './style.css';
 
@@ -143,6 +150,8 @@ export function GuestApp() {
 
   // Hidden tool drawers inside chat so the UI is clean and uncluttered
   const [activeDrawer, setActiveDrawer] = useState('none'); // 'none' | 'photos' | 'calendar' | 'flirt' | 'rooftop3d' | 'store' | 'treasure' | 'e2ee'
+  const [showVersionDrawer, setShowVersionDrawer] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [activeBrandId, setActiveBrandId] = useState('flipkart_minutes');
   const [e2eeRefreshTick, setE2eeRefreshTick] = useState(0);
   const [userCity, setUserCity] = useState('Hyderabad');
@@ -414,13 +423,35 @@ export function GuestApp() {
       }
     };
 
-    const interval = setInterval(refresh, 2000);
+    const pollMs = getAdaptivePollIntervalMs(2000, stage === 'chat' && Boolean(connection?.id));
+    const interval = setInterval(refresh, pollMs);
     const unsubscribe = subscribeToCoupleSync(refresh);
     return () => {
       clearInterval(interval);
       unsubscribe();
     };
   }, [stage, guestToken, connection?.id]);
+
+  async function handleGoogleQuickFill() {
+    clearFeedback();
+    setGoogleBusy(true);
+    try {
+      const result = await signInWithGoogleAccount(resilientApiRequest);
+      if (result.cancelled) return;
+      if (result.ok && result.user) {
+        setGuestName(result.user.displayName || guestName);
+        setBanner(
+          `✅ Google Account verified as ${result.user.displayName} (${result.user.email})! Enter your partner’s 6-digit OTP below to pair ♥`
+        );
+      } else if (result.error) {
+        setError(result.error);
+      }
+    } catch (err) {
+      setError(err?.message || 'Google verification failed.');
+    } finally {
+      setGoogleBusy(false);
+    }
+  }
 
   async function acceptInvite(event) {
     event.preventDefault();
@@ -838,13 +869,19 @@ export function GuestApp() {
             <span className="ad-logo-star-dot" />
           </span>
           <div className="guest-brand-text">
-            <span className="guest-brand-name">AFTERDARK · E2EE Private 1-on-1 Room</span>
+            <span className="guest-brand-name">
+              AFTERDARK · E2EE Private 1-on-1 Room{' '}
+              <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 800 }}>
+                {APP_VERSION_TAG}
+              </span>
+            </span>
             <span className="guest-brand-sub">
-              AES-256-GCM Encrypted · Zero-Knowledge Link · Flipkart &amp; 38+ Brands Built-in
+              AES-256-GCM Encrypted · APK Santoor Alert · Flipkart &amp; {brandCatalog.length} Top Indian Brands
             </span>
           </div>
         </div>
         <div className="guest-topbar-actions">
+          <VersionHeaderBadge onClick={() => setShowVersionDrawer((prev) => !prev)} />
           <button
             type="button"
             className={`guest-tool-btn ${activeDrawer === 'e2ee' ? 'active' : ''}`}
@@ -898,6 +935,17 @@ export function GuestApp() {
         onTestSound={() => playIncomingMessageSound(true, 'guest')}
         onDismiss={() => setIncomingToast(null)}
       />
+
+      {showVersionDrawer && (
+        <div style={{ marginTop: '10px' }}>
+          <VersionAndTrafficControlDrawer
+            open={showVersionDrawer}
+            onClose={() => setShowVersionDrawer(false)}
+            viewerRole="guest"
+            onTriggerTestApkNotification={(toast) => setIncomingToast(toast)}
+          />
+        </div>
+      )}
 
       {(banner || error) && (
         <div className="guest-banner-wrap">
@@ -1003,8 +1051,16 @@ export function GuestApp() {
             <p className="guest-hero-lead">
               No account or login needed — built for both <strong>couples &amp; best friends (boy–girl duos)</strong>. Confirm your consent and enter the{' '}
               <strong>6-digit passcode</strong> shared by{' '}
-              {invitePreview?.creatorDisplayName || 'your friend'} to open your private chat.
+              {invitePreview?.creatorDisplayName || 'your friend'} to open your private chat, or optionally autofill your profile with Google.
             </p>
+
+            <div style={{ maxWidth: '420px', marginBottom: '12px' }}>
+              <GoogleSignInButton
+                onClick={handleGoogleQuickFill}
+                busy={googleBusy || busy}
+                label="Quick-Fill Identity with Google (Optional)"
+              />
+            </div>
 
             <form className="guest-otp-form" onSubmit={acceptInvite}>
               <div className="guest-form-grid">
@@ -1175,6 +1231,17 @@ export function GuestApp() {
                   title="Toggle incoming message chime sound"
                 >
                   {soundEnabled ? '🔔 Sound: ON' : '🔇 Sound: OFF'}
+                </button>
+                <button
+                  type="button"
+                  className={`guest-tool-btn ${showVersionDrawer ? 'active' : ''}`}
+                  onClick={() => setShowVersionDrawer((prev) => !prev)}
+                  style={{
+                    borderColor: 'rgba(56, 189, 248, 0.55)',
+                    color: '#bae6fd'
+                  }}
+                >
+                  📱 {APP_VERSION_TAG} · APK Sound &amp; Traffic
                 </button>
               </div>
             </div>

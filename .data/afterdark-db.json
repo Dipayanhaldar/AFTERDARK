@@ -306,6 +306,19 @@
         "__type": "ObjectId",
         "value": "6aec595510baa6d5e7e5499c"
       }
+    },
+    {
+      "email": "ayaan.google@example.com",
+      "displayName": "Ayaan (Google Verified)",
+      "handle": "Ayaan (Google Verified)",
+      "googleUid": "",
+      "photoURL": "",
+      "authProvider": "google",
+      "createdAt": "2026-11-05T11:30:45.638Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec68e56c2fb36286987ab7"
+      }
     }
   ],
   "connections": [
@@ -888,6 +901,18 @@
       "_id": {
         "__type": "ObjectId",
         "value": "6aec595510baa6d5e7e5499d"
+      }
+    },
+    {
+      "tokenHash": "b6e8af5456cff88bc03b0c7f0fd876096e108144a0f35172a0fe953f534e1633",
+      "userId": {
+        "__type": "ObjectId",
+        "value": "6aec68e56c2fb36286987ab7"
+      },
+      "createdAt": "2026-11-05T11:30:45.638Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec68e56c2fb36286987ab8"
       }
     }
   ],

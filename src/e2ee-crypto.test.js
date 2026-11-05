@@ -111,3 +111,55 @@ test('Custom E2EE passphrase adds second encryption layer on message records', a
   );
 });
 
+test('Release v2.0.2.3 manifest provides meaningful 4-segment version breakdown and store matrix', async () => {
+  const {
+    APP_VERSION,
+    VERSION_SEGMENTS,
+    VERSION_UPDATE_LOCATIONS,
+    STORE_COMPATIBILITY_MATRIX,
+    decodeVersionString
+  } = await import('./version-manifest.js');
+
+  assert.equal(APP_VERSION, '2.0.2.3');
+  assert.equal(VERSION_SEGMENTS.length, 4);
+  assert.equal(VERSION_SEGMENTS.map((s) => s.digit).join('.'), '2.0.2.3');
+  assert.equal(VERSION_UPDATE_LOCATIONS.length >= 6, true);
+  assert.equal(STORE_COMPATIBILITY_MATRIX.length >= 4, true);
+
+  const decoded = decodeVersionString('2.0.2.3');
+  assert.equal(decoded.majorGen, 2);
+  assert.equal(decoded.platformChannel, 0);
+  assert.equal(decoded.featureMilestone, 2);
+  assert.equal(decoded.patchScope, 3);
+});
+
+test('Top 100 Indian Brands catalog contains exactly 100 unique Indian brands for in-chat advertisements', async () => {
+  const { brandCatalog, detectBrandsInMessage } = await import('./commerce-data.js');
+  assert.equal(brandCatalog.length, 100);
+  const uniqueIds = new Set(brandCatalog.map((b) => b.id));
+  assert.equal(uniqueIds.size, 100);
+
+  // Verify newly added Indian brands (e.g. Meesho, Tata CLiQ, Kalyan Jewellers, Haldiram's) are detectable in chat
+  const detected = detectBrandsInMessage('Let us order sweets from Haldirams and check Kalyan Jewellers jhumka!');
+  assert.equal(detected.some((b) => b.id === 'haldirams' || b.id === 'kalyan_jewellers'), true);
+});
+
+test('Adaptive Traffic Control classifies Couple Chat & E2EE Auth into Priority P0/P1 lanes', async () => {
+  const { classifyEndpointPriority, TRAFFIC_LANES } = await import('./traffic-control.js');
+  assert.equal(
+    classifyEndpointPriority('/connections/conn_1/messages', 'POST'),
+    TRAFFIC_LANES.CRITICAL_CHAT
+  );
+  assert.equal(
+    classifyEndpointPriority('/auth/google', 'POST'),
+    TRAFFIC_LANES.AUTH_SESSION
+  );
+  assert.equal(
+    classifyEndpointPriority('/ai/analyze-chat', 'POST'),
+    TRAFFIC_LANES.BACKGROUND_AI
+  );
+});
+
+
+
+

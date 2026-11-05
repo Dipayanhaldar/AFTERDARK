@@ -269,20 +269,42 @@ function configureAndroidResources() {
 `;
   fs.writeFileSync(path.join(valuesDir, 'styles.xml'), stylesXml, 'utf8');
 
-  // Update AndroidManifest.xml for PhonePe Developer (Indus Appstore), Amazon Appstore, and GitHub Releases
+  // Update AndroidManifest.xml for PhonePe Developer (Indus Appstore), Amazon Appstore, Samsung Galaxy Store, and GitHub Releases
   const manifestPath = path.join(ANDROID_MAIN, 'AndroidManifest.xml');
   if (fs.existsSync(manifestPath)) {
     let manifest = fs.readFileSync(manifestPath, 'utf8');
+    if (!manifest.includes('android.permission.POST_NOTIFICATIONS')) {
+      manifest = manifest.replace(
+        '<application',
+        '<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.VIBRATE" />\n    <application'
+      );
+    }
     if (!manifest.includes('android:resizeableActivity')) {
       manifest = manifest.replace(
         '<application',
-        '<application\n        android:resizeableActivity="true"\n        android:hardwareAccelerated="true"'
+        '<application\n        android:resizeableActivity="true"\n        android:hardwareAccelerated="true"\n        android:supportsRtl="true"'
+      );
+    }
+    if (!manifest.includes('android.allow_multiple_resumed_activities')) {
+      manifest = manifest.replace(
+        '</application>',
+        '        <meta-data android:name="android.allow_multiple_resumed_activities" android:value="true" />\n        <meta-data android:name="com.AfterDark.ReleaseVersion" android:value="2.0.2.3" />\n    </application>'
       );
     }
     fs.writeFileSync(manifestPath, manifest, 'utf8');
   }
 
-  console.log('[configure-android-apk] Generated AFTERDARK launcher icons, dark theme, and notch protection.');
+  // Sync versionCode 2023 and versionName "2.0.2.3" in android/app/build.gradle if present
+  const gradlePath = path.resolve(process.cwd(), 'android/app/build.gradle');
+  if (fs.existsSync(gradlePath)) {
+    let gradle = fs.readFileSync(gradlePath, 'utf8');
+    gradle = gradle.replace(/versionCode\s+\d+/, 'versionCode 2023');
+    gradle = gradle.replace(/versionName\s+"[^"]+"/, 'versionName "2.0.2.3"');
+    fs.writeFileSync(gradlePath, gradle, 'utf8');
+  }
+
+  console.log('[configure-android-apk] Generated AFTERDARK v2.0.2.3 launcher icons, APK notification permissions, and multi-store manifest.');
 }
 
 configureAndroidResources();
+

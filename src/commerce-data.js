@@ -1,3 +1,6 @@
+import { buildTop100IndianBrandCatalog } from './indian-brands-100.js';
+
+
 export const GOOGLE_MAPS_DEMO_KEY =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_MAPS_API_KEY) ||
   'AIzaSyCuRh0QODBCDYGB-tGOScvs3C8TEfy3Fuw';
@@ -351,18 +354,18 @@ export const CITY_PROFILES = {
 };
 
 export const brandCategories = [
-  { id: 'all', label: '✨ All 38+ Top Indian Apps' },
-  { id: 'instant', label: '⚡ 10-Min Quick Commerce (Blinkit / Flipkart Minutes / Zepto / Instamart)' },
-  { id: 'food', label: '🍲 Food, Cafes & Dining (Zomato / Swiggy / Café Niloufer / Starbucks)' },
-  { id: 'shopping', label: '🛍️ Shopping & Fashion (Amazon / Flipkart / Myntra / Ajio / Meesho)' },
-  { id: 'beauty', label: '💄 Beauty, Perfume & Wellness (Nykaa / Tira / Bella Vita / Durex)' },
-  { id: 'stays', label: '🏨 Stays, Rides & Movies (OYO / MakeMyTrip / Uber / BookMyShow)' },
-  { id: 'gifts', label: '🌹 Roses, Cakes & Gifting (FNP / IGP / Cadbury)' }
+  { id: 'all', label: '✨ All 100 Top Indian Brands' },
+  { id: 'instant', label: '⚡ 10-Min Quick Commerce (Blinkit / Flipkart Minutes / Zepto / Instamart / bbnow)' },
+  { id: 'food', label: '🍲 Food, Cafes & Dining (Zomato / Swiggy / Behrouz / Niloufer / Theobroma)' },
+  { id: 'shopping', label: '🛍️ Fashion, Jewellery & Gadgets (Flipkart / Amazon / Myntra / Tanishq / boAt)' },
+  { id: 'beauty', label: '💄 Beauty, Perfume & Grooming (Nykaa / Tira / Minimalist / Forest Essentials)' },
+  { id: 'stays', label: '🏨 Stays, Travel, Rides & OTT (OYO / Taj / MakeMyTrip / Uber / JioHotstar)' },
+  { id: 'gifts', label: '🌹 Roses, Cakes & Gifting (FNP / IGP / Archies / Chumbak)' }
 ];
 
 const logoFor = (domain) => `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 
-export const brandCatalog = [
+const BASE_BRAND_CATALOG = [
   // ================= 1. QUICK COMMERCE & INSTANT DELIVERY =================
   {
     id: 'flipkart_minutes',
@@ -2426,6 +2429,8 @@ export const brandCatalog = [
     ]
   }
 ];
+
+export const brandCatalog = buildTop100IndianBrandCatalog(BASE_BRAND_CATALOG);
 
 export const flirtyHindiDrops = [
   {

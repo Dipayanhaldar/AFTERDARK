@@ -2198,3 +2198,125 @@ a {
   }
 }
 
+/* ============================================================================
+ * RELEASE v2.0.2.3: ANDROID APK HEADS-UP NOTIFICATION ANIMATION, SOUND EQUALIZER,
+ * GOOGLE SIGN-IN BUTTON & UNIVERSAL MULTI-STORE / FOLDABLE COMPATIBILITY
+ * ============================================================================ */
+
+@keyframes adApkHeadsUpEnter {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, -34px, 0) scale(0.92);
+  }
+  65% {
+    opacity: 1;
+    transform: translate3d(0, 5px, 0) scale(1.015);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes adApkBorderPulse {
+  0%,
+  100% {
+    box-shadow: 0 20px 48px rgba(56, 189, 248, 0.35), 0 0 24px rgba(244, 114, 182, 0.25);
+  }
+  50% {
+    box-shadow: 0 22px 54px rgba(56, 189, 248, 0.6), 0 0 32px rgba(99, 102, 241, 0.45);
+  }
+}
+
+@keyframes adEqBounce {
+  0%,
+  100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.ad-incoming-toast-card {
+  animation: adApkHeadsUpEnter 0.44s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.ad-apk-heads-up-toast {
+  animation:
+    adApkHeadsUpEnter 0.46s cubic-bezier(0.22, 1, 0.36, 1) forwards,
+    adApkBorderPulse 2.4s ease-in-out infinite;
+}
+
+.ad-sound-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.ad-eq-bar {
+  width: 2.5px;
+  height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #38bdf8, #ff4f9a);
+  transform-origin: bottom;
+  animation: adEqBounce 0.75s ease-in-out infinite;
+}
+
+.ad-eq-bar:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.ad-eq-bar:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.ad-eq-bar:nth-child(4) {
+  animation-delay: 0.45s;
+}
+
+.gsi-material-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 22px rgba(66, 133, 244, 0.35) !important;
+}
+
+.ad-version-pill {
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.ad-version-pill:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(56, 189, 248, 0.28);
+}
+
+/* Samsung Galaxy Z Fold Cover Screen & Compact Phones (<= 340px) */
+@media (max-width: 340px) {
+  .ad-shell,
+  .guest-shell {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .ad-brand-title,
+  .guest-brand-name {
+    font-size: 15px;
+  }
+
+  .ad-incoming-toast-card {
+    right: 8px !important;
+    left: 8px !important;
+    width: auto !important;
+  }
+}
+
+/* Amazon Fire HD Tablets, Samsung Galaxy Tab & iPad Split-View (768px - 1080px) */
+@media (min-width: 768px) and (max-width: 1080px) {
+  .ad-shell,
+  .guest-shell {
+    max-width: 980px;
+    margin: 0 auto;
+  }
+}
+
+

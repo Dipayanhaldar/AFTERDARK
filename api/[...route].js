@@ -3,6 +3,15 @@ import { promisify } from 'node:util';
 import { getLocalDatabase, ObjectId } from './local-db.js';
 import { brandCatalog, CITY_PROFILES, analyzeChatContextLocally } from '../src/commerce-data.js';
 import {
+  APP_VERSION,
+  APP_VERSION_TAG,
+  APP_VERSION_CODENAME,
+  VERSION_SEGMENTS,
+  VERSION_UPDATE_LOCATIONS,
+  STORE_COMPATIBILITY_MATRIX,
+  VERSION_CHANGELOG
+} from '../src/version-manifest.js';
+import {
   verifyOtpSignature,
   deriveE2eeFingerprint,
   isE2eeCiphertext,
@@ -13,15 +22,83 @@ import { GoogleGenAI, Type } from '@google/genai';
 
 const scrypt = promisify(scryptCb);
 
-function setCorsHeaders(req, res) {
+// =========================================================================
+// ADAPTIVE TRAFFIC CONTROL & SURGE PROTECTION ENGINE (SERVER-SIDE v2.0.2.3)
+// =========================================================================
+const trafficTimestamps = [];
+const clientTokenBuckets = new Map();
+let peakRequestsPerMinute = 14;
+let totalRequestsServed = 0;
+
+function evaluateServerTraffic(req, action = '') {
+  const now = Date.now();
+  totalRequestsServed += 1;
+  trafficTimestamps.push(now);
+  while (trafficTimestamps.length > 0 && now - trafficTimestamps[0] > 60000) {
+    trafficTimestamps.shift();
+  }
+  const rpm = trafficTimestamps.length;
+  if (rpm > peakRequestsPerMinute) peakRequestsPerMinute = rpm;
+
+  const mode =
+    rpm > 360 ? 'SURGE_SHIELD_ACTIVE' : rpm > 160 ? 'ELEVATED' : 'NORMAL';
+  const recommendedPollMs =
+    mode === 'SURGE_SHIELD_ACTIVE' ? 4600 : mode === 'ELEVATED' ? 3400 : 2500;
+
+  // Token-bucket per client IP/device with Priority Couple-Chat lane exemption
+  const clientKey =
+    String(req?.headers?.['x-device-id'] || req?.headers?.['x-forwarded-for'] || 'anon').slice(
+      0,
+      64
+    );
+  const priorityHeader = String(req?.headers?.['x-afterdark-priority'] || '');
+  const isPriorityLane =
+    priorityHeader === 'CRITICAL_CHAT' ||
+    priorityHeader === 'AUTH_SESSION' ||
+    action.includes('messages') ||
+    action.includes('auth/') ||
+    action.includes('invites') ||
+    action.includes('approve');
+
+  let bucket = clientTokenBuckets.get(clientKey);
+  if (!bucket || now - bucket.lastRefill > 10000) {
+    bucket = { tokens: 120, lastRefill: now };
+    clientTokenBuckets.set(clientKey, bucket);
+  }
+  if (!isPriorityLane) {
+    bucket.tokens = Math.max(0, bucket.tokens - 1);
+  }
+
+  return {
+    rpm,
+    peakRpm: peakRequestsPerMinute,
+    totalRequestsServed,
+    mode,
+    recommendedPollMs,
+    isPriorityLane,
+    throttled: !isPriorityLane && bucket.tokens <= 0
+  };
+}
+
+function setCorsHeaders(req, res, trafficInfo = null) {
   const origin = req?.headers?.origin || '*';
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-Requested-With, Accept, X-Device-Id, X-Client-Ip, X-User-Email, X-User-Name'
+    'Content-Type, Authorization, X-Requested-With, Accept, X-Device-Id, X-Client-Ip, X-User-Email, X-User-Name, X-AfterDark-Version, X-AfterDark-Priority'
   );
+  res.setHeader(
+    'Access-Control-Expose-Headers',
+    'X-AfterDark-Version, X-AfterDark-Traffic-Mode, X-AfterDark-Poll-Ms, X-AfterDark-Rpm'
+  );
+  res.setHeader('X-AfterDark-Version', APP_VERSION);
+  if (trafficInfo) {
+    res.setHeader('X-AfterDark-Traffic-Mode', trafficInfo.mode);
+    res.setHeader('X-AfterDark-Poll-Ms', String(trafficInfo.recommendedPollMs));
+    res.setHeader('X-AfterDark-Rpm', String(trafficInfo.rpm));
+  }
 }
 
 function getClientIp(req, body = {}) {
@@ -263,8 +340,57 @@ export default async function handler(req, res) {
       .map((part) => decodeURIComponent(part));
     const action = parts.join('/');
 
+    const trafficInfo = evaluateServerTraffic(req, action);
+    setCorsHeaders(req, res, trafficInfo);
+
+    if (trafficInfo.throttled) {
+      return json(
+        res,
+        429,
+        {
+          error: 'Traffic Surge Shield Active: Coalescing background requests. Priority Couple Chat remains 100% open.',
+          traffic: trafficInfo
+        },
+        req
+      );
+    }
+
     if (action === 'health' && req.method === 'GET') {
-      return json(res, 200, { ok: true, service: 'afterdark-hyderabad-couples', e2ee: 'AES-256-GCM-PBKDF2' }, req);
+      return json(
+        res,
+        200,
+        {
+          ok: true,
+          version: APP_VERSION,
+          versionTag: APP_VERSION_TAG,
+          codename: APP_VERSION_CODENAME,
+          service: 'afterdark-hyderabad-couples',
+          e2ee: 'AES-256-GCM-PBKDF2',
+          indianBrandsCount: brandCatalog.length,
+          traffic: trafficInfo
+        },
+        req
+      );
+    }
+
+    if ((action === 'version' || action === 'traffic/status') && req.method === 'GET') {
+      return json(
+        res,
+        200,
+        {
+          ok: true,
+          version: APP_VERSION,
+          versionTag: APP_VERSION_TAG,
+          codename: APP_VERSION_CODENAME,
+          segments: VERSION_SEGMENTS,
+          updateLocations: VERSION_UPDATE_LOCATIONS,
+          storeMatrix: STORE_COMPATIBILITY_MATRIX,
+          changelog: VERSION_CHANGELOG,
+          indianBrandsCount: brandCatalog.length,
+          traffic: trafficInfo
+        },
+        req
+      );
     }
 
     if (action === 'guest-repo/manifest' && req.method === 'GET') {
@@ -573,7 +699,90 @@ Draft: ${draftText || '(none)'}`,
             id: user._id.toString(),
             email: user.email,
             displayName: name,
-            handle: name
+            handle: name,
+            photoURL: user.photoURL || '',
+            authProvider: user.authProvider || 'password'
+          }
+        },
+        req
+      );
+    }
+
+    // Google Account Authentication (Firebase Auth / Google Sign-In)
+    if (action === 'auth/google' && req.method === 'POST') {
+      const email = String(body.email || '')
+        .trim()
+        .toLowerCase();
+      const googleUid = String(body.uid || body.sub || '').trim();
+      const photoURL = String(body.photoURL || '').trim();
+      const displayName =
+        String(body.displayName || '')
+          .trim()
+          .slice(0, 40) ||
+        email.split('@')[0] ||
+        'Google Partner';
+
+      if (!email || !email.includes('@')) {
+        return json(res, 400, { error: 'Valid Google Account email is required.' }, req);
+      }
+
+      let user = await db.collection('users').findOne({ email });
+      const nowIso = new Date().toISOString();
+
+      if (!user) {
+        const created = await db.collection('users').insertOne({
+          email,
+          displayName,
+          handle: displayName,
+          googleUid,
+          photoURL,
+          authProvider: 'google',
+          createdAt: nowIso
+        });
+        user = {
+          _id: created.insertedId,
+          email,
+          displayName,
+          handle: displayName,
+          googleUid,
+          photoURL,
+          authProvider: 'google'
+        };
+      } else {
+        await db.collection('users').updateOne(
+          { _id: user._id },
+          {
+            $set: {
+              displayName: user.displayName || displayName,
+              googleUid: googleUid || user.googleUid || '',
+              photoURL: photoURL || user.photoURL || '',
+              authProvider: 'google',
+              updatedAt: nowIso
+            }
+          }
+        );
+      }
+
+      const sessionToken = randomToken(32);
+      await db.collection('sessions').insertOne({
+        tokenHash: hashValue(sessionToken),
+        userId: user._id,
+        createdAt: nowIso
+      });
+
+      const resolvedName = user.displayName || displayName;
+      return json(
+        res,
+        200,
+        {
+          sessionToken,
+          user: {
+            id: user._id.toString(),
+            email: user.email,
+            displayName: resolvedName,
+            handle: resolvedName,
+            photoURL: photoURL || user.photoURL || '',
+            authProvider: 'google'
           }
         },
         req

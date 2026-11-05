@@ -14,9 +14,35 @@ import {
   getPersonalizedInChatBrandAd,
   analyzeChatContextLocally
 } from './commerce-data';
-import { getGenZSeenStatusText } from './notification-sound';
+import {
+  getGenZSeenStatusText,
+  isAndroidApkRuntime,
+  setSimulatedApkNotificationMode,
+  playAndroidApkNotificationSound,
+  playIncomingMessageSound,
+  requestNativeNotificationPermission
+} from './notification-sound';
+import {
+  APP_VERSION,
+  APP_VERSION_TAG,
+  VERSION_SEGMENTS,
+  VERSION_UPDATE_LOCATIONS,
+  STORE_COMPATIBILITY_MATRIX,
+  VERSION_CHANGELOG
+} from './version-manifest';
+import {
+  getClientTrafficSnapshot,
+  subscribeTrafficTelemetry,
+  getDeviceCompatibilityProfile
+} from './traffic-control';
 
 export {
+  APP_VERSION,
+  APP_VERSION_TAG,
+  VERSION_SEGMENTS,
+  VERSION_UPDATE_LOCATIONS,
+  STORE_COMPATIBILITY_MATRIX,
+  VERSION_CHANGELOG,
   GOOGLE_MAPS_DEMO_KEY,
   PUBLIC_SHARED_APP_URL,
   CITY_PROFILES,
@@ -102,7 +128,7 @@ export function BrandLogoBadge({ brand, size = 26, showTextBadge = true }) {
 }
 
 /**
- * Floating Incoming Message Notification Banner with Sound Control
+ * Floating Incoming Message Notification Banner with Smooth Android APK Animation & Distinct Sound Control
  */
 export function IncomingMessageToast({
   notification,
@@ -113,43 +139,60 @@ export function IncomingMessageToast({
 }) {
   if (!notification) return null;
 
+  const isApk = Boolean(notification.isAndroidApk || isAndroidApkRuntime());
+  const soundLabel =
+    notification.soundProfile ||
+    (isApk
+      ? 'android-apk-santoor-shimmer'
+      : notification.viewerRole === 'guest'
+      ? 'web-guest-celestial-harp'
+      : 'web-host-velvet-marimba');
+
   return (
     <div
       role="status"
       aria-live="polite"
+      className={`ad-incoming-toast-card ${isApk ? 'ad-apk-heads-up-toast' : ''}`}
       style={{
         position: 'fixed',
-        top: '18px',
-        right: '18px',
+        top: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+        right: '16px',
         zIndex: 10000,
-        maxWidth: '380px',
-        width: 'calc(100vw - 36px)',
-        background: 'linear-gradient(135deg, #2b0938 0%, #150720 100%)',
-        border: '1.5px solid #ff4f9a',
-        borderRadius: '16px',
-        padding: '12px 14px',
-        boxShadow: '0 18px 42px rgba(255, 79, 154, 0.35)',
+        maxWidth: '410px',
+        width: 'calc(100vw - 32px)',
+        background: isApk
+          ? 'linear-gradient(135deg, #0b192c 0%, #1e1136 52%, #2b0938 100%)'
+          : 'linear-gradient(135deg, #2b0938 0%, #150720 100%)',
+        border: isApk ? '1.5px solid #38bdf8' : '1.5px solid #ff4f9a',
+        borderRadius: '18px',
+        padding: '13px 15px',
+        boxShadow: isApk
+          ? '0 20px 48px rgba(56, 189, 248, 0.35), 0 0 24px rgba(244, 114, 182, 0.25)'
+          : '0 18px 42px rgba(255, 79, 154, 0.35)',
         color: '#ffffff',
         display: 'flex',
         flexDirection: 'column',
-        gap: '6px'
+        gap: '8px'
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span
             style={{
-              background: '#ff4f9a',
-              color: '#111',
-              fontWeight: 800,
-              fontSize: '0.7rem',
-              padding: '2px 8px',
-              borderRadius: '99px'
+              background: isApk
+                ? 'linear-gradient(135deg, #38bdf8, #818cf8)'
+                : '#ff4f9a',
+              color: '#090d16',
+              fontWeight: 900,
+              fontSize: '0.68rem',
+              padding: '2px 9px',
+              borderRadius: '99px',
+              letterSpacing: '0.03em'
             }}
           >
-            🔔 NEW MESSAGE
+            {isApk ? '📱 ANDROID APK PUSH' : '🔔 NEW MESSAGE'}
           </span>
-          <strong style={{ fontSize: '0.88rem', color: '#ffd1e6' }}>
+          <strong style={{ fontSize: '0.88rem', color: isApk ? '#bae6fd' : '#ffd1e6' }}>
             {notification.senderName || 'Your Partner'} texted you ♥
           </strong>
         </div>
@@ -159,9 +202,9 @@ export function IncomingMessageToast({
           style={{
             background: 'transparent',
             border: 'none',
-            color: 'rgba(255,255,255,0.7)',
+            color: 'rgba(255,255,255,0.75)',
             cursor: 'pointer',
-            fontSize: '0.88rem'
+            fontSize: '0.9rem'
           }}
         >
           ✕
@@ -171,11 +214,12 @@ export function IncomingMessageToast({
       <p
         style={{
           margin: 0,
-          fontSize: '0.84rem',
+          fontSize: '0.85rem',
           color: '#f8fafc',
-          background: 'rgba(255,255,255,0.06)',
-          padding: '7px 10px',
-          borderRadius: '10px',
+          background: 'rgba(255,255,255,0.07)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          padding: '8px 11px',
+          borderRadius: '11px',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap'
@@ -184,11 +228,47 @@ export function IncomingMessageToast({
         “{notification.text}”
       </p>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-        <span style={{ fontSize: '0.72rem', opacity: 0.78 }}>
-          {soundEnabled ? '🔊 Chime sound played' : '🔇 Sound muted'}
-        </span>
-        <div style={{ display: 'flex', gap: '6px' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '8px',
+          flexWrap: 'wrap'
+        }}
+      >
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+          <span className="ad-sound-eq" aria-hidden="true">
+            <span className="ad-eq-bar" />
+            <span className="ad-eq-bar" />
+            <span className="ad-eq-bar" />
+            <span className="ad-eq-bar" />
+          </span>
+          <span style={{ fontSize: '0.7rem', color: isApk ? '#7dd3fc' : '#f9a8d4', fontWeight: 700 }}>
+            {soundEnabled
+              ? isApk
+                ? '🎵 APK Crystal Santoor & Sub-Bass Chime'
+                : `🔊 Web Chime (${soundLabel})`
+              : '🔇 Sound Muted'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => playAndroidApkNotificationSound(true)}
+            style={{
+              background: 'rgba(56, 189, 248, 0.16)',
+              border: '1px solid rgba(56, 189, 248, 0.45)',
+              color: '#bae6fd',
+              borderRadius: '6px',
+              padding: '2px 8px',
+              fontSize: '0.69rem',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            📱 APK Chime
+          </button>
           {onTestSound && (
             <button
               type="button"
@@ -199,11 +279,11 @@ export function IncomingMessageToast({
                 color: '#fff',
                 borderRadius: '6px',
                 padding: '2px 7px',
-                fontSize: '0.7rem',
+                fontSize: '0.69rem',
                 cursor: 'pointer'
               }}
             >
-              🔊 Replay Chime
+              🔊 Web Chime
             </button>
           )}
           {onToggleSound && (
@@ -216,11 +296,11 @@ export function IncomingMessageToast({
                 color: '#fff',
                 borderRadius: '6px',
                 padding: '2px 7px',
-                fontSize: '0.7rem',
+                fontSize: '0.69rem',
                 cursor: 'pointer'
               }}
             >
-              {soundEnabled ? 'Mute Alerts' : 'Unmute'}
+              {soundEnabled ? 'Mute' : 'Unmute'}
             </button>
           )}
         </div>
@@ -2558,5 +2638,448 @@ export function E2eeSecurityDrawer({
     </div>
   );
 }
+
+/**
+ * Official Google Sign-In Button (Material 4-color G logo + 1-click hassle-free login)
+ */
+export function GoogleSignInButton({ onClick, busy = false, label = 'Continue with Google Account' }) {
+  return (
+    <button
+      type="button"
+      className="gsi-material-button"
+      onClick={onClick}
+      disabled={busy}
+      style={{
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '10px',
+        padding: '11px 16px',
+        borderRadius: '12px',
+        background: '#ffffff',
+        color: '#1f1f1f',
+        border: '1px solid #dadce0',
+        fontWeight: 700,
+        fontSize: '0.9rem',
+        cursor: busy ? 'wait' : 'pointer',
+        boxShadow: '0 4px 14px rgba(0, 0, 0, 0.25)',
+        transition: 'transform 0.15s ease, box-shadow 0.15s ease'
+      }}
+    >
+      <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
+        <path
+          fill="#EA4335"
+          d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
+        />
+        <path
+          fill="#4285F4"
+          d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
+        />
+        <path
+          fill="#FBBC05"
+          d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
+        />
+        <path
+          fill="#34A853"
+          d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
+        />
+      </svg>
+      <span>{busy ? 'Signing in with Google...' : label}</span>
+      <span
+        style={{
+          fontSize: '0.66rem',
+          background: 'rgba(16, 185, 129, 0.14)',
+          color: '#047857',
+          padding: '2px 6px',
+          borderRadius: '99px',
+          fontWeight: 800
+        }}
+      >
+        Secured
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Header Version & Traffic Control Pill (`v2.0.2.3`)
+ */
+export function VersionHeaderBadge({ onClick }) {
+  const [traffic, setTraffic] = useState(() => getClientTrafficSnapshot());
+
+  useEffect(() => {
+    return subscribeTrafficTelemetry(setTraffic);
+  }, []);
+
+  const modeColor =
+    traffic.mode === 'surge'
+      ? '#f59e0b'
+      : traffic.mode === 'elevated'
+      ? '#38bdf8'
+      : '#10b981';
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="ad-version-pill"
+      title={`Release ${APP_VERSION} · 100 Indian Brands · Traffic Mode: ${traffic.mode.toUpperCase()} · Click for Update Locations & APK Alerts`}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '5px 11px',
+        borderRadius: '999px',
+        background: 'rgba(15, 23, 42, 0.78)',
+        border: `1px solid ${modeColor}88`,
+        color: '#f8fafc',
+        fontSize: '0.73rem',
+        fontWeight: 800,
+        cursor: 'pointer'
+      }}
+    >
+      <span
+        style={{
+          width: '7px',
+          height: '7px',
+          borderRadius: '50%',
+          background: modeColor,
+          boxShadow: `0 0 8px ${modeColor}`
+        }}
+      />
+      <span>{APP_VERSION_TAG}</span>
+      <span style={{ opacity: 0.78, fontSize: '0.67rem' }}>
+        · 100 Brands · {traffic.mode === 'normal' ? 'Traffic OK' : traffic.mode.toUpperCase()}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * Interactive Drawer for:
+ * 1. Meaningful 4-Segment Version (`2.0.2.3`) Breakdown & Update Location Hints
+ * 2. Android APK Notification Animation & Distinct Sound Tester (`Crystal Santoor & Sub-Bass Shimmer`)
+ * 3. Adaptive Traffic Control & Surge Protection Telemetry
+ * 4. Multi-Store & Universal Device Compatibility Matrix (Amazon, PhonePe, Samsung, GitHub)
+ */
+export function VersionAndTrafficControlDrawer({
+  open,
+  onClose,
+  viewerRole = 'creator',
+  onTriggerTestApkNotification
+}) {
+  const [traffic, setTraffic] = useState(() => getClientTrafficSnapshot());
+  const [serverTraffic, setServerTraffic] = useState(null);
+  const [apkModeSimulated, setApkModeSimulated] = useState(() => isAndroidApkRuntime());
+  const deviceProfile = useMemo(() => getDeviceCompatibilityProfile(), []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const unsub = subscribeTrafficTelemetry(setTraffic);
+    fetch('/api/traffic/status')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.traffic) setServerTraffic(data.traffic);
+      })
+      .catch(() => {});
+    return unsub;
+  }, [open]);
+
+  if (!open) return null;
+
+  function handleToggleApkSimulation() {
+    const next = !apkModeSimulated;
+    setSimulatedApkNotificationMode(next);
+    setApkModeSimulated(next);
+    if (next) {
+      playAndroidApkNotificationSound(true);
+    }
+  }
+
+  async function handleTestApkPushBanner() {
+    await requestNativeNotificationPermission();
+    setSimulatedApkNotificationMode(true);
+    setApkModeSimulated(true);
+    playAndroidApkNotificationSound(true);
+    if (onTriggerTestApkNotification) {
+      onTriggerTestApkNotification({
+        senderName: viewerRole === 'creator' ? 'Zoya (Partner APK)' : 'Ayaan (Host APK)',
+        text: 'Hey jaan ♥ Testing our smooth Android APK notification & Santoor chime!',
+        at: Date.now(),
+        isAndroidApk: true,
+        soundProfile: 'android-apk-santoor-shimmer',
+        viewerRole
+      });
+    }
+  }
+
+  return (
+    <div
+      className="ad-collapsible-drawer"
+      style={{
+        margin: '8px 0 12px',
+        padding: '14px 16px',
+        borderRadius: '16px',
+        background: 'linear-gradient(145deg, rgba(12, 19, 38, 0.96), rgba(29, 12, 46, 0.96))',
+        border: '1.5px solid rgba(56, 189, 248, 0.45)',
+        boxShadow: '0 16px 38px rgba(0, 0, 0, 0.45)'
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '10px',
+          flexWrap: 'wrap',
+          marginBottom: '10px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span
+            style={{
+              background: 'linear-gradient(135deg, #38bdf8, #ec4899)',
+              color: '#090d16',
+              fontWeight: 900,
+              fontSize: '0.74rem',
+              padding: '3px 10px',
+              borderRadius: '99px'
+            }}
+          >
+            RELEASE {APP_VERSION_TAG}
+          </span>
+          <strong style={{ color: '#f8fafc', fontSize: '0.9rem' }}>
+            Semantic 4-Segment Version Map · APK Alerts · Traffic Control · 100 Indian Brands
+          </strong>
+        </div>
+        {onClose && (
+          <button type="button" className="ad-btn-close" onClick={onClose}>
+            ✕ Close
+          </button>
+        )}
+      </div>
+
+      {/* SECTION 1: MEANINGFUL 4-SEGMENT VERSION BREAKDOWN (2.0.2.3) */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+          gap: '8px',
+          marginBottom: '12px'
+        }}
+      >
+        {VERSION_SEGMENTS.map((seg) => (
+          <div
+            key={seg.index || seg.code}
+            style={{
+              padding: '9px 11px',
+              borderRadius: '11px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid rgba(255, 255, 255, 0.1)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.7rem', color: '#38bdf8', fontWeight: 800 }}>
+                SEG #{seg.index} · {seg.code}
+              </span>
+              <span
+                style={{
+                  background: 'rgba(56, 189, 248, 0.18)',
+                  color: '#bae6fd',
+                  fontWeight: 900,
+                  fontSize: '0.82rem',
+                  padding: '1px 8px',
+                  borderRadius: '6px'
+                }}
+              >
+                {seg.digit}
+              </span>
+            </div>
+            <div style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f8fafc', marginTop: '3px' }}>
+              {seg.title}
+            </div>
+            <p style={{ margin: '3px 0 4px', fontSize: '0.71rem', color: '#cbd5e1' }}>
+              {seg.meaning}
+            </p>
+            <div style={{ fontSize: '0.67rem', color: '#94a3b8' }}>
+              📍 <code>{seg.hintLocation}</code>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* SECTION 2: ANDROID APK NOTIFICATION & DISTINCT SOUND TESTER */}
+      <div
+        style={{
+          padding: '10px 12px',
+          borderRadius: '12px',
+          background: 'rgba(56, 189, 248, 0.09)',
+          border: '1px solid rgba(56, 189, 248, 0.35)',
+          marginBottom: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '10px',
+          flexWrap: 'wrap'
+        }}
+      >
+        <div>
+          <div style={{ fontSize: '0.8rem', fontWeight: 800, color: '#bae6fd' }}>
+            📱 Android APK Notification &amp; Distinct Sound Engine (Different from Website Chime)
+          </div>
+          <p style={{ margin: '2px 0 0', fontSize: '0.72rem', color: '#cbd5e1' }}>
+            APK downloads play a <strong>Crystal Santoor &amp; Sub-Bass Shimmer (528Hz–1584Hz + Haptic Pulse)</strong> and show an animated Heads-Up Push Banner, completely separate from Web Host &amp; Guest chimes.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={handleTestApkPushBanner}
+            style={{
+              background: 'linear-gradient(135deg, #38bdf8, #6366f1)',
+              color: '#090d16',
+              border: 'none',
+              borderRadius: '9px',
+              padding: '7px 12px',
+              fontSize: '0.75rem',
+              fontWeight: 800,
+              cursor: 'pointer'
+            }}
+          >
+            🔔 Test Android APK Banner &amp; Sound
+          </button>
+          <button
+            type="button"
+            onClick={() => playIncomingMessageSound(true, viewerRole, false)}
+            style={{
+              background: 'rgba(255, 79, 154, 0.18)',
+              border: '1px solid rgba(255, 79, 154, 0.5)',
+              color: '#fbcfe8',
+              borderRadius: '9px',
+              padding: '7px 12px',
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            🌐 Compare Website Chime
+          </button>
+          <button
+            type="button"
+            onClick={handleToggleApkSimulation}
+            style={{
+              background: apkModeSimulated ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.08)',
+              border: `1px solid ${apkModeSimulated ? '#10b981' : 'rgba(255,255,255,0.2)'}`,
+              color: apkModeSimulated ? '#a7f3d0' : '#e2e8f0',
+              borderRadius: '9px',
+              padding: '7px 11px',
+              fontSize: '0.73rem',
+              fontWeight: 700,
+              cursor: 'pointer'
+            }}
+          >
+            {apkModeSimulated ? '● APK Sound Mode: ON' : '○ Enable APK Sound Mode'}
+          </button>
+        </div>
+      </div>
+
+      {/* SECTION 3: ADAPTIVE TRAFFIC CONTROL & UNIVERSAL STORE COMPATIBILITY */}
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+          gap: '10px',
+          marginBottom: '10px'
+        }}
+      >
+        <div
+          style={{
+            padding: '10px 12px',
+            borderRadius: '12px',
+            background: 'rgba(16, 185, 129, 0.08)',
+            border: '1px solid rgba(16, 185, 129, 0.3)'
+          }}
+        >
+          <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#6ee7b7', marginBottom: '4px' }}>
+            🚦 Adaptive Traffic Control &amp; Surge Protection
+          </div>
+          <div style={{ fontSize: '0.72rem', color: '#e2e8f0', display: 'grid', gap: '3px' }}>
+            <div>
+              • <strong>Live Traffic Mode:</strong>{' '}
+              <span style={{ color: '#34d399', fontWeight: 800 }}>
+                {(serverTraffic?.mode || traffic.mode || 'normal').toUpperCase()}
+              </span>{' '}
+              ({serverTraffic?.rpm ?? traffic.serverRpm ?? 0} req/min)
+            </div>
+            <div>
+              • <strong>Priority Lane P0:</strong> Couple Chat &amp; E2EE OTP Never Dropped
+            </div>
+            <div>
+              • <strong>Coalesced Duplicate Polls:</strong> {traffic.coalescedSaves || 0} saved · Retries:{' '}
+              {traffic.retriedRequests || 0}
+            </div>
+            <div>
+              • <strong>Device Profile:</strong> {deviceProfile.formFactor} · Poll:{' '}
+              {deviceProfile.recommendedBasePollMs}ms
+            </div>
+          </div>
+        </div>
+
+        <div
+          style={{
+            padding: '10px 12px',
+            borderRadius: '12px',
+            background: 'rgba(244, 114, 182, 0.08)',
+            border: '1px solid rgba(244, 114, 182, 0.3)'
+          }}
+        >
+          <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#f9a8d4', marginBottom: '4px' }}>
+            🏬 Multi-Store &amp; Universal Device Compatibility ({brandCatalog.length} Indian Brands)
+          </div>
+          <div style={{ fontSize: '0.71rem', color: '#e2e8f0', display: 'grid', gap: '3px' }}>
+            {STORE_COMPATIBILITY_MATRIX.map((st) => (
+              <div key={st.storeId}>
+                ✅ <strong>{st.name}:</strong> <span style={{ color: '#cbd5e1' }}>{st.features}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 4: EXACT UPDATE LOCATIONS HINT MAP */}
+      <details style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
+        <summary style={{ cursor: 'pointer', color: '#bae6fd', fontWeight: 700 }}>
+          📍 View {VERSION_UPDATE_LOCATIONS.length} Module Update Locations in {APP_VERSION_TAG}
+        </summary>
+        <div
+          style={{
+            marginTop: '6px',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: '6px'
+          }}
+        >
+          {VERSION_UPDATE_LOCATIONS.map((loc) => (
+            <div
+              key={loc.id}
+              style={{
+                padding: '6px 8px',
+                borderRadius: '8px',
+                background: 'rgba(0,0,0,0.3)',
+                border: '1px solid rgba(255,255,255,0.07)'
+              }}
+            >
+              <strong style={{ color: '#f8fafc' }}>[{loc.version}] {loc.area}:</strong>{' '}
+              <code style={{ color: '#7dd3fc' }}>{loc.file}</code>
+              <div style={{ color: '#cbd5e1', marginTop: '2px' }}>{loc.summary}</div>
+            </div>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
 
 
