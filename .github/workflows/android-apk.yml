@@ -4,10 +4,13 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    # The Android shell loads the live website URL, so web/API edits do not need a new APK.
-    # Keep automatic APK builds for wrapper configuration or workflow changes; manual builds remain available.
+    # Trigger APK build whenever wrapper config, custom icons, styles, or APK generator scripts change
     paths:
       - "capacitor.config.json"
+      - "icon-192.svg"
+      - "icon-512.svg"
+      - "manifest.webmanifest"
+      - "scripts/configure-android-apk.mjs"
       - ".github/workflows/android-apk.yml"
 
 concurrency:
@@ -43,6 +46,8 @@ jobs:
         run: npm run build
       - name: Create Android wrapper
         run: npx cap add android
+      - name: Configure AFTERDARK Launcher Icons, Dark Theme & Notch Safe-Area
+        run: node scripts/configure-android-apk.mjs
       - name: Sync Capacitor
         run: npx cap sync android
       - name: Build APK
@@ -69,8 +74,7 @@ jobs:
           tag_name: android-build-${{ github.run_number }}
           name: AFTERDARK Android APK ${{ github.run_number }}
           body: |
-            Direct-download Android build of AFTERDARK.
-            This build loads the live AFTERDARK website and requires an internet connection.
-            Install only if you trust this project. Android may ask you to allow installation from your browser.
+            Direct-download Android build of AFTERDARK (Store-ready for GitHub Releases, PhonePe Developer / Indus Appstore, and Amazon Appstore).
+            Includes the custom AFTERDARK Crescent Moon launcher icon, native dark theme (#0c0612), camera notch safe-area protection, and E2EE private chat.
           files: afterdark.apk
           make_latest: true

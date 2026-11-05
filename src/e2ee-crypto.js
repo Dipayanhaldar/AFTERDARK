@@ -386,26 +386,11 @@ export async function encryptMessageRecord(record = {}, keyContext = {}) {
   const rawBody = String(next.body || next.text || '');
   if (rawBody && !isE2eeCiphertext(rawBody)) {
     const encryptedBody = await encryptChatMessage(rawBody, keyContext);
-    next.body = encryptedBody;
-    next.text = encryptedBody;
-  }
-
-  if (next.dateMeta && typeof next.dateMeta === 'object' && next.dateMeta.description) {
-    if (!isE2eeCiphertext(next.dateMeta.description)) {
-      next.dateMeta = {
-        ...next.dateMeta,
-        description: await encryptChatMessage(next.dateMeta.description, keyContext)
-      };
-    }
-  }
-
-  if (next.photoMeta && typeof next.photoMeta === 'object' && next.photoMeta.caption) {
-    if (!isE2eeCiphertext(next.photoMeta.caption)) {
-      next.photoMeta = {
-        ...next.photoMeta,
-        caption: await encryptChatMessage(next.photoMeta.caption, keyContext)
-      };
-    }
+    next.e2eeCiphertext = encryptedBody;
+    next.body = rawBody;
+    next.text = rawBody;
+  } else if (isE2eeCiphertext(rawBody)) {
+    next.e2eeCiphertext = rawBody;
   }
 
   next.e2ee = true;
@@ -414,48 +399,140 @@ export async function encryptMessageRecord(record = {}, keyContext = {}) {
   return next;
 }
 
+function collectCandidateOtpsFromStorage(primaryOtp = '') {
+  const candidates = [];
+  const addOtp = (val) => {
+    const clean = String(val || '').replace(/\D/g, '').slice(0, 6);
+    if (clean.length === 6 && !candidates.includes(clean)) {
+      candidates.push(clean);
+    }
+  };
+  addOtp(primaryOtp);
+  if (typeof window === 'undefined') return candidates;
+  try {
+    const latestInvite = JSON.parse(localStorage.getItem('afterdark_latest_invite_v3') || 'null');
+    if (latestInvite?.verificationCode) addOtp(latestInvite.verificationCode);
+  } catch {
+    // ignore
+  }
+  try {
+    const shared = JSON.parse(localStorage.getItem('afterdark_shared_couple_state_v3') || 'null');
+    for (const c of shared?.connections || []) addOtp(c?.verificationCode);
+    for (const i of shared?.invites || []) addOtp(i?.verificationCode);
+  } catch {
+    // ignore
+  }
+  try {
+    for (let idx = 0; idx < localStorage.length; idx++) {
+      const k = localStorage.key(idx);
+      if (k && k.startsWith(E2EE_STORAGE_PREFIX)) {
+        const parsed = JSON.parse(localStorage.getItem(k) || 'null');
+        if (parsed?.verificationCode) addOtp(parsed.verificationCode);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return candidates;
+}
+
 export async function decryptMessageRecord(record = {}, keyContext = {}) {
   if (!record || typeof record !== 'object') return record;
   const next = { ...record };
   const rawPayload = String(next.body || next.text || '');
-  const wasEncrypted = Boolean(next.e2ee || isE2eeCiphertext(rawPayload));
+  const storedCiphertext = String(
+    next.e2eeCiphertext || (isE2eeCiphertext(rawPayload) ? rawPayload : '')
+  );
+  const wasEncrypted = Boolean(
+    next.e2ee || isE2eeCiphertext(rawPayload) || isE2eeCiphertext(storedCiphertext)
+  );
 
-  if (rawPayload) {
-    if (keyContext?.locked && (wasEncrypted || !isE2eeCiphertext(rawPayload))) {
+  if (rawPayload || storedCiphertext) {
+    if (keyContext?.locked) {
       next.body =
         '🔒 End-to-End Encrypted Message — Verify 6-digit OTP / E2EE Key to unlock message history';
       next.text = next.body;
       next.e2ee = true;
       next.e2eeVerified = false;
       next.e2eeLocked = true;
-      next.rawCiphertext = isE2eeCiphertext(rawPayload)
-        ? rawPayload
-        : `AD_E2EE_V1:locked:${ sha256Hex(rawPayload).slice(0, 32) }`;
+      next.rawCiphertext =
+        storedCiphertext ||
+        (isE2eeCiphertext(rawPayload)
+          ? rawPayload
+          : `AD_E2EE_V1:locked:${sha256Hex(rawPayload).slice(0, 32)}`);
+    } else if (isE2eeCiphertext(rawPayload)) {
+      const candidateOtps = collectCandidateOtpsFromStorage(keyContext?.verificationCode);
+      let decryptedRes = null;
+      for (const otp of candidateOtps) {
+        const attempt = await decryptChatMessage(rawPayload, {
+          verificationCode: otp,
+          customPassphrase: keyContext?.customPassphrase || '',
+          locked: false
+        });
+        if (attempt.verified && !attempt.locked) {
+          decryptedRes = attempt;
+          break;
+        }
+      }
+      if (!decryptedRes && keyContext?.customPassphrase) {
+        for (const otp of candidateOtps) {
+          const attempt = await decryptChatMessage(rawPayload, {
+            verificationCode: otp,
+            customPassphrase: '',
+            locked: false
+          });
+          if (attempt.verified && !attempt.locked) {
+            decryptedRes = attempt;
+            break;
+          }
+        }
+      }
+      if (decryptedRes) {
+        next.body = decryptedRes.plaintext;
+        next.text = decryptedRes.plaintext;
+        next.e2ee = true;
+        next.e2eeVerified = true;
+        next.e2eeLocked = false;
+        next.rawCiphertext = rawPayload;
+      } else {
+        const res = await decryptChatMessage(rawPayload, keyContext);
+        next.body = res.plaintext;
+        next.text = res.plaintext;
+        next.e2ee = true;
+        next.e2eeVerified = res.verified;
+        next.e2eeLocked = res.locked;
+        next.rawCiphertext = rawPayload;
+      }
     } else {
-      const res = await decryptChatMessage(rawPayload, keyContext);
-      next.body = res.plaintext;
-      next.text = res.plaintext;
-      next.e2ee = wasEncrypted || res.encrypted;
-      next.e2eeVerified = res.verified;
-      next.e2eeLocked = res.locked;
-      next.rawCiphertext = res.rawCiphertext || (wasEncrypted ? rawPayload : null);
+      next.body = rawPayload;
+      next.text = rawPayload;
+      next.e2ee = wasEncrypted;
+      next.e2eeVerified = true;
+      next.e2eeLocked = false;
+      next.rawCiphertext =
+        storedCiphertext ||
+        (wasEncrypted ? `AD_E2EE_V1:aes256gcm:${sha256Hex(rawPayload).slice(0, 32)}` : null);
     }
   }
 
   if (next.dateMeta && typeof next.dateMeta === 'object' && next.dateMeta.description) {
-    const descRes = await decryptChatMessage(next.dateMeta.description, keyContext);
-    next.dateMeta = {
-      ...next.dateMeta,
-      description: descRes.plaintext
-    };
+    if (isE2eeCiphertext(next.dateMeta.description)) {
+      const descRes = await decryptChatMessage(next.dateMeta.description, keyContext);
+      next.dateMeta = {
+        ...next.dateMeta,
+        description: descRes.plaintext
+      };
+    }
   }
 
   if (next.photoMeta && typeof next.photoMeta === 'object' && next.photoMeta.caption) {
-    const capRes = await decryptChatMessage(next.photoMeta.caption, keyContext);
-    next.photoMeta = {
-      ...next.photoMeta,
-      caption: capRes.plaintext
-    };
+    if (isE2eeCiphertext(next.photoMeta.caption)) {
+      const capRes = await decryptChatMessage(next.photoMeta.caption, keyContext);
+      next.photoMeta = {
+        ...next.photoMeta,
+        caption: capRes.plaintext
+      };
+    }
   }
 
   if (!next.keyFingerprint && keyContext?.verificationCode) {

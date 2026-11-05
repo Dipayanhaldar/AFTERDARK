@@ -16,11 +16,11 @@ import {
   IncomingMessageToast,
   ChatMediaInputActions,
   FlipkartBrandQuickStrip,
-  E2eeSecurityDrawer,
-  GuestRepoRenderDeployModal
+  E2eeSecurityDrawer
 } from './commerce-catalog';
 import {
   playIncomingMessageSound,
+  playOutgoingMessageSound,
   playMessageSeenSound,
   triggerIncomingPartnerAlert
 } from './notification-sound';
@@ -245,7 +245,6 @@ function App() {
   // Collapsible drawers inside chat so nothing is clumsy or expanded unnecessarily
   const [activeChatDrawer, setActiveChatDrawer] = useState('none'); // 'none' | 'photos' | 'calendar' | 'rooftop3d' | 'flirt' | 'store' | 'treasure' | 'e2ee'
   const [activeBrandId, setActiveBrandId] = useState('flipkart_minutes');
-  const [showRepoModal, setShowRepoModal] = useState(false);
   const [e2eeRefreshTick, setE2eeRefreshTick] = useState(0);
   const [userCity, setUserCity] = useState('Hyderabad');
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -445,9 +444,13 @@ function App() {
     }
 
     try {
+      const e2eeUrlCtx = {
+        token: connection.inviteToken || activeInvite?.inviteToken || '',
+        otp: connection.verificationCode || activeInvite?.verificationCode || ''
+      };
       const [msgData, photoData] = await Promise.all([
-        resilientApiRequest(`/connections/${connection.id}/messages`, {}, currentToken),
-        resilientApiRequest(`/connections/${connection.id}/photos`, {}, currentToken)
+        resilientApiRequest(`/connections/${connection.id}/messages`, {}, currentToken, e2eeUrlCtx),
+        resilientApiRequest(`/connections/${connection.id}/photos`, {}, currentToken, e2eeUrlCtx)
       ]);
       const nextMessages = msgData.messages || [];
       setMessages(nextMessages);
@@ -474,7 +477,8 @@ function App() {
               triggerIncomingPartnerAlert({
                 senderName: partnerName,
                 messageText: textPreview,
-                soundEnabled
+                soundEnabled,
+                viewerRole: 'creator'
               });
               setIncomingToast({
                 id: latest.id,
@@ -709,13 +713,18 @@ function App() {
     try {
       const textToSend = messageInput;
       setMessageInput('');
+      playOutgoingMessageSound(soundEnabled, 'creator');
       await resilientApiRequest(
         `/connections/${activeConnection.id}/messages`,
         {
           method: 'POST',
           body: JSON.stringify({ body: textToSend, text: textToSend })
         },
-        token
+        token,
+        {
+          token: activeConnection.inviteToken || activeInvite?.inviteToken || '',
+          otp: activeConnection.verificationCode || activeInvite?.verificationCode || ''
+        }
       );
       await loadConnectionDetails(activeConnection, token);
       setTimeout(() => {
@@ -730,13 +739,18 @@ function App() {
     if (!activeConnection) return;
     clearBanners();
     try {
+      playOutgoingMessageSound(soundEnabled, 'creator');
       await resilientApiRequest(
         `/connections/${activeConnection.id}/messages`,
         {
           method: 'POST',
           body: JSON.stringify({ body: text, text })
         },
-        token
+        token,
+        {
+          token: activeConnection.inviteToken || activeInvite?.inviteToken || '',
+          otp: activeConnection.verificationCode || activeInvite?.verificationCode || ''
+        }
       );
       setActiveChatDrawer('none');
       await loadConnectionDetails(activeConnection, token);
@@ -752,6 +766,7 @@ function App() {
     if (!activeConnection || !voiceMeta?.dataUrl) return;
     clearBanners();
     try {
+      playOutgoingMessageSound(soundEnabled, 'creator');
       await resilientApiRequest(
         `/connections/${activeConnection.id}/messages`,
         {
@@ -761,7 +776,11 @@ function App() {
             voiceMeta
           })
         },
-        token
+        token,
+        {
+          token: activeConnection.inviteToken || activeInvite?.inviteToken || '',
+          otp: activeConnection.verificationCode || activeInvite?.verificationCode || ''
+        }
       );
       await loadConnectionDetails(activeConnection, token);
       setTimeout(() => {
@@ -776,6 +795,7 @@ function App() {
     if (!activeConnection || !photoMeta?.dataUrl) return;
     clearBanners();
     try {
+      playOutgoingMessageSound(soundEnabled, 'creator');
       await resilientApiRequest(
         `/connections/${activeConnection.id}/messages`,
         {
@@ -785,7 +805,11 @@ function App() {
             photoMeta
           })
         },
-        token
+        token,
+        {
+          token: activeConnection.inviteToken || activeInvite?.inviteToken || '',
+          otp: activeConnection.verificationCode || activeInvite?.verificationCode || ''
+        }
       );
       await loadConnectionDetails(activeConnection, token);
       setTimeout(() => {
@@ -1071,28 +1095,20 @@ function App() {
 
       <header className="ad-header">
         <div className="ad-brand">
-          <span className="ad-brand-mark">☾</span>
+          <span className="ad-brand-mark ad-animated-logo" aria-hidden="true">
+            <span className="ad-logo-moon-glyph">☾</span>
+            <span className="ad-logo-star-dot" />
+          </span>
           <div>
             <p className="ad-brand-title">AFTERDARK</p>
             <p className="ad-brand-subtitle">
-              AES-256-GCM E2EE Couple Room · Zero-Knowledge Guest Link · Render Auto-Deploy Ready
+              AES-256-GCM E2EE Couple Room · Zero-Knowledge Guest Link · Flipkart &amp; 38+ Brands Built-in
             </p>
           </div>
         </div>
 
         {/* Clean Navigation: Once signed in, never show Sign-In again, and never mix the Guest Site into the Main Site */}
         <nav className="ad-nav" aria-label="Creator Workspace Navigation">
-          <button
-            type="button"
-            onClick={() => setShowRepoModal(true)}
-            style={{
-              background: 'rgba(56, 189, 248, 0.16)',
-              border: '1px solid rgba(56, 189, 248, 0.5)',
-              color: '#bae6fd'
-            }}
-          >
-            🚀 Separate GitHub &amp; Render Repo
-          </button>
           {user && (
             <>
               <button
@@ -1122,16 +1138,11 @@ function App() {
         </nav>
       </header>
 
-      <GuestRepoRenderDeployModal
-        open={showRepoModal}
-        onClose={() => setShowRepoModal(false)}
-      />
-
       <IncomingMessageToast
         notification={incomingToast}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled((prev) => !prev)}
-        onTestSound={() => playIncomingMessageSound(true)}
+        onTestSound={() => playIncomingMessageSound(true, 'creator')}
         onDismiss={() => setIncomingToast(null)}
       />
 
@@ -1747,7 +1758,7 @@ function App() {
                       onClick={() => {
                         const next = !soundEnabled;
                         setSoundEnabled(next);
-                        if (next) playIncomingMessageSound(true);
+                        if (next) playIncomingMessageSound(true, 'creator');
                       }}
                       title="Toggle incoming partner message sound alert"
                     >

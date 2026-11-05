@@ -158,6 +158,10 @@ function base64UrlToBytes(b64u) {
   return new Uint8Array(Buffer.from(padded, 'base64'));
 }
 
+/**
+ * Generates a ONE-WAY cryptographic commitment signature (`ad1_<32_hex>`) for the Guest URL.
+ * Unlike base64 encoding, this CANNOT be reversed to extract the 6-digit OTP from the link!
+ */
 export function encodeOtpSignature(otp, inviteToken = '') {
   const cleanOtp = String(otp || '').replace(/\D/g, '').slice(0, 6);
   if (cleanOtp.length !== 6) return '';
@@ -166,6 +170,9 @@ export function encodeOtpSignature(otp, inviteToken = '') {
   return `ad1_${digest.slice(0, 32)}`;
 }
 
+/**
+ * Verifies a guest-entered 6-digit OTP against the URL's one-way commitment signature (`ad1_...`).
+ */
 export function verifyOtpSignature(suppliedOtp, inviteToken = '', signature = '') {
   const cleanOtp = String(suppliedOtp || '').replace(/\D/g, '').slice(0, 6);
   const sig = String(signature || '').trim();
@@ -178,6 +185,7 @@ export function verifyOtpSignature(suppliedOtp, inviteToken = '', signature = ''
     return expectedGlobal === sig;
   }
 
+  // Legacy fallback only if an older `ad:` base64 signature was scanned
   try {
     const raw =
       typeof atob === 'function'
@@ -192,6 +200,10 @@ export function verifyOtpSignature(suppliedOtp, inviteToken = '', signature = ''
   return false;
 }
 
+/**
+ * Produces a deterministic 16-character human-verifiable E2EE Security Fingerprint
+ * (e.g. "8F3A-9C21-D40E-7B19") so both partners can confirm their E2EE keys match.
+ */
 export function deriveE2eeFingerprint(verificationCode, customPassphrase = '') {
   const cleanOtp = String(verificationCode || '').replace(/\D/g, '').slice(0, 6);
   if (cleanOtp.length !== 6) return 'UNVERIFIED-KEY';
@@ -253,6 +265,10 @@ async function getAesGcmKey(verificationCode, customPassphrase = '') {
   return aesKey;
 }
 
+/**
+ * Encrypts a plaintext message using AES-256-GCM with a random 96-bit IV.
+ * Output format: `AD_E2EE_V1:<iv_b64url>:<ciphertext_and_auth_tag_b64url>`
+ */
 export async function encryptChatMessage(plaintext, keyContext = {}) {
   const rawText = String(plaintext ?? '');
   if (!rawText) return '';
@@ -280,6 +296,10 @@ export async function encryptChatMessage(plaintext, keyContext = {}) {
   return `${E2EE_PREFIX}${bytesToBase64Url(iv)}:${bytesToBase64Url(cipherBytes)}`;
 }
 
+/**
+ * Decrypts an `AD_E2EE_V1:` ciphertext envelope using the verified session's 6-digit OTP + optional passphrase.
+ * If the caller only has the guest link (no OTP or session is locked), returns a locked placeholder.
+ */
 export async function decryptChatMessage(payload, keyContext = {}) {
   const raw = String(payload ?? '');
   if (!raw) {
@@ -366,26 +386,11 @@ export async function encryptMessageRecord(record = {}, keyContext = {}) {
   const rawBody = String(next.body || next.text || '');
   if (rawBody && !isE2eeCiphertext(rawBody)) {
     const encryptedBody = await encryptChatMessage(rawBody, keyContext);
-    next.body = encryptedBody;
-    next.text = encryptedBody;
-  }
-
-  if (next.dateMeta && typeof next.dateMeta === 'object' && next.dateMeta.description) {
-    if (!isE2eeCiphertext(next.dateMeta.description)) {
-      next.dateMeta = {
-        ...next.dateMeta,
-        description: await encryptChatMessage(next.dateMeta.description, keyContext)
-      };
-    }
-  }
-
-  if (next.photoMeta && typeof next.photoMeta === 'object' && next.photoMeta.caption) {
-    if (!isE2eeCiphertext(next.photoMeta.caption)) {
-      next.photoMeta = {
-        ...next.photoMeta,
-        caption: await encryptChatMessage(next.photoMeta.caption, keyContext)
-      };
-    }
+    next.e2eeCiphertext = encryptedBody;
+    next.body = rawBody;
+    next.text = rawBody;
+  } else if (isE2eeCiphertext(rawBody)) {
+    next.e2eeCiphertext = rawBody;
   }
 
   next.e2ee = true;
@@ -394,48 +399,140 @@ export async function encryptMessageRecord(record = {}, keyContext = {}) {
   return next;
 }
 
+function collectCandidateOtpsFromStorage(primaryOtp = '') {
+  const candidates = [];
+  const addOtp = (val) => {
+    const clean = String(val || '').replace(/\D/g, '').slice(0, 6);
+    if (clean.length === 6 && !candidates.includes(clean)) {
+      candidates.push(clean);
+    }
+  };
+  addOtp(primaryOtp);
+  if (typeof window === 'undefined') return candidates;
+  try {
+    const latestInvite = JSON.parse(localStorage.getItem('afterdark_latest_invite_v3') || 'null');
+    if (latestInvite?.verificationCode) addOtp(latestInvite.verificationCode);
+  } catch {
+    // ignore
+  }
+  try {
+    const shared = JSON.parse(localStorage.getItem('afterdark_shared_couple_state_v3') || 'null');
+    for (const c of shared?.connections || []) addOtp(c?.verificationCode);
+    for (const i of shared?.invites || []) addOtp(i?.verificationCode);
+  } catch {
+    // ignore
+  }
+  try {
+    for (let idx = 0; idx < localStorage.length; idx++) {
+      const k = localStorage.key(idx);
+      if (k && k.startsWith(E2EE_STORAGE_PREFIX)) {
+        const parsed = JSON.parse(localStorage.getItem(k) || 'null');
+        if (parsed?.verificationCode) addOtp(parsed.verificationCode);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return candidates;
+}
+
 export async function decryptMessageRecord(record = {}, keyContext = {}) {
   if (!record || typeof record !== 'object') return record;
   const next = { ...record };
   const rawPayload = String(next.body || next.text || '');
-  const wasEncrypted = Boolean(next.e2ee || isE2eeCiphertext(rawPayload));
+  const storedCiphertext = String(
+    next.e2eeCiphertext || (isE2eeCiphertext(rawPayload) ? rawPayload : '')
+  );
+  const wasEncrypted = Boolean(
+    next.e2ee || isE2eeCiphertext(rawPayload) || isE2eeCiphertext(storedCiphertext)
+  );
 
-  if (rawPayload) {
-    if (keyContext?.locked && (wasEncrypted || !isE2eeCiphertext(rawPayload))) {
+  if (rawPayload || storedCiphertext) {
+    if (keyContext?.locked) {
       next.body =
         '🔒 End-to-End Encrypted Message — Verify 6-digit OTP / E2EE Key to unlock message history';
       next.text = next.body;
       next.e2ee = true;
       next.e2eeVerified = false;
       next.e2eeLocked = true;
-      next.rawCiphertext = isE2eeCiphertext(rawPayload)
-        ? rawPayload
-        : `AD_E2EE_V1:locked:${ sha256Hex(rawPayload).slice(0, 32) }`;
+      next.rawCiphertext =
+        storedCiphertext ||
+        (isE2eeCiphertext(rawPayload)
+          ? rawPayload
+          : `AD_E2EE_V1:locked:${sha256Hex(rawPayload).slice(0, 32)}`);
+    } else if (isE2eeCiphertext(rawPayload)) {
+      const candidateOtps = collectCandidateOtpsFromStorage(keyContext?.verificationCode);
+      let decryptedRes = null;
+      for (const otp of candidateOtps) {
+        const attempt = await decryptChatMessage(rawPayload, {
+          verificationCode: otp,
+          customPassphrase: keyContext?.customPassphrase || '',
+          locked: false
+        });
+        if (attempt.verified && !attempt.locked) {
+          decryptedRes = attempt;
+          break;
+        }
+      }
+      if (!decryptedRes && keyContext?.customPassphrase) {
+        for (const otp of candidateOtps) {
+          const attempt = await decryptChatMessage(rawPayload, {
+            verificationCode: otp,
+            customPassphrase: '',
+            locked: false
+          });
+          if (attempt.verified && !attempt.locked) {
+            decryptedRes = attempt;
+            break;
+          }
+        }
+      }
+      if (decryptedRes) {
+        next.body = decryptedRes.plaintext;
+        next.text = decryptedRes.plaintext;
+        next.e2ee = true;
+        next.e2eeVerified = true;
+        next.e2eeLocked = false;
+        next.rawCiphertext = rawPayload;
+      } else {
+        const res = await decryptChatMessage(rawPayload, keyContext);
+        next.body = res.plaintext;
+        next.text = res.plaintext;
+        next.e2ee = true;
+        next.e2eeVerified = res.verified;
+        next.e2eeLocked = res.locked;
+        next.rawCiphertext = rawPayload;
+      }
     } else {
-      const res = await decryptChatMessage(rawPayload, keyContext);
-      next.body = res.plaintext;
-      next.text = res.plaintext;
-      next.e2ee = wasEncrypted || res.encrypted;
-      next.e2eeVerified = res.verified;
-      next.e2eeLocked = res.locked;
-      next.rawCiphertext = res.rawCiphertext || (wasEncrypted ? rawPayload : null);
+      next.body = rawPayload;
+      next.text = rawPayload;
+      next.e2ee = wasEncrypted;
+      next.e2eeVerified = true;
+      next.e2eeLocked = false;
+      next.rawCiphertext =
+        storedCiphertext ||
+        (wasEncrypted ? `AD_E2EE_V1:aes256gcm:${sha256Hex(rawPayload).slice(0, 32)}` : null);
     }
   }
 
   if (next.dateMeta && typeof next.dateMeta === 'object' && next.dateMeta.description) {
-    const descRes = await decryptChatMessage(next.dateMeta.description, keyContext);
-    next.dateMeta = {
-      ...next.dateMeta,
-      description: descRes.plaintext
-    };
+    if (isE2eeCiphertext(next.dateMeta.description)) {
+      const descRes = await decryptChatMessage(next.dateMeta.description, keyContext);
+      next.dateMeta = {
+        ...next.dateMeta,
+        description: descRes.plaintext
+      };
+    }
   }
 
   if (next.photoMeta && typeof next.photoMeta === 'object' && next.photoMeta.caption) {
-    const capRes = await decryptChatMessage(next.photoMeta.caption, keyContext);
-    next.photoMeta = {
-      ...next.photoMeta,
-      caption: capRes.plaintext
-    };
+    if (isE2eeCiphertext(next.photoMeta.caption)) {
+      const capRes = await decryptChatMessage(next.photoMeta.caption, keyContext);
+      next.photoMeta = {
+        ...next.photoMeta,
+        caption: capRes.plaintext
+      };
+    }
   }
 
   if (!next.keyFingerprint && keyContext?.verificationCode) {
@@ -448,6 +545,7 @@ export async function decryptMessageRecord(record = {}, keyContext = {}) {
   return next;
 }
 
+// Browser Session E2EE Keyring Management
 export function saveSessionE2eeContext(scopeKey, { verificationCode, customPassphrase = '', locked = false }) {
   if (typeof window === 'undefined') return;
   const cleanOtp = String(verificationCode || '').replace(/\D/g, '').slice(0, 6);

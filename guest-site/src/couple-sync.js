@@ -122,44 +122,32 @@ export function isInternalPreviewOrigin(origin = '') {
   return check.includes('ais-dev-') || check.includes('ais-pre-');
 }
 
-export const STABLE_GUEST_CONNECTOR_ORIGIN = 'https://afterdark-guest-connector.onrender.com';
-export const STABLE_MAIN_API_ORIGIN = 'https://afterdark-social-universe.vercel.app';
+const STABLE_PUBLIC_ORIGIN = 'https://afterdark-social-universe.vercel.app';
+const STABLE_GUEST_ORIGIN = 'https://afterdark-guest-connector.onrender.com';
 
 export function getPublicOrigin() {
-  return STABLE_GUEST_CONNECTOR_ORIGIN;
-}
-
-export function getBackendApiOrigin() {
   if (typeof window === 'undefined' || !window.location?.origin) {
-    return STABLE_MAIN_API_ORIGIN;
+    return STABLE_PUBLIC_ORIGIN;
   }
   const rawOrigin = window.location.origin;
-  if (isInternalPreviewOrigin(rawOrigin)) {
-    return STABLE_MAIN_API_ORIGIN;
+  // AI Studio development containers are private and cannot be opened by invitees.
+  if (rawOrigin.includes('://ais-dev-')) {
+    return rawOrigin.replace('://ais-dev-', '://ais-pre-');
   }
-  if (/\.onrender\.com$/i.test(new URL(rawOrigin).hostname)) {
-    return STABLE_MAIN_API_ORIGIN;
-  }
+  // Vercel deployment URLs are immutable per build. Always use the verified
+  // project domain for shareable invitations so new deployments do not stale links.
   if (/\.vercel\.app$/i.test(new URL(rawOrigin).hostname)) {
-    return STABLE_MAIN_API_ORIGIN;
+    return STABLE_PUBLIC_ORIGIN;
   }
+  // Keep user-configured custom domains and local development origins intact.
   return rawOrigin;
 }
 
 export function isGuestInviteLocation() {
   if (typeof window === 'undefined') return false;
-  const hostname = String(window.location.hostname || '').toLowerCase();
-  if (
-    hostname.includes('afterdark-guest-connector') ||
-    hostname.includes('guest-connector') ||
-    hostname.endsWith('.onrender.com')
-  ) {
-    return true;
-  }
   const pathname = String(window.location.pathname || '').toLowerCase();
   if (
     pathname.startsWith('/guest') ||
-    pathname.endsWith('/guest.html') ||
     pathname.startsWith('/invite/')
   ) {
     return true;
@@ -175,10 +163,7 @@ export function isGuestInviteLocation() {
   }
   const hash = String(window.location.hash || '').replace(/^#\/?/, '');
   if (hash) {
-    if (hash.toLowerCase().startsWith('guest') || hash.toLowerCase().startsWith('invite/')) {
-      return true;
-    }
-    const hashParams = new URLSearchParams(hash.replace(/^[^?]*\??/, ''));
+    const hashParams = new URLSearchParams(hash.replace(/^\?/, ''));
     if (
       hashParams.get('invite') ||
       hashParams.get('inviteToken') ||
@@ -197,6 +182,7 @@ export function buildPublicInviteLinks({
   creatorDisplayName,
   recipientHint,
   creatorDeviceId,
+  creatorIp,
   customGuestOrigin
 }) {
   if (!inviteToken) {
@@ -207,14 +193,14 @@ export function buildPublicInviteLinks({
       sameOriginUrl: ''
     };
   }
-  const rawCustom = String(customGuestOrigin || '').trim().replace(/\/+$/, '');
+  const currentOrigin = getPublicOrigin();
   const cleanedCustom =
-    rawCustom &&
-    /^https?:\/\//i.test(rawCustom) &&
-    !isInternalPreviewOrigin(rawCustom)
-      ? rawCustom
+    customGuestOrigin && /^https?:\/\//i.test(String(customGuestOrigin).trim())
+      ? String(customGuestOrigin).trim().replace(/\/+$/, '')
       : '';
-  const targetOrigin = cleanedCustom || STABLE_GUEST_CONNECTOR_ORIGIN;
+  // Keep the guest experience on its dedicated Render static site; its API is
+  // served by the stable AFTERDARK Social Universe Vercel project.
+  const targetOrigin = cleanedCustom || STABLE_GUEST_ORIGIN;
 
   const params = new URLSearchParams();
   params.set('invite', inviteToken);
@@ -224,26 +210,22 @@ export function buildPublicInviteLinks({
   if (sig) params.set('k', sig);
   const devId = creatorDeviceId || getClientDeviceId();
   if (devId) params.set('cdev', devId);
-  params.set('api', getBackendApiOrigin());
+  if (creatorIp) params.set('cip', creatorIp);
 
+  params.set('api', STABLE_PUBLIC_ORIGIN);
   const query = params.toString();
 
-  // On https://afterdark-guest-connector.onrender.com (Render Guest Static Site),
-  // the root URL (`/?invite=...`) serves index.html (GuestApp) directly with HTTP 200!
-  const isDedicatedGuestHost =
-    targetOrigin.toLowerCase().includes('afterdark-guest-connector') ||
-    targetOrigin.toLowerCase().includes('onrender.com');
-
+  // The dedicated Render guest connector is a standalone static app whose
+  // root entrypoint always mounts GuestApp. Use / (not /guest) so Render's
+  // static host serves index.html without needing a rewrite rule.
   const rootDirectUrl = `${targetOrigin}/?${query}`;
-  const guestAppUrl = isDedicatedGuestHost
-    ? rootDirectUrl
-    : `${targetOrigin}/guest.html?${query}`;
+  const guestAppUrl = rootDirectUrl;
 
   return {
-    primaryUrl: guestAppUrl,
+    primaryUrl: rootDirectUrl,
     guestAppUrl,
     rootDirectUrl,
-    sameOriginUrl: guestAppUrl
+    sameOriginUrl: rootDirectUrl
   };
 }
 
@@ -1009,17 +991,20 @@ export function resolveActiveE2eeKeyContext(inviteToken = '', connectionId = '')
 
   if (verificationCode.length !== 6) {
     const state = readSharedState();
-    const matchedConn = state.connections.find(
-      (c) =>
-        (connectionId && c.id === connectionId) ||
-        (inviteToken && c.inviteToken === inviteToken)
-    );
+    const matchedConn =
+      state.connections.find(
+        (c) =>
+          (connectionId && c.id === connectionId) ||
+          (inviteToken && c.inviteToken === inviteToken)
+      ) || state.connections.find((c) => c.status === 'active' && c.verificationCode);
     if (matchedConn?.verificationCode) {
       verificationCode = String(matchedConn.verificationCode)
         .replace(/\D/g, '')
         .slice(0, 6);
-    } else if (inviteToken) {
-      const matchedInv = state.invites.find((i) => i.inviteToken === inviteToken);
+    } else {
+      const matchedInv =
+        (inviteToken && state.invites.find((i) => i.inviteToken === inviteToken)) ||
+        state.invites.find((i) => i.status !== 'revoked' && i.verificationCode);
       if (matchedInv?.verificationCode) {
         verificationCode = String(matchedInv.verificationCode)
           .replace(/\D/g, '')
@@ -1058,35 +1043,49 @@ async function postProcessE2eeResponse(data, cleanPath, urlContext = {}) {
     '';
   const invToken =
     data?.inviteToken ||
+    data?.invite?.inviteToken ||
     data?.connection?.inviteToken ||
     urlContext?.token ||
     '';
 
-  if (data?.inviteToken && data?.verificationCode) {
-    const existing = loadSessionE2eeContext(data.inviteToken);
+  const saveOtpIfUnlocked = (scope, otp) => {
+    if (!scope || !otp) return;
+    const existing = loadSessionE2eeContext(scope);
     if (!existing?.locked) {
-      saveSessionE2eeContext(data.inviteToken, {
-        verificationCode: data.verificationCode,
+      saveSessionE2eeContext(scope, {
+        verificationCode: otp,
         customPassphrase: existing?.customPassphrase || '',
         locked: false
       });
     }
+  };
+
+  if (data?.inviteToken && data?.verificationCode) {
+    saveOtpIfUnlocked(data.inviteToken, data.verificationCode);
+    saveOtpIfUnlocked('default', data.verificationCode);
+  }
+
+  if (data?.invite?.inviteToken && data?.invite?.verificationCode) {
+    mirrorInviteLocally(data.invite);
+    saveOtpIfUnlocked(data.invite.inviteToken, data.invite.verificationCode);
+    saveOtpIfUnlocked('default', data.invite.verificationCode);
   }
 
   if (data?.connection?.verificationCode) {
-    const existingConnCtx = loadSessionE2eeContext(data.connection.id);
-    if (!existingConnCtx?.locked) {
-      saveSessionE2eeContext(data.connection.id, {
-        verificationCode: data.connection.verificationCode,
-        customPassphrase: existingConnCtx?.customPassphrase || '',
-        locked: false
-      });
-      if (data.connection.inviteToken) {
-        saveSessionE2eeContext(data.connection.inviteToken, {
-          verificationCode: data.connection.verificationCode,
-          customPassphrase: existingConnCtx?.customPassphrase || '',
-          locked: false
-        });
+    saveOtpIfUnlocked(data.connection.id, data.connection.verificationCode);
+    saveOtpIfUnlocked(data.connection.inviteToken, data.connection.verificationCode);
+    saveOtpIfUnlocked('default', data.connection.verificationCode);
+  }
+
+  if (Array.isArray(data?.connections)) {
+    for (const c of data.connections) {
+      if (c && c.id) {
+        mirrorConnectionLocally(c);
+        if (c.verificationCode) {
+          saveOtpIfUnlocked(c.id, c.verificationCode);
+          saveOtpIfUnlocked(c.inviteToken, c.verificationCode);
+          saveOtpIfUnlocked('default', c.verificationCode);
+        }
       }
     }
   }
@@ -1153,32 +1152,22 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
   }
 
   const candidateBases = [];
-  const isStaticRenderGuest =
-    typeof window !== 'undefined' &&
-    /\.onrender\.com$/i.test(window.location?.hostname || '');
-
   if (urlContext?.apiOrigin) {
     const cleanOrigin = String(urlContext.apiOrigin).replace(/\/+$/, '');
-    if (cleanOrigin) {
+    if (
+      typeof window !== 'undefined' &&
+      cleanOrigin &&
+      cleanOrigin !== window.location.origin
+    ) {
       candidateBases.push(`${cleanOrigin}/api`);
     }
   }
-
-  if (isStaticRenderGuest) {
-    const mainApi = `${STABLE_MAIN_API_ORIGIN}/api`;
-    if (!candidateBases.includes(mainApi)) {
-      candidateBases.push(mainApi);
-    }
+  // The Render guest connector is a static site and has no /api backend.
+  // Route guest requests to the shared Vercel Social Universe API instead.
+  if (typeof window !== 'undefined' && /(^|\.)afterdark-guest-connector\.onrender\.com$/i.test(window.location.hostname)) {
+    candidateBases.push(`${STABLE_PUBLIC_ORIGIN}/api`);
   }
-
-  if (!candidateBases.includes('/api')) {
-    candidateBases.push('/api');
-  }
-
-  const fallbackMainApi = `${STABLE_MAIN_API_ORIGIN}/api`;
-  if (!candidateBases.includes(fallbackMainApi)) {
-    candidateBases.push(fallbackMainApi);
-  }
+  candidateBases.push('/api');
 
   let lastHttpError = null;
   let lastStatus = 0;
@@ -1226,6 +1215,7 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
     cleanPath === 'invites/current' ||
     cleanPath === 'connections';
 
+  // If the server explicitly returned a 400, 401, 403, 409, or 410 validation/security error on an action route, throw it!
   if (lastHttpError && [400, 401, 403, 409, 410].includes(lastStatus) && !isReadOrSessionCheck) {
     throw lastHttpError;
   }

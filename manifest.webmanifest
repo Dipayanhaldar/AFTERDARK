@@ -1,17 +1,34 @@
 {
-  "id": "/",
-  "name": "AFTERDARK — your little world",
+  "id": "com.afterdark.social",
+  "name": "AFTERDARK — Couples Private Link & In-Chat Commerce",
   "short_name": "AFTERDARK",
-  "description": "A consent-first 18+ situationship space for private invites and mutual vibes.",
+  "description": "An 18+ invite-only couples space featuring dual-site QR + 6-digit OTP E2EE linking, private chat, and inline in-chat ordering.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait-primary",
-  "background_color": "#fff6fa",
-  "theme_color": "#ff4f9a",
+  "background_color": "#0c0612",
+  "theme_color": "#0c0612",
   "categories": [
     "lifestyle",
-    "social"
+    "social",
+    "shopping"
+  ],
+  "prefer_related_applications": false,
+  "related_applications": [
+    {
+      "platform": "play",
+      "id": "com.afterdark.social"
+    },
+    {
+      "platform": "amazon",
+      "id": "com.afterdark.social"
+    },
+    {
+      "platform": "indus",
+      "id": "com.afterdark.social"
+    }
   ],
   "icons": [
     {

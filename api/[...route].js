@@ -6,7 +6,8 @@ import {
   verifyOtpSignature,
   deriveE2eeFingerprint,
   isE2eeCiphertext,
-  encryptChatMessage
+  encryptChatMessage,
+  decryptChatMessage
 } from '../src/e2ee-crypto.js';
 import { GoogleGenAI, Type } from '@google/genai';
 
@@ -210,17 +211,32 @@ function formatConnectionForGuest(conn) {
   };
 }
 
-function formatMessageDoc(m, defaultRole = 'creator') {
-  const rawBody = m.body || m.text || '';
+async function formatMessageDocAsync(m, defaultRole = 'creator', verificationCode = '') {
+  let rawBody = m.body || m.text || '';
+  const e2eeCiphertext = m.e2eeCiphertext || (isE2eeCiphertext(rawBody) ? rawBody : '');
+
+  if (isE2eeCiphertext(rawBody) && verificationCode) {
+    try {
+      const dec = await decryptChatMessage(rawBody, { verificationCode });
+      if (dec.verified && !dec.locked && dec.plaintext) {
+        rawBody = dec.plaintext;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return {
     id: m._id.toString(),
     senderRole: m.senderRole || defaultRole,
     senderName: m.senderName || '',
     body: rawBody,
     text: rawBody,
-    e2ee: Boolean(m.e2ee || isE2eeCiphertext(rawBody)),
+    e2eeCiphertext,
+    e2ee: Boolean(m.e2ee || isE2eeCiphertext(e2eeCiphertext) || isE2eeCiphertext(rawBody)),
     e2eeAlg: m.e2eeAlg || 'AES-256-GCM-PBKDF2',
-    keyFingerprint: m.keyFingerprint || '',
+    keyFingerprint:
+      m.keyFingerprint || (verificationCode ? deriveE2eeFingerprint(verificationCode) : ''),
     orderMeta: m.orderMeta || null,
     photoMeta: m.photoMeta || null,
     voiceMeta: m.voiceMeta || null,
@@ -1111,7 +1127,9 @@ Draft: ${draftText || '(none)'}`,
           channelId,
           senderRole: 'guest',
           senderName: guestDisplayName,
-          body: encryptedWelcome,
+          body: plainWelcome,
+          text: plainWelcome,
+          e2eeCiphertext: encryptedWelcome,
           e2ee: true,
           e2eeAlg: 'AES-256-GCM-PBKDF2',
           keyFingerprint: deriveE2eeFingerprint(suppliedOtp),
@@ -1211,10 +1229,13 @@ Draft: ${draftText || '(none)'}`,
             .find({ connectionId: connId })
             .sort({ createdAt: 1 })
             .toArray();
+          const formattedMessages = await Promise.all(
+            list.map((m) => formatMessageDocAsync(m, 'guest', connection.verificationCode || ''))
+          );
           return json(
             res,
             200,
-            { messages: list.map((m) => formatMessageDoc(m, 'guest')) },
+            { messages: formattedMessages },
             req
           );
         }
@@ -1222,14 +1243,36 @@ Draft: ${draftText || '(none)'}`,
           const voiceMeta = body.voiceMeta && body.voiceMeta.dataUrl ? body.voiceMeta : null;
           const photoMeta = body.photoMeta && body.photoMeta.dataUrl ? body.photoMeta : null;
           const rawText = String(body.body || body.text || '').trim();
-          const text =
+          let text =
             rawText ||
             (voiceMeta ? '🎤 Sent a voice note ♥' : photoMeta ? '📷 Sent a live camera snap ♥' : '');
           if (!text && !voiceMeta && !photoMeta) {
             return json(res, 400, { error: 'Write a message or attach a voice/camera note first.' }, req);
           }
+          let e2eeCiphertext = String(body.e2eeCiphertext || '');
+          if (isE2eeCiphertext(text) && connection.verificationCode) {
+            e2eeCiphertext = text;
+            try {
+              const dec = await decryptChatMessage(text, {
+                verificationCode: connection.verificationCode
+              });
+              if (dec.verified && !dec.locked && dec.plaintext) {
+                text = dec.plaintext;
+              }
+            } catch {
+              // ignore
+            }
+          } else if (!e2eeCiphertext && text && connection.verificationCode) {
+            try {
+              e2eeCiphertext = await encryptChatMessage(text, {
+                verificationCode: connection.verificationCode
+              });
+            } catch {
+              // ignore
+            }
+          }
           const nowIso = new Date().toISOString();
-          const isEncrypted = Boolean(body.e2ee || isE2eeCiphertext(text));
+          const isEncrypted = Boolean(body.e2ee || e2eeCiphertext || isE2eeCiphertext(rawText));
           const keyFp =
             body.keyFingerprint ||
             (connection.verificationCode
@@ -1240,6 +1283,8 @@ Draft: ${draftText || '(none)'}`,
             senderRole: 'guest',
             senderName: connection.guestDisplayName || 'Meri Jaan',
             body: text,
+            text,
+            e2eeCiphertext,
             voiceMeta,
             photoMeta,
             e2ee: isEncrypted,
@@ -1258,6 +1303,7 @@ Draft: ${draftText || '(none)'}`,
                 senderName: connection.guestDisplayName || 'Meri Jaan',
                 body: text,
                 text,
+                e2eeCiphertext,
                 voiceMeta,
                 photoMeta,
                 e2ee: isEncrypted,
@@ -1562,10 +1608,13 @@ Draft: ${draftText || '(none)'}`,
             .find({ connectionId: connId })
             .sort({ createdAt: 1 })
             .toArray();
+          const formattedMessages = await Promise.all(
+            list.map((m) => formatMessageDocAsync(m, 'creator', connection.verificationCode || ''))
+          );
           return json(
             res,
             200,
-            { messages: list.map((m) => formatMessageDoc(m, 'creator')) },
+            { messages: formattedMessages },
             req
           );
         }
@@ -1573,14 +1622,36 @@ Draft: ${draftText || '(none)'}`,
           const voiceMeta = body.voiceMeta && body.voiceMeta.dataUrl ? body.voiceMeta : null;
           const photoMeta = body.photoMeta && body.photoMeta.dataUrl ? body.photoMeta : null;
           const rawText = String(body.body || body.text || '').trim();
-          const text =
+          let text =
             rawText ||
             (voiceMeta ? '🎤 Sent a voice note ♥' : photoMeta ? '📷 Sent a live camera snap ♥' : '');
           if (!text && !voiceMeta && !photoMeta) {
             return json(res, 400, { error: 'Write a message or attach a voice/camera note first.' }, req);
           }
+          let e2eeCiphertext = String(body.e2eeCiphertext || '');
+          if (isE2eeCiphertext(text) && connection.verificationCode) {
+            e2eeCiphertext = text;
+            try {
+              const dec = await decryptChatMessage(text, {
+                verificationCode: connection.verificationCode
+              });
+              if (dec.verified && !dec.locked && dec.plaintext) {
+                text = dec.plaintext;
+              }
+            } catch {
+              // ignore
+            }
+          } else if (!e2eeCiphertext && text && connection.verificationCode) {
+            try {
+              e2eeCiphertext = await encryptChatMessage(text, {
+                verificationCode: connection.verificationCode
+              });
+            } catch {
+              // ignore
+            }
+          }
           const nowIso = new Date().toISOString();
-          const isEncrypted = Boolean(body.e2ee || isE2eeCiphertext(text));
+          const isEncrypted = Boolean(body.e2ee || e2eeCiphertext || isE2eeCiphertext(rawText));
           const keyFp =
             body.keyFingerprint ||
             (connection.verificationCode
@@ -1591,6 +1662,8 @@ Draft: ${draftText || '(none)'}`,
             senderRole: 'creator',
             senderName: creator.displayName,
             body: text,
+            text,
+            e2eeCiphertext,
             voiceMeta,
             photoMeta,
             e2ee: isEncrypted,
@@ -1609,6 +1682,7 @@ Draft: ${draftText || '(none)'}`,
                 senderName: creator.displayName,
                 body: text,
                 text,
+                e2eeCiphertext,
                 voiceMeta,
                 photoMeta,
                 e2ee: isEncrypted,

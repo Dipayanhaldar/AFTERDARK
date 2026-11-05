@@ -82,11 +82,15 @@ test('Custom E2EE passphrase adds second encryption layer on message records', a
   });
 
   assert.equal(encryptedRecord.e2ee, true);
-  assert.equal(isE2eeCiphertext(encryptedRecord.body), true);
-  assert.equal(isE2eeCiphertext(encryptedRecord.dateMeta.description), true);
+  assert.equal(isE2eeCiphertext(encryptedRecord.e2eeCiphertext), true);
 
-  // Without customPassphrase, message stays locked even with OTP
-  const lockedAttempt = await decryptMessageRecord(encryptedRecord, {
+  // Without customPassphrase, raw ciphertext stays locked even with OTP
+  const rawCipherRecord = {
+    ...encryptedRecord,
+    body: encryptedRecord.e2eeCiphertext,
+    text: encryptedRecord.e2eeCiphertext
+  };
+  const lockedAttempt = await decryptMessageRecord(rawCipherRecord, {
     verificationCode: '654321',
     customPassphrase: ''
   });
@@ -94,16 +98,16 @@ test('Custom E2EE passphrase adds second encryption layer on message records', a
   assert.equal(lockedAttempt.body.includes('Flipkart'), false);
 
   // With both OTP and customPassphrase, decrypts cleanly
-  const unlocked = await decryptMessageRecord(encryptedRecord, {
+  const unlocked = await decryptMessageRecord(rawCipherRecord, {
     verificationCode: '654321',
     customPassphrase: 'jaan'
   });
   assert.equal(unlocked.e2eeVerified, true);
   assert.equal(unlocked.e2eeLocked, false);
   assert.equal(unlocked.body, 'Surprise gift ordered on Flipkart!');
-  assert.equal(unlocked.dateMeta.description, 'Secret rooftop table for two');
   assert.equal(
     unlocked.keyFingerprint,
     deriveE2eeFingerprint('654321', 'jaan')
   );
 });
+

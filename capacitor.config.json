@@ -2,11 +2,13 @@
   "appId": "com.afterdark.social",
   "appName": "AFTERDARK",
   "webDir": "dist",
+  "backgroundColor": "#0c0612",
   "server": {
     "url": "https://afterdark-social-universe.vercel.app",
     "cleartext": false
   },
   "android": {
-    "allowMixedContent": false
+    "allowMixedContent": false,
+    "backgroundColor": "#0c0612"
   }
 }

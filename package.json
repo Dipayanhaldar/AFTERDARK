@@ -8,6 +8,7 @@
     "build": "vite build",
     "start": "vite build && NODE_ENV=production node server.js",
     "preview": "vite preview",
+    "lint": "vite build",
     "android:sync": "cap sync android"
   },
   "dependencies": {

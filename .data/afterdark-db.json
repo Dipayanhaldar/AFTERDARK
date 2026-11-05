@@ -251,6 +251,61 @@
         "__type": "ObjectId",
         "value": "6ae8a98129c7b63940207c32"
       }
+    },
+    {
+      "email": "host_1793873934017@afterdark.test",
+      "displayName": "AaravHost",
+      "handle": "AaravHost",
+      "passwordHash": "39e3558f44cd9feb6dc15513415fd9f6:b960ddaf59465df4b194339187302adaf79af4f3dab8ece76e6358d12c80a76d3628c3a5b86b68a6f3d9553fac7233ce058165fb1029b75098f6cbaa05ee4755",
+      "createdAt": "2026-11-05T10:18:54.154Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec580e10baa6d5e7e5498c"
+      }
+    },
+    {
+      "email": "host_1793873953764@afterdark.test",
+      "displayName": "AaravHost",
+      "handle": "AaravHost",
+      "passwordHash": "6b45015eb74c4a0f6c8ca19019cf896f:0de8e4c21cfb225154ea00c3e4e303829c16b75ac40aa5b9c94e97bbd38161daec8d6ad06cc41a9873d59bf806fa8ca83b82a49953d860b3067976d0327cf607",
+      "createdAt": "2026-11-05T10:19:13.916Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec582110baa6d5e7e5498e"
+      }
+    },
+    {
+      "email": "host_1793874113828@afterdark.test",
+      "displayName": "AaravHost",
+      "handle": "AaravHost",
+      "passwordHash": "6681e68f946335b692d4cc204da9c6df:f5c28a4cd471f56415e75c00a3cd7867e80b2f363ab9450b6c1d6733315d7069e99221b9ccb6b2d6741f452b8f6a6850dfe3f4f4c71dd80d1dfac8121c94cebe",
+      "createdAt": "2026-11-05T10:21:53.907Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54990"
+      }
+    },
+    {
+      "email": "host_1793874131543@afterdark.test",
+      "displayName": "AaravHost",
+      "handle": "AaravHost",
+      "passwordHash": "bfb817082b43611cc21861e0b990b20a:4d0c37e6c9fd3ee5d7bcf53c2a23d5526becc8cb349ca5e78fb83ee336e191eef8e000b8ac95aa8eacb73084f2bfa28f657eaf1fbd57a0ca305086f64f90bd42",
+      "createdAt": "2026-11-05T10:22:11.658Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54996"
+      }
+    },
+    {
+      "email": "host_1793874261763@afterdark.test",
+      "displayName": "AaravHost",
+      "handle": "AaravHost",
+      "passwordHash": "c19cbba1a701406ca6c9b4cb77659573:c7e9563351ca43111a8fc7efdc4b119416445c0e492b7259498dfedb3fa0f4a116d927d1201810ee578a35471ebae2a69231f69ab570f57bc3995073eed29bd1",
+      "createdAt": "2026-11-05T10:24:21.877Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499c"
+      }
     }
   ],
   "connections": [
@@ -357,6 +412,75 @@
       "_id": {
         "__type": "ObjectId",
         "value": "6aeb92c4683598481b5c5206"
+      }
+    },
+    {
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54990"
+      },
+      "creatorDisplayName": "AaravHost",
+      "guestDisplayName": "Meri Jaan",
+      "recipientHint": "Rhea",
+      "inviteId": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54992"
+      },
+      "inviteToken": "QCe1ekza9K4Jc4xogzkdD-6-HKe90qP-",
+      "verificationCode": "807166",
+      "channelId": "chan_QCe1ekza9K4Jc4",
+      "status": "active",
+      "createdAt": "2026-11-05T10:21:53.921Z",
+      "approvedAt": "2026-11-05T10:21:53.921Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54993"
+      }
+    },
+    {
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54996"
+      },
+      "creatorDisplayName": "AaravHost",
+      "guestDisplayName": "Meri Jaan",
+      "recipientHint": "Rhea",
+      "inviteId": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54998"
+      },
+      "inviteToken": "6lTUz1qdAkWMhs-MhzWMQQnywKBJbcMy",
+      "verificationCode": "713976",
+      "channelId": "chan_6lTUz1qdAkWMhs",
+      "status": "active",
+      "createdAt": "2026-11-05T10:22:11.683Z",
+      "approvedAt": "2026-11-05T10:22:11.683Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54999"
+      }
+    },
+    {
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499c"
+      },
+      "creatorDisplayName": "AaravHost",
+      "guestDisplayName": "Meri Jaan",
+      "recipientHint": "Rhea",
+      "inviteId": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499e"
+      },
+      "inviteToken": "DVyoOrrYRw3u1-2WEAbXDvV_HhplGvuX",
+      "verificationCode": "491147",
+      "channelId": "chan_DVyoOrrYRw3u12",
+      "status": "active",
+      "createdAt": "2026-11-05T10:24:21.925Z",
+      "approvedAt": "2026-11-05T10:24:21.925Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499f"
       }
     }
   ],
@@ -559,6 +683,102 @@
       "channelId": "chan_inve2eedemo",
       "guestDisplayName": "Zoya",
       "approvedAt": "2026-11-04T20:17:08.540Z"
+    },
+    {
+      "inviteToken": "QCe1ekza9K4Jc4xogzkdD-6-HKe90qP-",
+      "tokenHash": "b8dc78e2bc97d2579885c9e51a871e8637d58e4132fb0383f742e01d5e45bd1b",
+      "verificationCode": "807166",
+      "codeHash": "c8f0fe480abd04fcf7453d9e21b610e75df92834feb314abe8cccb7667156a11",
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54990"
+      },
+      "creatorIp": "127.0.0.1",
+      "creatorDeviceId": "",
+      "creatorDisplayName": "AaravHost",
+      "recipientHint": "Rhea",
+      "creatorCustomName": "AaravHost",
+      "partnerCustomName": "Rhea",
+      "themeId": "charminar",
+      "emblemStyle": "dil",
+      "status": "active",
+      "createdAt": "2026-11-05T10:21:53.917Z",
+      "expiresAt": "2026-11-12T10:21:53.917Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54992"
+      },
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54993"
+      },
+      "channelId": "chan_QCe1ekza9K4Jc4",
+      "guestDisplayName": "Meri Jaan",
+      "approvedAt": "2026-11-05T10:21:53.921Z"
+    },
+    {
+      "inviteToken": "6lTUz1qdAkWMhs-MhzWMQQnywKBJbcMy",
+      "tokenHash": "fbc7104bf5f33880c1e8fec963f15e4a07456abf6b55a81bf434b2ee51b50130",
+      "verificationCode": "713976",
+      "codeHash": "7058cc130c29b939a4521fda3f7507001ae7a09794c6fb7f80bf27f753b7914f",
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54996"
+      },
+      "creatorIp": "127.0.0.1",
+      "creatorDeviceId": "",
+      "creatorDisplayName": "AaravHost",
+      "recipientHint": "Rhea",
+      "creatorCustomName": "AaravHost",
+      "partnerCustomName": "Rhea",
+      "themeId": "charminar",
+      "emblemStyle": "dil",
+      "status": "active",
+      "createdAt": "2026-11-05T10:22:11.671Z",
+      "expiresAt": "2026-11-12T10:22:11.671Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54998"
+      },
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54999"
+      },
+      "channelId": "chan_6lTUz1qdAkWMhs",
+      "guestDisplayName": "Meri Jaan",
+      "approvedAt": "2026-11-05T10:22:11.683Z"
+    },
+    {
+      "inviteToken": "DVyoOrrYRw3u1-2WEAbXDvV_HhplGvuX",
+      "tokenHash": "9193e59c2b63d521676193ac2dbb133f249f79ececf9759e13ac231118da539c",
+      "verificationCode": "491147",
+      "codeHash": "85a26d0aa1cbcae6fc6692130f188dcf096d16f0eebf3e9b0a8f69505e201d82",
+      "creatorId": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499c"
+      },
+      "creatorIp": "127.0.0.1",
+      "creatorDeviceId": "",
+      "creatorDisplayName": "AaravHost",
+      "recipientHint": "Rhea",
+      "creatorCustomName": "AaravHost",
+      "partnerCustomName": "Rhea",
+      "themeId": "charminar",
+      "emblemStyle": "dil",
+      "status": "active",
+      "createdAt": "2026-11-05T10:24:21.920Z",
+      "expiresAt": "2026-11-12T10:24:21.920Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499e"
+      },
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499f"
+      },
+      "channelId": "chan_DVyoOrrYRw3u12",
+      "guestDisplayName": "Meri Jaan",
+      "approvedAt": "2026-11-05T10:24:21.925Z"
     }
   ],
   "sessions": [
@@ -608,6 +828,66 @@
       "_id": {
         "__type": "ObjectId",
         "value": "6aeb8cff21ddfd75b01a4cb8"
+      }
+    },
+    {
+      "tokenHash": "181dd2632e7f7bcd8b1de75bfd53240b0682553c5b059b99c9e70b1a4955c379",
+      "userId": {
+        "__type": "ObjectId",
+        "value": "6aec580e10baa6d5e7e5498c"
+      },
+      "createdAt": "2026-11-05T10:18:54.156Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec580e10baa6d5e7e5498d"
+      }
+    },
+    {
+      "tokenHash": "158a023f2f0399f28b8a560a136356ab6b658ec911a45f470da9c43682cb10b7",
+      "userId": {
+        "__type": "ObjectId",
+        "value": "6aec582110baa6d5e7e5498e"
+      },
+      "createdAt": "2026-11-05T10:19:13.919Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec582110baa6d5e7e5498f"
+      }
+    },
+    {
+      "tokenHash": "826683a510996fae7c004a4f5ac51742ab5281650fbef2f65a99bd065135bcdb",
+      "userId": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54990"
+      },
+      "createdAt": "2026-11-05T10:21:53.907Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54991"
+      }
+    },
+    {
+      "tokenHash": "83e56d5aef9f1e8ef6ee661a26db13a7f395250383128e13c3b6c166a1ef1f10",
+      "userId": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54996"
+      },
+      "createdAt": "2026-11-05T10:22:11.659Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54997"
+      }
+    },
+    {
+      "tokenHash": "f0b4b4fb52c6f3b56a71ef29f308da5438f58b0e13c1af1bdd1022f6cddc4da4",
+      "userId": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499c"
+      },
+      "createdAt": "2026-11-05T10:24:21.878Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499d"
       }
     }
   ],
@@ -772,6 +1052,88 @@
         "__type": "ObjectId",
         "value": "6aeb92dc683598481b5c5209"
       }
+    },
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54993"
+      },
+      "channelId": "chan_QCe1ekza9K4Jc4",
+      "senderRole": "guest",
+      "senderName": "Meri Jaan",
+      "body": "Hau miyaan! Meri Jaan connected to our private 1-on-1 E2EE room ♥ Ab baatein shuru karein?",
+      "text": "Hau miyaan! Meri Jaan connected to our private 1-on-1 E2EE room ♥ Ab baatein shuru karein?",
+      "e2eeCiphertext": "AD_E2EE_V1:qrmVVBwH6GAC4QRs:Ut2q7Fb_7TEOwncuvODlSmz83p-8sIEmEU2-BtarsFFPo5ZNNAfHnNpg_NpCc154u3SnsqrzDxoKwMu-CJ4rIqwUhzVoORAzjq4p_iJTSd2Czs8V_YJgO0g-gdUZnwYDdKIPrYcALj0Hh_JX",
+      "e2ee": true,
+      "e2eeAlg": "AES-256-GCM-PBKDF2",
+      "keyFingerprint": "694E-607B-D340-8A62",
+      "createdAt": "2026-11-05T10:21:53.921Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54994"
+      }
+    },
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54999"
+      },
+      "channelId": "chan_6lTUz1qdAkWMhs",
+      "senderRole": "guest",
+      "senderName": "Meri Jaan",
+      "body": "Hau miyaan! Meri Jaan connected to our private 1-on-1 E2EE room ♥ Ab baatein shuru karein?",
+      "text": "Hau miyaan! Meri Jaan connected to our private 1-on-1 E2EE room ♥ Ab baatein shuru karein?",
+      "e2eeCiphertext": "AD_E2EE_V1:KpSeDqgqrf5b9zOk:woLdMFh8I0QS7morRCQ4R6aQV9LeuTEhe3iWfAzR-kE_yMe8lp1tSBnT2wYE6WusHfn0xXu4qaP3iCqPDRQC3XcWrp_pOim_6fUtroaQSBNgVVcy8Eguu_PIBT5GoHa2_QMRk9ZrzC9fqZTa",
+      "e2ee": true,
+      "e2eeAlg": "AES-256-GCM-PBKDF2",
+      "keyFingerprint": "45B7-B356-68E1-6501",
+      "createdAt": "2026-11-05T10:22:11.683Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e5499a"
+      }
+    },
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499f"
+      },
+      "channelId": "chan_DVyoOrrYRw3u12",
+      "senderRole": "guest",
+      "senderName": "Meri Jaan",
+      "body": "Hau miyaan! Meri Jaan connected to our private 1-on-1 E2EE room ♥ Ab baatein shuru karein?",
+      "text": "Hau miyaan! Meri Jaan connected to our private 1-on-1 E2EE room ♥ Ab baatein shuru karein?",
+      "e2eeCiphertext": "AD_E2EE_V1:N_d6b7rvviXSjy-U:ARFlOhrhFKXX1lrowASaTjpZYB1RORYvOBm21IacragD9xPLwcy0Qdji0Zlh4xMlBzMxANtxLANbvCAjPjaOIZGHU6IqohlUIf4K9JUGYj9FJjcHgEnTJ7dnoWiHtgDtHPDK9r8eWPojXr3T",
+      "e2ee": true,
+      "e2eeAlg": "AES-256-GCM-PBKDF2",
+      "keyFingerprint": "966B-1E7E-81C5-24BE",
+      "createdAt": "2026-11-05T10:24:21.925Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e549a0"
+      }
+    },
+    {
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499f"
+      },
+      "senderRole": "guest",
+      "senderName": "Meri Jaan",
+      "body": "hi",
+      "text": "hi",
+      "e2eeCiphertext": "AD_E2EE_V1:nyZPPPupmfGCmBAJ:ObOoaWpKqFEufCRE094p78f-",
+      "voiceMeta": null,
+      "photoMeta": null,
+      "e2ee": true,
+      "e2eeAlg": "AES-256-GCM-PBKDF2",
+      "keyFingerprint": "966B-1E7E-81C5-24BE",
+      "seenAt": "2026-11-05T10:24:21.972Z",
+      "createdAt": "2026-11-05T10:24:21.964Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e549a2"
+      }
     }
   ],
   "guest_sessions": [
@@ -831,6 +1193,54 @@
       "_id": {
         "__type": "ObjectId",
         "value": "6aeb92c4683598481b5c5208"
+      }
+    },
+    {
+      "tokenHash": "855ad22a6183ce122b7684fed427bf45262976cff23316064d550b65c4dd6f2e",
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54993"
+      },
+      "inviteToken": "QCe1ekza9K4Jc4xogzkdD-6-HKe90qP-",
+      "verificationCode": "807166",
+      "channelId": "chan_QCe1ekza9K4Jc4",
+      "guestDisplayName": "Meri Jaan",
+      "createdAt": "2026-11-05T10:21:53.941Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58c110baa6d5e7e54995"
+      }
+    },
+    {
+      "tokenHash": "d639d6334c01594652b8c16cb9bb71a7877e13121b3f66113bef3a7402b9f751",
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e54999"
+      },
+      "inviteToken": "6lTUz1qdAkWMhs-MhzWMQQnywKBJbcMy",
+      "verificationCode": "713976",
+      "channelId": "chan_6lTUz1qdAkWMhs",
+      "guestDisplayName": "Meri Jaan",
+      "createdAt": "2026-11-05T10:22:11.728Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec58d310baa6d5e7e5499b"
+      }
+    },
+    {
+      "tokenHash": "b24b4d93add7ad2517f5a631b276268ab14760abe8194fe872763e25e9a3fa9c",
+      "connectionId": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e5499f"
+      },
+      "inviteToken": "DVyoOrrYRw3u1-2WEAbXDvV_HhplGvuX",
+      "verificationCode": "491147",
+      "channelId": "chan_DVyoOrrYRw3u12",
+      "guestDisplayName": "Meri Jaan",
+      "createdAt": "2026-11-05T10:24:21.942Z",
+      "_id": {
+        "__type": "ObjectId",
+        "value": "6aec595510baa6d5e7e549a1"
       }
     }
   ],

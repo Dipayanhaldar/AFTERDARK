@@ -13,11 +13,11 @@ import {
   IncomingMessageToast,
   ChatMediaInputActions,
   FlipkartBrandQuickStrip,
-  E2eeSecurityDrawer,
-  GuestRepoRenderDeployModal
+  E2eeSecurityDrawer
 } from './commerce-catalog';
 import {
   playIncomingMessageSound,
+  playOutgoingMessageSound,
   playMessageSeenSound,
   triggerIncomingPartnerAlert
 } from './notification-sound';
@@ -144,7 +144,6 @@ export function GuestApp() {
   // Hidden tool drawers inside chat so the UI is clean and uncluttered
   const [activeDrawer, setActiveDrawer] = useState('none'); // 'none' | 'photos' | 'calendar' | 'flirt' | 'rooftop3d' | 'store' | 'treasure' | 'e2ee'
   const [activeBrandId, setActiveBrandId] = useState('flipkart_minutes');
-  const [showRepoModal, setShowRepoModal] = useState(false);
   const [e2eeRefreshTick, setE2eeRefreshTick] = useState(0);
   const [userCity, setUserCity] = useState('Hyderabad');
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -359,7 +358,8 @@ export function GuestApp() {
                 triggerIncomingPartnerAlert({
                   senderName: partnerName,
                   messageText: textPreview,
-                  soundEnabled
+                  soundEnabled,
+                  viewerRole: 'guest'
                 });
                 setIncomingToast({
                   id: latest.id,
@@ -490,6 +490,7 @@ export function GuestApp() {
     try {
       const textToSend = messageBody;
       setMessageBody('');
+      playOutgoingMessageSound(soundEnabled, 'guest');
       await api(
         `/guest/connections/${connection.id}/messages`,
         {
@@ -511,6 +512,7 @@ export function GuestApp() {
     if (!connection) return;
     clearFeedback();
     try {
+      playOutgoingMessageSound(soundEnabled, 'guest');
       await api(
         `/guest/connections/${connection.id}/messages`,
         {
@@ -533,6 +535,7 @@ export function GuestApp() {
     if (!connection || !voiceMeta?.dataUrl) return;
     clearFeedback();
     try {
+      playOutgoingMessageSound(soundEnabled, 'guest');
       await api(
         `/guest/connections/${connection.id}/messages`,
         {
@@ -557,6 +560,7 @@ export function GuestApp() {
     if (!connection || !photoMeta?.dataUrl) return;
     clearFeedback();
     try {
+      playOutgoingMessageSound(soundEnabled, 'guest');
       await api(
         `/guest/connections/${connection.id}/messages`,
         {
@@ -829,7 +833,10 @@ export function GuestApp() {
     <div className="guest-shell">
       <header className="guest-topbar">
         <div className="guest-brand">
-          <span className="guest-moon-icon">☾</span>
+          <span className="guest-moon-icon ad-animated-logo" aria-hidden="true">
+            <span className="ad-logo-moon-glyph">☾</span>
+            <span className="ad-logo-star-dot" />
+          </span>
           <div className="guest-brand-text">
             <span className="guest-brand-name">AFTERDARK · E2EE Private 1-on-1 Room</span>
             <span className="guest-brand-sub">
@@ -837,7 +844,7 @@ export function GuestApp() {
             </span>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="guest-topbar-actions">
           <button
             type="button"
             className={`guest-tool-btn ${activeDrawer === 'e2ee' ? 'active' : ''}`}
@@ -851,18 +858,6 @@ export function GuestApp() {
             }}
           >
             {activeE2eeContext.locked ? '🔒 E2EE Locked' : '🔐 E2EE Vault'}
-          </button>
-          <button
-            type="button"
-            className="guest-tool-btn"
-            onClick={() => setShowRepoModal(true)}
-            style={{
-              background: 'rgba(56, 189, 248, 0.18)',
-              borderColor: 'rgba(56, 189, 248, 0.5)',
-              color: '#bae6fd'
-            }}
-          >
-            🚀 GitHub &amp; Render Repo
           </button>
           <button
             type="button"
@@ -896,16 +891,11 @@ export function GuestApp() {
         </div>
       </header>
 
-      <GuestRepoRenderDeployModal
-        open={showRepoModal}
-        onClose={() => setShowRepoModal(false)}
-      />
-
       <IncomingMessageToast
         notification={incomingToast}
         soundEnabled={soundEnabled}
         onToggleSound={() => setSoundEnabled((prev) => !prev)}
-        onTestSound={() => playIncomingMessageSound(true)}
+        onTestSound={() => playIncomingMessageSound(true, 'guest')}
         onDismiss={() => setIncomingToast(null)}
       />
 
@@ -1180,7 +1170,7 @@ export function GuestApp() {
                   onClick={() => {
                     const next = !soundEnabled;
                     setSoundEnabled(next);
-                    if (next) playIncomingMessageSound(true);
+                    if (next) playIncomingMessageSound(true, 'guest');
                   }}
                   title="Toggle incoming message chime sound"
                 >

@@ -1,4 +1,31 @@
 import { brandCatalog, CITY_PROFILES, analyzeChatContextLocally } from './commerce-data.js';
+import {
+  encodeOtpSignature,
+  verifyOtpSignature,
+  deriveE2eeFingerprint,
+  isE2eeCiphertext,
+  encryptChatMessage,
+  decryptChatMessage,
+  encryptMessageRecord,
+  decryptMessageRecord,
+  saveSessionE2eeContext,
+  loadSessionE2eeContext,
+  setSessionHistoryLocked
+} from './e2ee-crypto.js';
+
+export {
+  encodeOtpSignature,
+  verifyOtpSignature,
+  deriveE2eeFingerprint,
+  isE2eeCiphertext,
+  encryptChatMessage,
+  decryptChatMessage,
+  encryptMessageRecord,
+  decryptMessageRecord,
+  saveSessionE2eeContext,
+  loadSessionE2eeContext,
+  setSessionHistoryLocked
+};
 
 const SHARED_STATE_KEY = 'afterdark_shared_couple_state_v3';
 const CHANNEL_NAME = 'afterdark_couple_live_channel_v3';
@@ -74,18 +101,9 @@ export function purgeStaleServiceWorkers() {
   }
 }
 
-export function encodeOtpSignature(otp) {
-  const clean = String(otp || '').replace(/\D/g, '').slice(0, 6);
-  if (clean.length !== 6) return '';
-  try {
-    return btoa(`ad:${clean}`);
-  } catch {
-    return clean;
-  }
-}
-
 export function decodeOtpSignature(sig) {
   if (!sig) return '';
+  if (String(sig).startsWith('ad1_')) return '';
   try {
     const raw = atob(String(sig));
     if (raw.startsWith('ad:')) {
@@ -188,7 +206,7 @@ export function buildPublicInviteLinks({
   params.set('invite', inviteToken);
   if (creatorDisplayName) params.set('creator', String(creatorDisplayName).slice(0, 20));
   if (recipientHint) params.set('hint', String(recipientHint).slice(0, 20));
-  const sig = encodeOtpSignature(verificationCode);
+  const sig = encodeOtpSignature(verificationCode, inviteToken);
   if (sig) params.set('k', sig);
   const devId = creatorDeviceId || getClientDeviceId();
   if (devId) params.set('cdev', devId);
@@ -606,7 +624,7 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
       throw new Error('Please enter the 6-digit OTP shared by your partner.');
     }
 
-    const expectedFromUrl = decodeOtpSignature(urlContext?.k || body?.expectedSignature || '');
+    const sigFromUrl = String(urlContext?.k || body?.expectedSignature || '').trim();
     const guestDisplayName =
       String(body.guestDisplayName || body.handle || '').trim() ||
       urlContext.hint ||
@@ -635,18 +653,23 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
       throw new Error('Invalid 6-digit OTP! Please enter the exact 6-digit code shown on your partner’s screen.');
     }
     if (!invite) {
-      if (!rawToken || rawToken === 'otp-direct' || !expectedFromUrl) {
+      if (!rawToken || rawToken === 'otp-direct' || !sigFromUrl) {
         throw new Error(
           'No active host session matches this 6-digit OTP. Please check the 6-digit code on your partner’s screen.'
         );
       }
-      if (expectedFromUrl !== suppliedOtp) {
+      if (!verifyOtpSignature(suppliedOtp, rawToken, sigFromUrl)) {
         throw new Error('Invalid 6-digit OTP for this invite link. Please check with your partner.');
       }
     }
 
     const effectiveToken = invite?.inviteToken || rawToken;
     const channelId = `chan_${String(effectiveToken).replace(/[^a-zA-Z0-9]/g, '').slice(0, 14)}`;
+
+    saveSessionE2eeContext(effectiveToken, {
+      verificationCode: suppliedOtp,
+      locked: false
+    });
 
     let conn = state.connections.find(
       (c) =>
@@ -667,6 +690,7 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
         peerDisplayName: guestDisplayName,
         inviteToken: effectiveToken,
         verificationCode: suppliedOtp,
+        keyFingerprint: deriveE2eeFingerprint(suppliedOtp),
         guestSessionToken: 'gst_' + Math.random().toString(36).slice(2, 14),
         createdAt: nowIso,
         approvedAt: nowIso
@@ -680,7 +704,9 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
         channelId,
         senderRole: 'guest',
         senderName: guestDisplayName,
-        body: `Hau miyaan! ${guestDisplayName} connected to our private 1-on-1 room ♥ Ab baatein shuru karein?`,
+        body: `Hau miyaan! ${guestDisplayName} connected to our private 1-on-1 E2EE room ♥ Ab baatein shuru karein?`,
+        e2ee: true,
+        keyFingerprint: deriveE2eeFingerprint(suppliedOtp),
         createdAt: nowIso
       });
     } else {
@@ -688,6 +714,11 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
       conn.channelId = channelId;
       conn.paired = true;
     }
+
+    saveSessionE2eeContext(conn.id, {
+      verificationCode: suppliedOtp,
+      locked: false
+    });
 
     writeSharedState(state);
     return {
@@ -787,6 +818,9 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
           text,
           voiceMeta,
           photoMeta,
+          e2ee: Boolean(body.e2ee || isE2eeCiphertext(text)),
+          e2eeAlg: body.e2eeAlg || 'AES-256-GCM-PBKDF2',
+          keyFingerprint: body.keyFingerprint || '',
           seenAt: null,
           createdAt: new Date().toISOString()
         };
@@ -916,9 +950,189 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
   return { ok: true };
 }
 
+export function resolveActiveE2eeKeyContext(inviteToken = '', connectionId = '') {
+  const fromConnScope = connectionId ? loadSessionE2eeContext(connectionId) : null;
+  const fromInviteScope = inviteToken ? loadSessionE2eeContext(inviteToken) : null;
+  const fromDefaultScope = loadSessionE2eeContext('default');
+  const activeCtx = fromConnScope || fromInviteScope || fromDefaultScope;
+
+  if (activeCtx?.locked) {
+    return {
+      verificationCode: activeCtx.verificationCode || '',
+      customPassphrase: activeCtx.customPassphrase || '',
+      locked: true,
+      keyFingerprint: activeCtx.keyFingerprint || 'LOCKED'
+    };
+  }
+
+  let verificationCode = String(activeCtx?.verificationCode || '')
+    .replace(/\D/g, '')
+    .slice(0, 6);
+  const customPassphrase = String(activeCtx?.customPassphrase || '').trim();
+
+  if (verificationCode.length !== 6 && typeof window !== 'undefined') {
+    try {
+      const cachedInviteRaw = localStorage.getItem(CREATOR_INVITE_CACHE_KEY);
+      if (cachedInviteRaw) {
+        const cachedInvite = JSON.parse(cachedInviteRaw);
+        if (
+          cachedInvite?.verificationCode &&
+          (!inviteToken || cachedInvite.inviteToken === inviteToken)
+        ) {
+          verificationCode = String(cachedInvite.verificationCode)
+            .replace(/\D/g, '')
+            .slice(0, 6);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (verificationCode.length !== 6) {
+    const state = readSharedState();
+    const matchedConn =
+      state.connections.find(
+        (c) =>
+          (connectionId && c.id === connectionId) ||
+          (inviteToken && c.inviteToken === inviteToken)
+      ) || state.connections.find((c) => c.status === 'active' && c.verificationCode);
+    if (matchedConn?.verificationCode) {
+      verificationCode = String(matchedConn.verificationCode)
+        .replace(/\D/g, '')
+        .slice(0, 6);
+    } else {
+      const matchedInv =
+        (inviteToken && state.invites.find((i) => i.inviteToken === inviteToken)) ||
+        state.invites.find((i) => i.status !== 'revoked' && i.verificationCode);
+      if (matchedInv?.verificationCode) {
+        verificationCode = String(matchedInv.verificationCode)
+          .replace(/\D/g, '')
+          .slice(0, 6);
+      }
+    }
+  }
+
+  return {
+    verificationCode,
+    customPassphrase,
+    locked: false,
+    keyFingerprint:
+      verificationCode.length === 6
+        ? deriveE2eeFingerprint(verificationCode, customPassphrase)
+        : 'UNVERIFIED-KEY'
+  };
+}
+
+function extractConnectionIdFromPath(cleanPath) {
+  const parts = String(cleanPath || '').split('/').filter(Boolean);
+  if (parts[0] === 'guest' && parts[1] === 'connections' && parts[2]) {
+    return parts[2];
+  }
+  if (parts[0] === 'connections' && parts[1]) {
+    return parts[1];
+  }
+  return '';
+}
+
+async function postProcessE2eeResponse(data, cleanPath, urlContext = {}) {
+  if (!data || typeof data !== 'object') return data;
+  const connId =
+    data?.connection?.id ||
+    extractConnectionIdFromPath(cleanPath) ||
+    '';
+  const invToken =
+    data?.inviteToken ||
+    data?.invite?.inviteToken ||
+    data?.connection?.inviteToken ||
+    urlContext?.token ||
+    '';
+
+  const saveOtpIfUnlocked = (scope, otp) => {
+    if (!scope || !otp) return;
+    const existing = loadSessionE2eeContext(scope);
+    if (!existing?.locked) {
+      saveSessionE2eeContext(scope, {
+        verificationCode: otp,
+        customPassphrase: existing?.customPassphrase || '',
+        locked: false
+      });
+    }
+  };
+
+  if (data?.inviteToken && data?.verificationCode) {
+    saveOtpIfUnlocked(data.inviteToken, data.verificationCode);
+    saveOtpIfUnlocked('default', data.verificationCode);
+  }
+
+  if (data?.invite?.inviteToken && data?.invite?.verificationCode) {
+    mirrorInviteLocally(data.invite);
+    saveOtpIfUnlocked(data.invite.inviteToken, data.invite.verificationCode);
+    saveOtpIfUnlocked('default', data.invite.verificationCode);
+  }
+
+  if (data?.connection?.verificationCode) {
+    saveOtpIfUnlocked(data.connection.id, data.connection.verificationCode);
+    saveOtpIfUnlocked(data.connection.inviteToken, data.connection.verificationCode);
+    saveOtpIfUnlocked('default', data.connection.verificationCode);
+  }
+
+  if (Array.isArray(data?.connections)) {
+    for (const c of data.connections) {
+      if (c && c.id) {
+        mirrorConnectionLocally(c);
+        if (c.verificationCode) {
+          saveOtpIfUnlocked(c.id, c.verificationCode);
+          saveOtpIfUnlocked(c.inviteToken, c.verificationCode);
+          saveOtpIfUnlocked('default', c.verificationCode);
+        }
+      }
+    }
+  }
+
+  const keyCtx = resolveActiveE2eeKeyContext(invToken, connId);
+
+  if (Array.isArray(data.messages)) {
+    data.messages = await Promise.all(
+      data.messages.map((m) => decryptMessageRecord(m, keyCtx))
+    );
+  }
+
+  if (data.message && typeof data.message === 'object') {
+    data.message = await decryptMessageRecord(data.message, keyCtx);
+  }
+
+  return data;
+}
+
 export async function resilientApiRequest(path, options = {}, token = '', urlContext = {}) {
-  const headers = { ...(options.headers || {}) };
-  if (!(options.body instanceof FormData)) {
+  const cleanPath = String(path || '').split('?')[0].replace(/^\/+/, '');
+  const method = (options.method || 'GET').toUpperCase();
+  const connId = extractConnectionIdFromPath(cleanPath);
+  const requestOptions = { ...options };
+
+  // Client-side AES-256-GCM E2EE Encryption BEFORE message leaves the device!
+  if (
+    method === 'POST' &&
+    connId &&
+    cleanPath.endsWith('/messages') &&
+    typeof requestOptions.body === 'string' &&
+    requestOptions.body
+  ) {
+    try {
+      const parsedBody = JSON.parse(requestOptions.body);
+      const keyCtx = resolveActiveE2eeKeyContext(urlContext?.token || '', connId);
+      if (keyCtx.verificationCode && !keyCtx.locked) {
+        const encryptedPayload = await encryptMessageRecord(parsedBody, keyCtx);
+        requestOptions.body = JSON.stringify(encryptedPayload);
+      }
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  const headers = { ...(requestOptions.headers || {}) };
+  if (!(requestOptions.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
   headers['X-Device-Id'] = getClientDeviceId();
@@ -950,7 +1164,7 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
   }
   // The Render guest connector is a static site and has no /api backend.
   // Route guest requests to the shared Vercel Social Universe API instead.
-  if (typeof window !== 'undefined' && /(^|\\.)afterdark-guest-connector\\.onrender\\.com$/i.test(window.location.hostname)) {
+  if (typeof window !== 'undefined' && /(^|\.)afterdark-guest-connector\.onrender\.com$/i.test(window.location.hostname)) {
     candidateBases.push(`${STABLE_PUBLIC_ORIGIN}/api`);
   }
   candidateBases.push('/api');
@@ -961,7 +1175,7 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
   for (const base of candidateBases) {
     try {
       const response = await fetch(`${base}${path}`, {
-        ...options,
+        ...requestOptions,
         headers
       });
       const contentType = String(response.headers.get('content-type') || '');
@@ -986,7 +1200,7 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
               // ignore
             }
           }
-          return data;
+          return await postProcessE2eeResponse(data, cleanPath, urlContext);
         }
         lastStatus = response.status;
         lastHttpError = new Error(data.error || 'Request failed');
@@ -996,7 +1210,6 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
     }
   }
 
-  const cleanPath = String(path || '').split('?')[0].replace(/^\/+/, '');
   const isReadOrSessionCheck =
     cleanPath === 'me' ||
     cleanPath === 'invites/current' ||
@@ -1007,5 +1220,6 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
     throw lastHttpError;
   }
 
-  return executeLocalFallback(path, options, token, urlContext);
+  const fallbackData = executeLocalFallback(path, requestOptions, token, urlContext);
+  return await postProcessE2eeResponse(fallbackData, cleanPath, urlContext);
 }
