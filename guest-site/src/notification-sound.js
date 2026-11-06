@@ -1,11 +1,11 @@
-// Real-time 3-Mode Smooth Audio & Android APK Notification Engine for AFTERDARK (v2.0.2.3)
-// Provides three completely distinct, Butterworth-filtered acoustic signatures:
-// 1. Android APK Native Chime ('apk'): Crystal Santoor & Warm Sub-Bass Shimmer (528Hz -> 660Hz -> 792Hz -> 1056Hz + 264Hz Sub-Bass + Haptics)
-// 2. Website Main Host Chime ('creator'): Velvet Rose Marimba & Warm Bell Chord (D5 -> F#5 -> A5 -> D6)
-// 3. Website Guest Partner Chime ('guest'): Moonlight Celestial Harp Glissando (E5 -> G#5 -> B5 -> E6 -> G#6)
+// Real-time 3-Mode Audible Notification & Sound Engine for AFTERDARK
+// Automatically unlocks Web Audio + HTML5 WAV Audio on first user interaction so background poll
+// notifications are always clearly audible on Desktop, Mobile Web, and Android APK.
 
 let sharedAudioCtx = null;
+let audioUnlocked = false;
 const APK_SOUND_MODE_KEY = 'afterdark_apk_sound_mode_v2';
+const cachedWavDataUris = {};
 
 function getAudioContext() {
   if (typeof window === 'undefined') return null;
@@ -21,9 +21,115 @@ function getAudioContext() {
 }
 
 /**
- * Detects whether the user is running inside the AFTERDARK Android APK / Capacitor wrapper,
- * Android WebView (`; wv)`), installed standalone APK/PWA, or has enabled APK Sound Mode.
+ * Generates an in-memory 16-bit PCM WAV data URI for a chord sequence so that even if
+ * Web Audio API is throttled in a background tab or mobile WebView, HTML5 `<audio>` plays audibly.
  */
+function buildChordWavDataUri(notes, totalDurationSec = 0.85) {
+  const sampleRate = 22050;
+  const numSamples = Math.floor(sampleRate * totalDurationSec);
+  const buffer = new ArrayBuffer(44 + numSamples * 2);
+  const view = new DataView(buffer);
+
+  function writeString(offset, str) {
+    for (let i = 0; i < str.length; i++) {
+      view.setUint8(offset + i, str.charCodeAt(i));
+    }
+  }
+
+  writeString(0, 'RIFF');
+  view.setUint32(4, 36 + numSamples * 2, true);
+  writeString(8, 'WAVE');
+  writeString(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // Mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, 'data');
+  view.setUint32(40, numSamples * 2, true);
+
+  for (let i = 0; i < numSamples; i++) {
+    const t = i / sampleRate;
+    let sample = 0;
+    for (const n of notes) {
+      if (t >= n.start && t <= n.start + n.duration) {
+        const localT = t - n.start;
+        const attack = Math.min(1, localT / 0.015);
+        const decay = Math.exp((-3.5 * localT) / n.duration);
+        const env = attack * decay;
+        sample +=
+          env *
+          n.gain *
+          (Math.sin(2 * Math.PI * n.freq * localT) +
+            0.35 * Math.sin(2 * Math.PI * (n.subFreq || n.freq * 0.5) * localT));
+      }
+    }
+    const clamped = Math.max(-0.95, Math.min(0.95, sample));
+    view.setInt16(44 + i * 2, Math.floor(clamped * 32767), true);
+  }
+
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return `data:audio/wav;base64,${btoa(binary)}`;
+}
+
+function playFallbackWavChime(profileKey, notes, durationSec = 0.85) {
+  if (typeof window === 'undefined' || typeof Audio === 'undefined') return;
+  try {
+    if (!cachedWavDataUris[profileKey]) {
+      cachedWavDataUris[profileKey] = buildChordWavDataUri(notes, durationSec);
+    }
+    const audio = new Audio(cachedWavDataUris[profileKey]);
+    audio.volume = 0.85;
+    audio.play().catch(() => {});
+  } catch {
+    // ignore fallback audio errors
+  }
+}
+
+/**
+ * Unlocks the shared Web Audio context on the user's very first interaction
+ * (click, tap, or keypress) so subsequent incoming partner message polls are 100% audible.
+ */
+export function unlockAudioOnFirstInteraction() {
+  if (typeof window === 'undefined' || audioUnlocked) return;
+
+  const unlockHandler = () => {
+    try {
+      const ctx = getAudioContext();
+      if (ctx) {
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+        const silentBuf = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = silentBuf;
+        source.connect(ctx.destination);
+        source.start(0);
+        if (ctx.state === 'running') {
+          audioUnlocked = true;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  ['pointerdown', 'touchstart', 'mousedown', 'keydown'].forEach((evt) => {
+    window.addEventListener(evt, unlockHandler, { passive: true });
+  });
+}
+
+// Automatically attach unlock listeners in browser environments
+if (typeof window !== 'undefined') {
+  unlockAudioOnFirstInteraction();
+}
+
 export function isAndroidApkEnvironment() {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') return false;
   try {
@@ -67,23 +173,38 @@ export function setSimulatedApkNotificationMode(enableApk = true) {
 
 export function getActiveSoundProfileLabel(viewerRole = 'creator') {
   if (isAndroidApkEnvironment()) {
-    return '📱 Android APK · Crystal Santoor & Sub-Bass Chime';
+    return 'Android App Alert';
   }
-  return viewerRole === 'guest'
-    ? '🌙 Guest Web · Moonlight Celestial Harp'
-    : '🌹 Host Web · Velvet Rose Marimba';
+  return viewerRole === 'guest' ? 'Partner Chime' : 'Host Chime';
 }
 
-/**
- * Dedicated Android APK Notification Sound:
- * "Crystal Santoor & Warm Sub-Bass Shimmer" (528Hz Solfeggio C5 -> E5 -> G5 -> C6 -> E6)
- * Distinct from both Website Host and Website Guest chimes, engineered to cut through
- * mobile phone speakers cleanly while feeling warm and luxurious.
- */
+const APK_SANTOOR_NOTES = [
+  { freq: 528.0, detuneFreq: 530.2, subFreq: 264.0, start: 0.0, duration: 0.28, gain: 0.34 },
+  { freq: 660.0, detuneFreq: 662.5, subFreq: 330.0, start: 0.07, duration: 0.3, gain: 0.36 },
+  { freq: 792.0, detuneFreq: 795.0, subFreq: 396.0, start: 0.14, duration: 0.34, gain: 0.38 },
+  { freq: 1056.0, detuneFreq: 1059.5, subFreq: 528.0, start: 0.22, duration: 0.44, gain: 0.4 },
+  { freq: 1320.0, detuneFreq: 1324.0, subFreq: 660.0, start: 0.32, duration: 0.5, gain: 0.32 },
+  { freq: 1584.0, detuneFreq: 1588.0, subFreq: 792.0, start: 0.41, duration: 0.64, gain: 0.28 }
+];
+
+const GUEST_HARP_NOTES = [
+  { freq: 659.25, subFreq: 329.63, start: 0.0, duration: 0.3, gain: 0.34, type: 'sine' },
+  { freq: 830.61, subFreq: 415.3, start: 0.09, duration: 0.32, gain: 0.36, type: 'sine' },
+  { freq: 987.77, subFreq: 493.88, start: 0.18, duration: 0.36, gain: 0.38, type: 'sine' },
+  { freq: 1318.51, subFreq: 659.25, start: 0.27, duration: 0.45, gain: 0.34, type: 'sine' },
+  { freq: 1661.22, subFreq: 830.61, start: 0.37, duration: 0.58, gain: 0.28, type: 'triangle' }
+];
+
+const HOST_MARIMBA_NOTES = [
+  { freq: 587.33, subFreq: 293.66, start: 0.0, duration: 0.28, gain: 0.36, type: 'sine' },
+  { freq: 739.99, subFreq: 369.99, start: 0.11, duration: 0.3, gain: 0.38, type: 'sine' },
+  { freq: 880.0, subFreq: 440.0, start: 0.22, duration: 0.34, gain: 0.4, type: 'sine' },
+  { freq: 1174.66, subFreq: 587.33, start: 0.34, duration: 0.55, gain: 0.34, type: 'triangle' }
+];
+
 export function playAndroidApkNotificationSound(enabled = true) {
   if (!enabled || typeof window === 'undefined') return false;
   try {
-    // Trigger Android native haptic pulse rhythm if supported on device
     if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
       try {
         navigator.vibrate([90, 45, 140, 40, 90]);
@@ -93,26 +214,19 @@ export function playAndroidApkNotificationSound(enabled = true) {
     }
 
     const ctx = getAudioContext();
-    if (!ctx) return false;
+    if (!ctx || ctx.state !== 'running') {
+      playFallbackWavChime('apk', APK_SANTOOR_NOTES, 1.1);
+      if (!ctx) return true;
+    }
 
     const now = ctx.currentTime;
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(2850, now);
-    filter.Q.setValueAtTime(1.15, now);
+    filter.frequency.setValueAtTime(3200, now);
+    filter.Q.setValueAtTime(1.1, now);
     filter.connect(ctx.destination);
 
-    // 6-Note Crystal Santoor Double-Strike + Warm Sub-Octave Resonance (Distinct APK Signature)
-    const apkSantoorNotes = [
-      { freq: 528.0, detuneFreq: 530.2, subFreq: 264.0, start: 0.0, duration: 0.26, gain: 0.19 },
-      { freq: 660.0, detuneFreq: 662.5, subFreq: 330.0, start: 0.07, duration: 0.28, gain: 0.20 },
-      { freq: 792.0, detuneFreq: 795.0, subFreq: 396.0, start: 0.14, duration: 0.32, gain: 0.21 },
-      { freq: 1056.0, detuneFreq: 1059.5, subFreq: 528.0, start: 0.22, duration: 0.42, gain: 0.22 },
-      { freq: 1320.0, detuneFreq: 1324.0, subFreq: 660.0, start: 0.32, duration: 0.48, gain: 0.17 },
-      { freq: 1584.0, detuneFreq: 1588.0, subFreq: 792.0, start: 0.41, duration: 0.62, gain: 0.14 }
-    ];
-
-    apkSantoorNotes.forEach(({ freq, detuneFreq, subFreq, start, duration, gain }) => {
+    APK_SANTOOR_NOTES.forEach(({ freq, detuneFreq, subFreq, start, duration, gain }) => {
       const mainOsc = ctx.createOscillator();
       const shimmerOsc = ctx.createOscillator();
       const subOsc = ctx.createOscillator();
@@ -128,7 +242,7 @@ export function playAndroidApkNotificationSound(enabled = true) {
       subOsc.frequency.setValueAtTime(subFreq, now + start);
 
       gainNode.gain.setValueAtTime(0.0001, now + start);
-      gainNode.gain.linearRampToValueAtTime(gain, now + start + 0.016);
+      gainNode.gain.linearRampToValueAtTime(gain, now + start + 0.015);
       gainNode.gain.exponentialRampToValueAtTime(0.0001, now + start + duration);
 
       mainOsc.connect(gainNode);
@@ -147,52 +261,47 @@ export function playAndroidApkNotificationSound(enabled = true) {
 
     return true;
   } catch {
+    playFallbackWavChime('apk', APK_SANTOOR_NOTES, 1.1);
     return false;
   }
 }
 
-/**
- * Plays a distinct, ultra-smooth incoming message chime depending on platform & `viewerRole`:
- * - Android APK ('apk' or `isAndroidApkEnvironment()`): Crystal Santoor & Sub-Bass Shimmer
- * - Website 'creator' (Main Host App): Velvet Rose Marimba & Warm Bell Chord (D5 -> F#5 -> A5 -> D6)
- * - Website 'guest' (Guest Partner App): Moonlight Celestial Harp Glissando (E5 -> G#5 -> B5 -> E6 -> G#6)
- */
 export function playIncomingMessageSound(enabled = true, viewerRole = 'creator', forceApk = false) {
   if (!enabled || typeof window === 'undefined') return false;
 
-  if (forceApk || viewerRole === 'apk' || isAndroidApkEnvironment()) {
+  const useApk =
+    typeof forceApk === 'object'
+      ? Boolean(forceApk?.forceApkMode)
+      : Boolean(forceApk || viewerRole === 'apk' || isAndroidApkEnvironment());
+
+  if (useApk) {
     return playAndroidApkNotificationSound(true);
   }
 
+  const notes = viewerRole === 'guest' ? GUEST_HARP_NOTES : HOST_MARIMBA_NOTES;
+  const profileKey = viewerRole === 'guest' ? 'guest' : 'creator';
+
   try {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      try {
+        navigator.vibrate([70, 40, 90]);
+      } catch {
+        // ignore
+      }
+    }
+
     const ctx = getAudioContext();
-    if (!ctx) return false;
+    if (!ctx || ctx.state !== 'running') {
+      playFallbackWavChime(profileKey, notes, 1.0);
+      if (!ctx) return true;
+    }
 
     const now = ctx.currentTime;
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(viewerRole === 'guest' ? 2400 : 1950, now);
-    filter.Q.setValueAtTime(0.8, now);
+    filter.frequency.setValueAtTime(viewerRole === 'guest' ? 2800 : 2400, now);
+    filter.Q.setValueAtTime(0.85, now);
     filter.connect(ctx.destination);
-
-    // Distinct melodic signatures for Main Host vs. Guest Site on Website
-    const notes =
-      viewerRole === 'guest'
-        ? [
-            // Guest Side: Dreamy 5-note E-major 9th Moonlight Celestial Harp Glissando
-            { freq: 659.25, subFreq: 329.63, start: 0.0, duration: 0.28, gain: 0.14, type: 'sine' },
-            { freq: 830.61, subFreq: 415.3, start: 0.08, duration: 0.30, gain: 0.16, type: 'sine' },
-            { freq: 987.77, subFreq: 493.88, start: 0.16, duration: 0.34, gain: 0.17, type: 'sine' },
-            { freq: 1318.51, subFreq: 659.25, start: 0.25, duration: 0.42, gain: 0.15, type: 'sine' },
-            { freq: 1661.22, subFreq: 830.61, start: 0.35, duration: 0.55, gain: 0.11, type: 'triangle' }
-          ]
-        : [
-            // Main Host Side: Warm 4-note D-major Velvet Rose Marimba & Soft Bell
-            { freq: 587.33, subFreq: 293.66, start: 0.0, duration: 0.24, gain: 0.17, type: 'sine' },
-            { freq: 739.99, subFreq: 369.99, start: 0.11, duration: 0.26, gain: 0.19, type: 'sine' },
-            { freq: 880.0, subFreq: 440.0, start: 0.22, duration: 0.30, gain: 0.20, type: 'sine' },
-            { freq: 1174.66, subFreq: 587.33, start: 0.34, duration: 0.52, gain: 0.16, type: 'triangle' }
-          ];
 
     notes.forEach(({ freq, subFreq, start, duration, gain, type }) => {
       const osc = ctx.createOscillator();
@@ -206,7 +315,7 @@ export function playIncomingMessageSound(enabled = true, viewerRole = 'creator',
       subOsc.frequency.setValueAtTime(subFreq, now + start);
 
       gainNode.gain.setValueAtTime(0.0001, now + start);
-      gainNode.gain.linearRampToValueAtTime(gain, now + start + 0.022);
+      gainNode.gain.linearRampToValueAtTime(gain, now + start + 0.018);
       gainNode.gain.exponentialRampToValueAtTime(0.0001, now + start + duration);
 
       osc.connect(gainNode);
@@ -221,14 +330,11 @@ export function playIncomingMessageSound(enabled = true, viewerRole = 'creator',
 
     return true;
   } catch {
+    playFallbackWavChime(profileKey, notes, 1.0);
     return false;
   }
 }
 
-/**
- * Plays a smooth, tactile acoustic bubble-pop when sending a message
- * (distinct pitch contour for APK vs Host Web vs Guest Web).
- */
 export function playOutgoingMessageSound(enabled = true, viewerRole = 'creator') {
   if (!enabled || typeof window === 'undefined') return false;
   try {
@@ -245,26 +351,23 @@ export function playOutgoingMessageSound(enabled = true, viewerRole = 'creator')
 
     osc.type = isApk ? 'triangle' : 'sine';
     osc.frequency.setValueAtTime(startFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(endFreq, now + 0.075);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, now + 0.08);
 
     gainNode.gain.setValueAtTime(0.0001, now);
-    gainNode.gain.linearRampToValueAtTime(0.12, now + 0.014);
-    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+    gainNode.gain.linearRampToValueAtTime(0.22, now + 0.014);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.095);
 
     osc.connect(gainNode);
     gainNode.connect(ctx.destination);
 
     osc.start(now);
-    osc.stop(now + 0.1);
+    osc.stop(now + 0.11);
     return true;
   } catch {
     return false;
   }
 }
 
-/**
- * Plays a soft, subtle 2-note "blush pop" shimmer when the partner reads your message.
- */
 export function playMessageSeenSound(enabled = true) {
   if (!enabled || typeof window === 'undefined') return false;
   try {
@@ -273,8 +376,8 @@ export function playMessageSeenSound(enabled = true) {
 
     const now = ctx.currentTime;
     const notes = [
-      { freq: 659.25, start: 0, duration: 0.11, gain: 0.08 },
-      { freq: 987.77, start: 0.08, duration: 0.2, gain: 0.1 }
+      { freq: 659.25, start: 0, duration: 0.12, gain: 0.16 },
+      { freq: 987.77, start: 0.08, duration: 0.22, gain: 0.2 }
     ];
 
     notes.forEach(({ freq, start, duration, gain }) => {
@@ -319,10 +422,6 @@ export function getGenZSeenStatusText(messageId = '') {
   return GENZ_SEEN_SLANG_LINES[hash % GENZ_SEEN_SLANG_LINES.length];
 }
 
-/**
- * Dispatches a native Android / OS notification via ServiceWorker or Notification API
- * and plays the platform-appropriate incoming sound (APK Santoor vs Web Host vs Web Guest).
- */
 let titleResetTimer = null;
 const ORIGINAL_TITLE =
   typeof document !== 'undefined' ? document.title : 'AFTERDARK · Private Couple Chat';
@@ -348,13 +447,11 @@ export async function triggerIncomingPartnerAlert({
     }, 6000);
   }
 
-  const cleanPreview = String(messageText || 'Sent you a private E2EE message ♥').slice(0, 110);
-  const notifTitle = isApk
-    ? `☾ AFTERDARK APK · ${senderName}`
-    : `💌 New message from ${senderName}`;
+  const cleanPreview = String(messageText || 'Sent you a private message ♥').slice(0, 110);
+  const notifTitle = `💌 ${senderName} texted you ♥`;
 
   if (typeof window !== 'undefined' && 'Notification' in window) {
-    if (Notification.permission === 'granted' && (document.hidden || isApk)) {
+    if (Notification.permission === 'granted') {
       const notifOptions = {
         body: cleanPreview,
         icon: '/icon-192.svg',
@@ -362,7 +459,7 @@ export async function triggerIncomingPartnerAlert({
         tag: 'afterdark-partner-msg',
         renotify: true,
         vibrate: [90, 45, 140, 40, 90],
-        data: { senderName, viewerRole, version: '2.0.2.3' }
+        data: { senderName, viewerRole }
       };
 
       try {
@@ -394,4 +491,3 @@ export async function requestBrowserNotificationPermission() {
 }
 
 export const requestNativeNotificationPermission = requestBrowserNotificationPermission;
-

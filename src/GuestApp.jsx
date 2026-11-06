@@ -5,6 +5,7 @@ import {
   detectUserLiveCityAndAddress,
   flirtyHindiDrops,
   getPersonalizedInChatBrandAd,
+  analyzeChatContextLocally,
   QuickDropChipBar,
   InlineCommerceDrawer,
   LocationTreasureHuntDrawer,
@@ -95,6 +96,77 @@ export function readInviteParamsFromLocation() {
   }
 
   return { token: '', otp: '', k, creator, hint, cdev, cip, apiOrigin };
+}
+
+function stabilizeGuestConnection(prev, next) {
+  if (!next) return prev;
+  if (
+    prev &&
+    prev.id === next.id &&
+    prev.status === next.status &&
+    prev.creatorDisplayName === next.creatorDisplayName &&
+    prev.guestDisplayName === next.guestDisplayName
+  ) {
+    return prev;
+  }
+  return next;
+}
+
+function mergeMessagesStable(prev, incoming) {
+  if (!Array.isArray(incoming)) return prev;
+  if (incoming.length === 0 && prev.length > 0) {
+    return prev;
+  }
+  const byId = new Map();
+  for (const m of prev) {
+    if (m && m.id) byId.set(m.id, m);
+  }
+  for (const m of incoming) {
+    if (m && m.id) {
+      const existing = byId.get(m.id);
+      byId.set(m.id, existing ? { ...existing, ...m } : m);
+    }
+  }
+  const merged = Array.from(byId.values()).sort((a, b) => {
+    const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
+    const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
+    return ta - tb;
+  });
+  if (merged.length === prev.length) {
+    let identical = true;
+    for (let i = 0; i < merged.length; i += 1) {
+      const a = prev[i];
+      const b = merged[i];
+      if (
+        a.id !== b.id ||
+        (a.body || a.text) !== (b.body || b.text) ||
+        (a.seenAt || null) !== (b.seenAt || null)
+      ) {
+        identical = false;
+        break;
+      }
+    }
+    if (identical) return prev;
+  }
+  return merged;
+}
+
+function mergePhotosStable(prev, incoming) {
+  if (!Array.isArray(incoming)) return prev;
+  if (incoming.length === 0 && prev.length > 0) {
+    return prev;
+  }
+  if (incoming.length === prev.length) {
+    let identical = true;
+    for (let i = 0; i < incoming.length; i += 1) {
+      if (prev[i]?.id !== incoming[i]?.id) {
+        identical = false;
+        break;
+      }
+    }
+    if (identical) return prev;
+  }
+  return incoming;
 }
 
 export function GuestApp() {
@@ -226,13 +298,13 @@ export function GuestApp() {
         return false;
       }
 
-      setConnection(activeConnection);
+      setConnection((prev) => stabilizeGuestConnection(prev, activeConnection));
       const [messageData, photoData] = await Promise.all([
         api(`/guest/connections/${activeConnection.id}/messages`, {}, activeGuestToken),
         api(`/guest/connections/${activeConnection.id}/photos`, {}, activeGuestToken)
       ]);
       const nextMsgs = messageData.messages || [];
-      setMessages(nextMsgs);
+      setMessages((prev) => mergeMessagesStable(prev, nextMsgs));
       if (!initializedMsgStreamRef.current) {
         initializedMsgStreamRef.current = true;
         if (nextMsgs.length > 0) {
@@ -244,7 +316,7 @@ export function GuestApp() {
           });
         }
       }
-      setPhotos(photoData.photos || []);
+      setPhotos((prev) => mergePhotosStable(prev, photoData.photos || []));
       setStage('chat');
       return true;
     } catch {
@@ -273,9 +345,7 @@ export function GuestApp() {
         const data = await api(
           `/invites/${encodeURIComponent(inviteToken)}?creator=${encodeURIComponent(
             urlContext.creator || ''
-          )}&hint=${encodeURIComponent(urlContext.hint || '')}&cdev=${encodeURIComponent(
-            urlContext.cdev || ''
-          )}&cip=${encodeURIComponent(urlContext.cip || '')}`
+          )}&hint=${encodeURIComponent(urlContext.hint || '')}`
         );
         if (data?.invite?.status === 'revoked') {
           if (mounted) {
@@ -329,15 +399,20 @@ export function GuestApp() {
   useEffect(() => {
     if (stage !== 'chat' || !connection?.id) return undefined;
 
+    let pollInFlight = false;
     const refresh = async () => {
+      if (pollInFlight) return;
+      pollInFlight = true;
       try {
         const [messageData, photoData] = await Promise.all([
           api(`/guest/connections/${connection.id}/messages`, {}, guestToken),
           api(`/guest/connections/${connection.id}/photos`, {}, guestToken)
         ]);
         const nextMessages = messageData.messages || [];
-        setMessages(nextMessages);
-        if (photoData.photos) setPhotos(photoData.photos);
+        setMessages((prev) => mergeMessagesStable(prev, nextMessages));
+        if (photoData.photos) {
+          setPhotos((prev) => mergePhotosStable(prev, photoData.photos));
+        }
 
         // Detect newly arrived message from Host (creator) and play chime + show visual toast
         if (!initializedMsgStreamRef.current) {
@@ -387,39 +462,23 @@ export function GuestApp() {
         }
 
         if (nextMessages.length > 0) {
-          // Background Free Server-Side Gemini Chat Analysis when message count changes
           if (nextMessages.length !== lastAnalyzedCountRef.current) {
             lastAnalyzedCountRef.current = nextMessages.length;
-            api(
-              '/ai/analyze-chat',
-              {
-                method: 'POST',
-                body: JSON.stringify({
-                  messages: nextMessages.slice(-6),
-                  viewerRole: 'guest'
-                })
-              },
-              guestToken
-            )
-              .then((res) => {
-                if (res?.insight) setAiInsight(res.insight);
-              })
-              .catch(() => {});
+            setAiInsight(analyzeChatContextLocally(nextMessages.slice(-6), '', 'guest'));
           }
         }
       } catch (err) {
-        if (
-          String(err.message || '').toLowerCase().includes('closed') ||
-          String(err.message || '').toLowerCase().includes('revoked')
-        ) {
+        if (String(err.message || '').toLowerCase().includes('revoked')) {
           setRevokedError('Your partner revoked access and closed this private room.');
           setConnection(null);
           setStage('otp-gate');
         }
+      } finally {
+        pollInFlight = false;
       }
     };
 
-    const pollMs = getAdaptivePollIntervalMs(2000, stage === 'chat' && Boolean(connection?.id));
+    const pollMs = getAdaptivePollIntervalMs(2200, stage === 'chat' && Boolean(connection?.id));
     const interval = setInterval(refresh, pollMs);
     const unsubscribe = subscribeToCoupleSync(refresh);
     return () => {

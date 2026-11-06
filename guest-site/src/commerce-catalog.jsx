@@ -139,36 +139,23 @@ export function IncomingMessageToast({
 }) {
   if (!notification) return null;
 
-  const isApk = Boolean(notification.isAndroidApk || isAndroidApkRuntime());
-  const soundLabel =
-    notification.soundProfile ||
-    (isApk
-      ? 'android-apk-santoor-shimmer'
-      : notification.viewerRole === 'guest'
-      ? 'web-guest-celestial-harp'
-      : 'web-host-velvet-marimba');
-
   return (
     <div
       role="status"
       aria-live="polite"
-      className={`ad-incoming-toast-card ${isApk ? 'ad-apk-heads-up-toast' : ''}`}
+      className="ad-incoming-toast-card ad-apk-heads-up-toast"
       style={{
         position: 'fixed',
         top: 'calc(env(safe-area-inset-top, 0px) + 16px)',
         right: '16px',
         zIndex: 10000,
-        maxWidth: '410px',
+        maxWidth: '390px',
         width: 'calc(100vw - 32px)',
-        background: isApk
-          ? 'linear-gradient(135deg, #0b192c 0%, #1e1136 52%, #2b0938 100%)'
-          : 'linear-gradient(135deg, #2b0938 0%, #150720 100%)',
-        border: isApk ? '1.5px solid #38bdf8' : '1.5px solid #ff4f9a',
+        background: 'linear-gradient(135deg, #2b0938 0%, #150720 100%)',
+        border: '1.5px solid #ff4f9a',
         borderRadius: '18px',
         padding: '13px 15px',
-        boxShadow: isApk
-          ? '0 20px 48px rgba(56, 189, 248, 0.35), 0 0 24px rgba(244, 114, 182, 0.25)'
-          : '0 18px 42px rgba(255, 79, 154, 0.35)',
+        boxShadow: '0 20px 46px rgba(255, 79, 154, 0.4)',
         color: '#ffffff',
         display: 'flex',
         flexDirection: 'column',
@@ -179,20 +166,17 @@ export function IncomingMessageToast({
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span
             style={{
-              background: isApk
-                ? 'linear-gradient(135deg, #38bdf8, #818cf8)'
-                : '#ff4f9a',
-              color: '#090d16',
-              fontWeight: 900,
-              fontSize: '0.68rem',
+              background: '#ff4f9a',
+              color: '#111',
+              fontWeight: 800,
+              fontSize: '0.7rem',
               padding: '2px 9px',
-              borderRadius: '99px',
-              letterSpacing: '0.03em'
+              borderRadius: '99px'
             }}
           >
-            {isApk ? '📱 ANDROID APK PUSH' : '🔔 NEW MESSAGE'}
+            🔔 NEW MESSAGE
           </span>
-          <strong style={{ fontSize: '0.88rem', color: isApk ? '#bae6fd' : '#ffd1e6' }}>
+          <strong style={{ fontSize: '0.88rem', color: '#ffd1e6' }}>
             {notification.senderName || 'Your Partner'} texted you ♥
           </strong>
         </div>
@@ -244,31 +228,11 @@ export function IncomingMessageToast({
             <span className="ad-eq-bar" />
             <span className="ad-eq-bar" />
           </span>
-          <span style={{ fontSize: '0.7rem', color: isApk ? '#7dd3fc' : '#f9a8d4', fontWeight: 700 }}>
-            {soundEnabled
-              ? isApk
-                ? '🎵 APK Crystal Santoor & Sub-Bass Chime'
-                : `🔊 Web Chime (${soundLabel})`
-              : '🔇 Sound Muted'}
+          <span style={{ fontSize: '0.72rem', color: '#fbcfe8', fontWeight: 700 }}>
+            {soundEnabled ? '🔊 Chime sound played' : '🔇 Sound muted'}
           </span>
         </div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-          <button
-            type="button"
-            onClick={() => playAndroidApkNotificationSound(true)}
-            style={{
-              background: 'rgba(56, 189, 248, 0.16)',
-              border: '1px solid rgba(56, 189, 248, 0.45)',
-              color: '#bae6fd',
-              borderRadius: '6px',
-              padding: '2px 8px',
-              fontSize: '0.69rem',
-              fontWeight: 700,
-              cursor: 'pointer'
-            }}
-          >
-            📱 APK Chime
-          </button>
+        <div style={{ display: 'flex', gap: '6px' }}>
           {onTestSound && (
             <button
               type="button"
@@ -278,12 +242,12 @@ export function IncomingMessageToast({
                 border: '1px solid rgba(255,255,255,0.2)',
                 color: '#fff',
                 borderRadius: '6px',
-                padding: '2px 7px',
-                fontSize: '0.69rem',
+                padding: '2px 8px',
+                fontSize: '0.7rem',
                 cursor: 'pointer'
               }}
             >
-              🔊 Web Chime
+              🔊 Replay Chime
             </button>
           )}
           {onToggleSound && (
@@ -295,12 +259,12 @@ export function IncomingMessageToast({
                 border: '1px solid rgba(255,255,255,0.2)',
                 color: '#fff',
                 borderRadius: '6px',
-                padding: '2px 7px',
-                fontSize: '0.69rem',
+                padding: '2px 8px',
+                fontSize: '0.7rem',
                 cursor: 'pointer'
               }}
             >
-              {soundEnabled ? 'Mute' : 'Unmute'}
+              {soundEnabled ? 'Mute Alerts' : 'Unmute'}
             </button>
           )}
         </div>
@@ -465,45 +429,46 @@ export async function detectUserLiveCityAndAddress() {
         });
       });
       const { latitude, longitude } = pos.coords;
-      const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_DEMO_KEY}`;
-      const geoRes = await fetch(geoUrl);
-      if (geoRes.ok) {
-        const geoData = await geoRes.json();
-        const first = geoData.results?.[0];
-        if (first) {
-          const formatted = first.formatted_address || '';
-          const lowerAddr = formatted.toLowerCase();
-          let matchedCity = fallbackCity;
-          if (lowerAddr.includes('bihar') || lowerAddr.includes('patna') || lowerAddr.includes('gaya')) {
-            matchedCity = 'Patna';
-          } else if (
-            lowerAddr.includes('hyderabad') ||
-            lowerAddr.includes('secunderabad') ||
-            lowerAddr.includes('telangana')
-          ) {
-            matchedCity = 'Hyderabad';
-          } else if (
-            lowerAddr.includes('delhi') ||
-            lowerAddr.includes('noida') ||
-            lowerAddr.includes('gurugram')
-          ) {
-            matchedCity = 'Delhi';
-          } else if (lowerAddr.includes('mumbai') || lowerAddr.includes('maharashtra')) {
-            matchedCity = 'Mumbai';
-          } else if (lowerAddr.includes('bengaluru') || lowerAddr.includes('bangalore')) {
-            matchedCity = 'Bengaluru';
-          } else if (lowerAddr.includes('kolkata') || lowerAddr.includes('west bengal')) {
-            matchedCity = 'Kolkata';
+      let nearestCity = fallbackCity;
+      let minDistSq = Infinity;
+      for (const [cityKey, profile] of Object.entries(CITY_PROFILES)) {
+        if (typeof profile.lat === 'number' && typeof profile.lng === 'number') {
+          const dLat = latitude - profile.lat;
+          const dLng = longitude - profile.lng;
+          const distSq = dLat * dLat + dLng * dLng;
+          if (distSq < minDistSq) {
+            minDistSq = distSq;
+            nearestCity = cityKey;
           }
-          return {
-            city: matchedCity,
-            formattedAddress: formatted,
-            lat: latitude,
-            lng: longitude,
-            source: 'google-maps-gps'
-          };
         }
       }
+
+      if (GOOGLE_MAPS_DEMO_KEY) {
+        const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_DEMO_KEY}`;
+        const geoRes = await fetch(geoUrl);
+        if (geoRes.ok) {
+          const geoData = await geoRes.json();
+          const first = geoData.results?.[0];
+          if (first) {
+            const formatted = first.formatted_address || '';
+            return {
+              city: nearestCity,
+              formattedAddress: formatted,
+              lat: latitude,
+              lng: longitude,
+              source: 'google-maps-gps'
+            };
+          }
+        }
+      }
+
+      return {
+        city: nearestCity,
+        formattedAddress: CITY_PROFILES[nearestCity]?.defaultArea || nearestCity,
+        lat: latitude,
+        lng: longitude,
+        source: 'local-gps'
+      };
     } catch {
       // Fall back to IP/default
     }
@@ -545,100 +510,13 @@ export function MessageWithBrandCards({
   voiceMeta,
   isMine = false,
   seenAt = null,
-  e2ee = true,
-  e2eeLocked = false,
-  rawCiphertext = null,
-  keyFingerprint = '',
-  onUnlockHistory,
   onOpenBrandDrawer,
   onSavePhoto
 }) {
   return (
     <div className="ad-msg-ad-wrapper">
-      {e2eeLocked ? (
-        <div
-          style={{
-            padding: '10px 12px',
-            borderRadius: '12px',
-            background: 'rgba(15, 23, 42, 0.78)',
-            border: '1px dashed rgba(244, 63, 94, 0.55)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px'
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: '8px',
-              flexWrap: 'wrap'
-            }}
-          >
-            <span
-              style={{
-                fontSize: '0.7rem',
-                fontWeight: 800,
-                color: '#fda4af',
-                letterSpacing: '0.04em'
-              }}
-            >
-              🔒 E2EE CIPHERTEXT LOCKED (AES-256-GCM)
-            </span>
-            {onUnlockHistory && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUnlockHistory();
-                }}
-                style={{
-                  background: 'linear-gradient(135deg, #ec4899, #8b5cf6)',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '99px',
-                  padding: '3px 10px',
-                  fontSize: '0.7rem',
-                  fontWeight: 800,
-                  cursor: 'pointer'
-                }}
-              >
-                🔓 Unlock with 6-Digit OTP
-              </button>
-            )}
-          </div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: '0.8rem',
-              color: '#e2e8f0'
-            }}
-          >
-            {body}
-          </p>
-          {rawCiphertext && (
-            <code
-              style={{
-                fontSize: '0.66rem',
-                color: '#94a3b8',
-                background: 'rgba(0,0,0,0.35)',
-                padding: '4px 7px',
-                borderRadius: '6px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                display: 'block'
-              }}
-            >
-              {rawCiphertext}
-            </code>
-          )}
-        </div>
-      ) : (
-        body && (
-          <p className="ad-msg-text">{renderTextWithClickableAdLinks(body, onOpenBrandDrawer)}</p>
-        )
+      {body && (
+        <p className="ad-msg-text">{renderTextWithClickableAdLinks(body, onOpenBrandDrawer)}</p>
       )}
 
       {voiceMeta?.dataUrl && (
@@ -763,44 +641,26 @@ export function MessageWithBrandCards({
         </div>
       )}
 
-      <div
-        style={{
-          marginTop: '5px',
-          fontSize: '0.68rem',
-          fontWeight: 600,
-          color: seenAt ? '#ffd1e6' : 'rgba(255,255,255,0.56)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '8px',
-          flexWrap: 'wrap'
-        }}
-      >
-        <span
+      {isMine && (
+        <div
           style={{
-            display: 'inline-flex',
+            marginTop: '5px',
+            fontSize: '0.68rem',
+            fontWeight: 600,
+            color: seenAt ? '#ffd1e6' : 'rgba(255,255,255,0.56)',
+            display: 'flex',
             alignItems: 'center',
-            gap: '4px',
-            color: e2eeLocked ? '#fda4af' : '#6ee7b7',
-            fontSize: '0.65rem',
-            fontWeight: 700
+            justifyContent: 'flex-end',
+            gap: '8px'
           }}
-          title={
-            keyFingerprint
-              ? `End-to-End Encrypted (AES-256-GCM) · Key Fingerprint: ${keyFingerprint}`
-              : 'End-to-End Encrypted (AES-256-GCM)'
-          }
         >
-          {e2eeLocked ? '🔒 History Locked' : e2ee ? '🔐 AES-256-GCM E2EE' : '🔒 Private'}
-        </span>
-        {isMine && (
           <span>
             {seenAt
               ? getGenZSeenStatusText(messageId)
               : '🕊️ Hawa mein gaya · Partner abhi padhne wala hai...'}
           </span>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -39,6 +39,7 @@ const DEVICE_ID_KEY = 'afterdark_unique_device_id_v1';
 const CREATOR_SESSION_KEY = 'afterdark_session_token';
 const CREATOR_USER_CACHE_KEY = 'afterdark_user_profile_v1';
 const CREATOR_INVITE_CACHE_KEY = 'afterdark_latest_invite_v3';
+const TAB_INSTANCE_ID = 'tab_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now().toString(36);
 
 export function getClientDeviceId() {
   if (typeof window === 'undefined') return 'srv_device';
@@ -184,11 +185,8 @@ export function isGuestInviteLocation() {
 
 export function buildPublicInviteLinks({
   inviteToken,
-  verificationCode,
   creatorDisplayName,
   recipientHint,
-  creatorDeviceId,
-  creatorIp,
   customGuestOrigin
 }) {
   if (!inviteToken) {
@@ -199,7 +197,6 @@ export function buildPublicInviteLinks({
       sameOriginUrl: ''
     };
   }
-  const currentOrigin = getPublicOrigin();
   const cleanedCustom =
     customGuestOrigin && /^https?:\/\//i.test(String(customGuestOrigin).trim())
       ? String(customGuestOrigin).trim().replace(/\/+$/, '')
@@ -212,18 +209,9 @@ export function buildPublicInviteLinks({
   params.set('invite', inviteToken);
   if (creatorDisplayName) params.set('creator', String(creatorDisplayName).slice(0, 20));
   if (recipientHint) params.set('hint', String(recipientHint).slice(0, 20));
-  const sig = encodeOtpSignature(verificationCode, inviteToken);
-  if (sig) params.set('k', sig);
-  const devId = creatorDeviceId || getClientDeviceId();
-  if (devId) params.set('cdev', devId);
-  if (creatorIp) params.set('cip', creatorIp);
-
-  params.set('api', STABLE_PUBLIC_ORIGIN);
   const query = params.toString();
 
-  // The dedicated Render guest connector is a standalone static app whose
-  // root entrypoint always mounts GuestApp. Use / (not /guest) so Render's
-  // static host serves index.html without needing a rewrite rule.
+  // Clean public URL without exposing internal API origins, device IDs, IPs, or key hashes
   const rootDirectUrl = `${targetOrigin}/?${query}`;
   const guestAppUrl = rootDirectUrl;
 
@@ -272,12 +260,21 @@ function readSharedState() {
   }
 }
 
-function writeSharedState(nextState) {
+function writeSharedState(nextState, { broadcast = true } = {}) {
   try {
-    localStorage.setItem(SHARED_STATE_KEY, JSON.stringify(nextState));
-    if (typeof BroadcastChannel !== 'undefined') {
+    const serialized = JSON.stringify(nextState);
+    const existingRaw = localStorage.getItem(SHARED_STATE_KEY);
+    if (existingRaw === serialized) {
+      return;
+    }
+    localStorage.setItem(SHARED_STATE_KEY, serialized);
+    if (broadcast && typeof BroadcastChannel !== 'undefined') {
       const ch = new BroadcastChannel(CHANNEL_NAME);
-      ch.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
+      ch.postMessage({
+        type: 'STATE_UPDATED',
+        senderTabId: TAB_INSTANCE_ID,
+        timestamp: Date.now()
+      });
       ch.close();
     }
   } catch {
@@ -287,9 +284,18 @@ function writeSharedState(nextState) {
 
 export function subscribeToCoupleSync(callback) {
   if (typeof window === 'undefined') return () => {};
-  const onStorage = (event) => {
-    if (!event.key || event.key === SHARED_STATE_KEY) {
+  let debounceTimer = null;
+  const triggerDebounced = () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
       callback();
+    }, 320);
+  };
+
+  const onStorage = (event) => {
+    if (event.key === SHARED_STATE_KEY && event.newValue !== event.oldValue) {
+      triggerDebounced();
     }
   };
   window.addEventListener('storage', onStorage);
@@ -298,13 +304,19 @@ export function subscribeToCoupleSync(callback) {
   if (typeof BroadcastChannel !== 'undefined') {
     try {
       channel = new BroadcastChannel(CHANNEL_NAME);
-      channel.onmessage = () => callback();
+      channel.onmessage = (event) => {
+        if (event?.data?.senderTabId === TAB_INSTANCE_ID) {
+          return;
+        }
+        triggerDebounced();
+      };
     } catch {
       channel = null;
     }
   }
 
   return () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
     window.removeEventListener('storage', onStorage);
     if (channel) {
       try {
@@ -328,18 +340,19 @@ export function mirrorUserLocally(userData, sessionToken = '') {
   const existingIdx = state.users.findIndex(
     (u) => u.email === email || (sessionToken && u.sessionToken === sessionToken)
   );
+  const existingUser = existingIdx >= 0 ? state.users[existingIdx] : null;
   const record = {
-    id: userData.id || 'usr_' + Math.random().toString(36).slice(2, 10),
+    id: userData.id || existingUser?.id || 'usr_' + Math.random().toString(36).slice(2, 10),
     email,
-    displayName: userData.displayName || email.split('@')[0] || 'Creator',
-    sessionToken: sessionToken || userData.sessionToken || ''
+    displayName: userData.displayName || existingUser?.displayName || email.split('@')[0] || 'Creator',
+    sessionToken: sessionToken || userData.sessionToken || existingUser?.sessionToken || ''
   };
   if (existingIdx >= 0) {
-    state.users[existingIdx] = { ...state.users[existingIdx], ...record };
+    state.users[existingIdx] = { ...existingUser, ...record };
   } else {
     state.users.unshift(record);
   }
-  writeSharedState(state);
+  writeSharedState(state, { broadcast: false });
 }
 
 export function mirrorInviteLocally(inviteData) {
@@ -352,7 +365,7 @@ export function mirrorInviteLocally(inviteData) {
       verificationCode: String(inviteData.verificationCode),
       creatorId: inviteData.creatorId || null,
       creatorDeviceId: inviteData.creatorDeviceId || getClientDeviceId(),
-      creatorIp: inviteData.creatorIp || '',
+      creatorIp: '',
       creatorDisplayName: inviteData.creatorDisplayName || 'Your Partner',
       recipientHint: inviteData.recipientHint || 'Meri Jaan',
       creatorCustomName:
@@ -365,7 +378,7 @@ export function mirrorInviteLocally(inviteData) {
       createdAt: inviteData.createdAt || new Date().toISOString(),
       expiresAt: inviteData.expiresAt || new Date(Date.now() + 7 * 86400000).toISOString()
     });
-    writeSharedState(state);
+    writeSharedState(state, { broadcast: false });
   }
 }
 
@@ -377,27 +390,37 @@ export function mirrorConnectionLocally(connData, guestSessionToken = '') {
       c.id === connData.id ||
       (connData.inviteToken && c.inviteToken === connData.inviteToken && c.status === 'active')
   );
+  const existingConn = existingIdx >= 0 ? state.connections[existingIdx] : null;
   const record = {
     id: connData.id,
     channelId:
       connData.channelId ||
+      existingConn?.channelId ||
       `chan_${String(connData.inviteToken || connData.id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 14)}`,
     paired: true,
-    status: connData.status || 'active',
-    creatorId: connData.creatorId || null,
-    creatorDisplayName: connData.creatorDisplayName || 'Your Partner',
-    guestDisplayName: connData.guestDisplayName || connData.peerDisplayName || 'Meri Jaan',
-    peerDisplayName: connData.guestDisplayName || connData.peerDisplayName || 'Meri Jaan',
-    inviteToken: connData.inviteToken || '',
-    verificationCode: connData.verificationCode || '',
+    status: connData.status || existingConn?.status || 'active',
+    creatorId: connData.creatorId || existingConn?.creatorId || null,
+    creatorDisplayName:
+      connData.creatorDisplayName || existingConn?.creatorDisplayName || 'Your Partner',
+    guestDisplayName:
+      connData.guestDisplayName ||
+      connData.peerDisplayName ||
+      existingConn?.guestDisplayName ||
+      'Meri Jaan',
+    peerDisplayName:
+      connData.guestDisplayName ||
+      connData.peerDisplayName ||
+      existingConn?.peerDisplayName ||
+      'Meri Jaan',
+    inviteToken: connData.inviteToken || existingConn?.inviteToken || '',
+    verificationCode: connData.verificationCode || existingConn?.verificationCode || '',
     guestSessionToken:
-      guestSessionToken ||
-      (existingIdx >= 0 ? state.connections[existingIdx].guestSessionToken : ''),
-    createdAt: connData.createdAt || new Date().toISOString(),
-    approvedAt: connData.approvedAt || new Date().toISOString()
+      guestSessionToken || existingConn?.guestSessionToken || '',
+    createdAt: connData.createdAt || existingConn?.createdAt || '2026-01-01T00:00:00.000Z',
+    approvedAt: connData.approvedAt || existingConn?.approvedAt || '2026-01-01T00:00:00.000Z'
   };
   if (existingIdx >= 0) {
-    state.connections[existingIdx] = { ...state.connections[existingIdx], ...record };
+    state.connections[existingIdx] = { ...existingConn, ...record };
   } else {
     state.connections.unshift(record);
   }
@@ -409,7 +432,7 @@ export function mirrorConnectionLocally(connData, guestSessionToken = '') {
       inv.status = 'active';
     }
   }
-  writeSharedState(state);
+  writeSharedState(state, { broadcast: false });
 }
 
 function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
@@ -668,12 +691,12 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
       throw new Error('Invalid 6-digit OTP! Please enter the exact 6-digit code shown on your partner’s screen.');
     }
     if (!invite) {
-      if (!rawToken || rawToken === 'otp-direct' || !sigFromUrl) {
+      if (!rawToken || rawToken === 'otp-direct') {
         throw new Error(
           'No active host session matches this 6-digit OTP. Please check the 6-digit code on your partner’s screen.'
         );
       }
-      if (!verifyOtpSignature(suppliedOtp, rawToken, sigFromUrl)) {
+      if (sigFromUrl && !verifyOtpSignature(suppliedOtp, rawToken, sigFromUrl)) {
         throw new Error('Invalid 6-digit OTP for this invite link. Please check with your partner.');
       }
     }
@@ -806,7 +829,7 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
           }
         }
         if (markedSeen) {
-          writeSharedState(state);
+          writeSharedState(state, { broadcast: false });
         }
         return {
           messages: state.messages.filter((m) => m.connectionId === connId)
@@ -1202,7 +1225,11 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
           if (data?.message && typeof BroadcastChannel !== 'undefined') {
             try {
               const ch = new BroadcastChannel(CHANNEL_NAME);
-              ch.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
+              ch.postMessage({
+                type: 'STATE_UPDATED',
+                senderTabId: TAB_INSTANCE_ID,
+                timestamp: Date.now()
+              });
               ch.close();
             } catch {
               // ignore
@@ -1219,11 +1246,12 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
   }
 
   const isReadOrSessionCheck =
+    method === 'GET' ||
     cleanPath === 'me' ||
     cleanPath === 'invites/current' ||
     cleanPath === 'connections';
 
-  // If the server explicitly returned a 400, 401, 403, 409, or 410 validation/security error on an action route, throw it!
+  // If the server explicitly returned a 400, 401, 403, 409, or 410 validation/security error on a write/action route, throw it!
   if (lastHttpError && [400, 401, 403, 409, 410].includes(lastStatus) && !isReadOrSessionCheck) {
     throw lastHttpError;
   }

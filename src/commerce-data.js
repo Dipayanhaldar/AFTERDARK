@@ -2,11 +2,10 @@ import { buildTop100IndianBrandCatalog } from './indian-brands-100.js';
 
 
 export const GOOGLE_MAPS_DEMO_KEY =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_MAPS_API_KEY) ||
-  'AIzaSyCuRh0QODBCDYGB-tGOScvs3C8TEfy3Fuw';
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GOOGLE_MAPS_API_KEY) || '';
 
 export const PUBLIC_SHARED_APP_URL =
-  'https://ais-pre-uuczndxexn3f2ryx5z3t2o-857545814266.asia-southeast1.run.app';
+  'https://afterdark-social-universe.vercel.app';
 
 export const indianQrThemes = [
   {

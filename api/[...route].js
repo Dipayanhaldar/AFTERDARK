@@ -18,7 +18,6 @@ import {
   encryptChatMessage,
   decryptChatMessage
 } from '../src/e2ee-crypto.js';
-import { GoogleGenAI, Type } from '@google/genai';
 
 const scrypt = promisify(scryptCb);
 
@@ -423,90 +422,14 @@ export default async function handler(req, res) {
       : {};
 
     // -------------------------------------------------------------------------
-    // 0. AI IN-CHAT BRAND & FLIRT LINE ANALYZER
+    // 0. PRIVATE LOCAL IN-CHAT BRAND & FLIRT LINE ANALYZER (Zero External AI API)
     // -------------------------------------------------------------------------
     if (action === 'ai/analyze-chat' && req.method === 'POST') {
       const messages = Array.isArray(body.messages) ? body.messages : [];
       const draftText = String(body.draftText || '');
       const viewerRole = body.viewerRole === 'guest' ? 'guest' : 'creator';
       const localInsight = analyzeChatContextLocally(messages, draftText, viewerRole);
-
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return json(res, 200, { insight: localInsight, source: 'contextual-engine' }, req);
-      }
-
-      try {
-        const ai = new GoogleGenAI({
-          apiKey,
-          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-        });
-        const chatTranscript = messages
-          .slice(-6)
-          .map((m) => {
-            const mediaTag = m.voiceMeta ? '[Voice Note]' : m.photoMeta ? '[Live Photo]' : '';
-            return `${m.senderName || m.senderRole || 'Partner'}: ${mediaTag} ${m.body || m.text || ''}`.trim();
-          })
-          .join('\n');
-        const validBrandIds = brandCatalog.map((b) => b.id).join(', ');
-
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: `Analyze this couple's private chat (including text, voice note, and live photo mood) for viewerRole="${viewerRole}". Recommend the single best matching Indian brand from Allowed brand IDs and write a witty Gen-Z Hinglish/Hyderabadi couple flirt reply.
-Allowed brand IDs: ${validBrandIds}
-
-Recent Chat:
-${chatTranscript || 'Couple connected in private chat.'}
-Draft: ${draftText || '(none)'}`,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                notificationTitle: { type: Type.STRING },
-                notificationBody: { type: Type.STRING },
-                primaryBrandId: { type: Type.STRING },
-                recommendedBrandIds: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING }
-                },
-                suggestedFlirtReply: { type: Type.STRING }
-              },
-              required: [
-                'notificationTitle',
-                'notificationBody',
-                'primaryBrandId',
-                'recommendedBrandIds',
-                'suggestedFlirtReply'
-              ]
-            }
-          }
-        });
-
-        const parsed = JSON.parse(response.text || '{}');
-        const validSet = new Set(brandCatalog.map((b) => b.id));
-        const primaryBrandId = validSet.has(parsed.primaryBrandId)
-          ? parsed.primaryBrandId
-          : localInsight.primaryBrandId;
-
-        return json(
-          res,
-          200,
-          {
-            insight: {
-              notificationTitle: parsed.notificationTitle || localInsight.notificationTitle,
-              notificationBody: parsed.notificationBody || localInsight.notificationBody,
-              primaryBrandId,
-              recommendedBrandIds: localInsight.recommendedBrandIds,
-              suggestedFlirtReply: parsed.suggestedFlirtReply || localInsight.suggestedFlirtReply
-            },
-            source: 'gemini'
-          },
-          req
-        );
-      } catch {
-        return json(res, 200, { insight: localInsight, source: 'fallback' }, req);
-      }
+      return json(res, 200, { insight: localInsight, source: 'contextual-engine' }, req);
     }
 
     if (action === 'ai/discover-date-spots' && req.method === 'POST') {
@@ -528,57 +451,7 @@ Draft: ${draftText || '(none)'}`,
         bookingUrl: spot.bookingUrl
       }));
 
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return json(res, 200, { spots: fallbackSpots, city: cityKey, source: 'curated-city' }, req);
-      }
-
-      try {
-        const ai = new GoogleGenAI({
-          apiKey,
-          httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
-        });
-        const mood = String(body.mood || 'Romantic Cafe & Candlelight Dinner');
-        const response = await ai.models.generateContent({
-          model: 'gemini-3.8-flash',
-          contents: `Recommend 4 real, top-rated romantic couple cafes (both top-tier and mid-tier) or candlelight dinner spots in ${requestedCity} for "${mood}". Return brief descriptions.`,
-          config: {
-            tools: [{ googleMaps: {} }, { googleSearch: {} }]
-          }
-        });
-        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-        const groundedSpots = [];
-        for (const chunk of chunks) {
-          if (chunk.maps?.title) {
-            groundedSpots.push({
-              name: chunk.maps.title,
-              vibe: `Verified Google Maps Spot · ${requestedCity}`,
-              highlight: `Live grounded couple cafe/dining venue in ${requestedCity}.`,
-              mapsUrl: chunk.maps.uri || 'https://www.google.com/maps'
-            });
-          } else if (chunk.web?.title) {
-            groundedSpots.push({
-              name: chunk.web.title,
-              vibe: `Live Search Recommendation · ${requestedCity}`,
-              highlight: `Trending ${requestedCity} couple date spot.`,
-              mapsUrl: chunk.web.uri || 'https://www.google.com/maps'
-            });
-          }
-        }
-        return json(
-          res,
-          200,
-          {
-            spots: groundedSpots.length > 0 ? [...groundedSpots.slice(0, 3), ...fallbackSpots.slice(0, 2)] : fallbackSpots,
-            city: cityKey,
-            summaryText: response.text || '',
-            source: 'gemini-grounding'
-          },
-          req
-        );
-      } catch {
-        return json(res, 200, { spots: fallbackSpots, city: cityKey, source: 'fallback' }, req);
-      }
+      return json(res, 200, { spots: fallbackSpots, city: cityKey, source: 'curated-city' }, req);
     }
 
     // -------------------------------------------------------------------------
@@ -1207,10 +1080,10 @@ Draft: ${draftText || '(none)'}`,
         );
       }
 
-      // Step 4: If server cold-started and invite wasn't in DB, validate against one-way SHA-256 commitment signature (`ad1_...`)
+      // Step 4: If server cold-started and invite wasn't in DB, rehydrate from inviteToken + 6-digit OTP
       if (!invite) {
         const expectedSig = String(body.expectedSignature || '').trim();
-        if (!rawToken || rawToken === 'otp-direct' || !expectedSig) {
+        if (!rawToken || rawToken === 'otp-direct') {
           return json(
             res,
             401,
@@ -1222,7 +1095,7 @@ Draft: ${draftText || '(none)'}`,
           );
         }
 
-        if (!verifyOtpSignature(suppliedOtp, rawToken, expectedSig)) {
+        if (expectedSig && !verifyOtpSignature(suppliedOtp, rawToken, expectedSig)) {
           return json(
             res,
             401,
@@ -1321,7 +1194,7 @@ Draft: ${draftText || '(none)'}`,
           }
         );
 
-        const plainWelcome = `Hau miyaan! ${guestDisplayName} connected to our private 1-on-1 E2EE room ♥ Ab baatein shuru karein?`;
+        const plainWelcome = `Hau miyaan! ${guestDisplayName} connected to our private 1-on-1 room ♥ Ab baatein shuru karein?`;
         let encryptedWelcome = plainWelcome;
         try {
           encryptedWelcome = await encryptChatMessage(plainWelcome, {
@@ -1407,12 +1280,16 @@ Draft: ${draftText || '(none)'}`,
     if (parts[0] === 'guest' && parts[1] === 'connections' && parts[2] && parts[3]) {
       const guestCtx = await getGuestFromRequest(req, db);
       let connection = guestCtx?.connection || null;
+      const rawConnId = parts[2].trim();
+      const isHexObjectId = /^[a-fA-F0-9]{24}$/.test(rawConnId);
 
       if (!connection) {
         try {
-          const directConnId = new ObjectId(parts[2]);
-          const found = await db.collection('connections').findOne({ _id: directConnId });
-          if (found && found.status === 'active') {
+          const idQuery = isHexObjectId
+            ? { $or: [{ _id: new ObjectId(rawConnId) }, { _id: rawConnId }] }
+            : { $or: [{ _id: rawConnId }, { id: rawConnId }, { channelId: rawConnId }] };
+          const found = await db.collection('connections').findOne(idQuery);
+          if (found) {
             connection = found;
           }
         } catch {
@@ -1420,8 +1297,25 @@ Draft: ${draftText || '(none)'}`,
         }
       }
 
-      if (!connection || connection.status !== 'active') {
+      if (connection && connection.status === 'closed') {
         return json(res, 401, { error: 'This private room has been closed or revoked.' }, req);
+      }
+
+      if (!connection) {
+        const nowIso = new Date().toISOString();
+        const rehydratedId = isHexObjectId ? new ObjectId(rawConnId) : rawConnId;
+        await db.collection('connections').insertOne({
+          _id: rehydratedId,
+          creatorDisplayName: url.searchParams.get('creator') || 'Your Partner',
+          guestDisplayName: url.searchParams.get('guest') || 'Meri Jaan',
+          inviteToken: url.searchParams.get('inviteToken') || '',
+          verificationCode: url.searchParams.get('otp') || '',
+          channelId: buildChannelId(url.searchParams.get('inviteToken') || '', rawConnId),
+          status: 'active',
+          createdAt: nowIso,
+          approvedAt: nowIso
+        });
+        connection = await db.collection('connections').findOne({ _id: rehydratedId });
       }
       const connId = connection._id;
       const subRoute = parts[3];
@@ -1756,11 +1650,47 @@ Draft: ${draftText || '(none)'}`,
         }
       }
 
-      const list = await db
+      let list = await db
         .collection('connections')
         .find({ creatorId: creator._id, status: 'active' })
         .sort({ createdAt: -1 })
         .toArray();
+
+      const connIdHint = String(url.searchParams.get('connId') || '').trim();
+      const peerHint = String(url.searchParams.get('peer') || url.searchParams.get('hint') || 'Meri Jaan').trim();
+      if (list.length === 0 && connIdHint) {
+        const isHex = /^[a-fA-F0-9]{24}$/.test(connIdHint);
+        const existingById = await db.collection('connections').findOne(
+          isHex
+            ? { $or: [{ _id: new ObjectId(connIdHint) }, { _id: connIdHint }] }
+            : { _id: connIdHint }
+        );
+        if (!existingById) {
+          const nowIso = new Date().toISOString();
+          const rehydratedId = isHex ? new ObjectId(connIdHint) : connIdHint;
+          await db.collection('connections').insertOne({
+            _id: rehydratedId,
+            creatorId: creator._id,
+            creatorDisplayName: creator.displayName,
+            guestDisplayName: peerHint,
+            recipientHint: peerHint,
+            inviteToken: tokenHint,
+            verificationCode: otpHint,
+            channelId: buildChannelId(tokenHint, connIdHint),
+            status: 'active',
+            createdAt: nowIso,
+            approvedAt: nowIso
+          });
+          list = await db
+            .collection('connections')
+            .find({ creatorId: creator._id, status: 'active' })
+            .sort({ createdAt: -1 })
+            .toArray();
+        } else if (existingById.status === 'active') {
+          list = [existingById];
+        }
+      }
+
       return json(
         res,
         200,
@@ -1786,7 +1716,21 @@ Draft: ${draftText || '(none)'}`,
       }
 
       if (!connection) {
-        return json(res, 404, { error: 'Connection not found.' }, req);
+        const nowIso = new Date().toISOString();
+        const rehydratedId = isHexObjectId ? new ObjectId(rawConnId) : rawConnId;
+        await db.collection('connections').insertOne({
+          _id: rehydratedId,
+          creatorId: creator._id,
+          creatorDisplayName: creator.displayName,
+          guestDisplayName: url.searchParams.get('peer') || 'Meri Jaan',
+          inviteToken: url.searchParams.get('inviteToken') || '',
+          verificationCode: url.searchParams.get('otp') || '',
+          channelId: buildChannelId(url.searchParams.get('inviteToken') || '', rawConnId),
+          status: 'active',
+          createdAt: nowIso,
+          approvedAt: nowIso
+        });
+        connection = await db.collection('connections').findOne({ _id: rehydratedId });
       }
       const connId = connection._id;
       const subRoute = parts[2];

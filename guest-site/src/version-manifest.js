@@ -12,20 +12,20 @@
  * - [3] Patch & Scope 3: Native Android APK Animated Notification & Distinct Santoor Audio + Camera Notch Safe-Area
  */
 
-export const APP_VERSION = '2.0.2.3';
-export const APP_VERSION_TAG = 'v2.0.2.3';
-export const APP_VERSION_CODENAME = 'Moonlight Santoor · 100 Brands & Surge Shield';
-export const APP_RELEASE_DATE = '2026-11-05';
+export const APP_VERSION = '2.0.2.5';
+export const APP_VERSION_TAG = 'v2.0.2.5';
+export const APP_VERSION_CODENAME = 'Moonlight Santoor · Zero-Blink Chat & Privacy Hardening';
+export const APP_RELEASE_DATE = '2026-11-06';
 
 export const VERSION_SEGMENTS = [
   {
     index: 1,
     digit: '2',
     code: 'MAJOR_GEN',
-    title: 'Gen-2 Dual-Site E2EE Core',
+    title: 'Gen-2 Dual-Site Host + Guest Core',
     meaning:
-      'AES-256-GCM + PBKDF2-SHA256 (50,000 iterations) end-to-end encrypted Host & Guest architecture with zero-knowledge OTP commitment.',
-    hintLocation: 'src/e2ee-crypto.js · src/couple-sync.js'
+      'Dual-site Host & Guest 1-on-1 private room architecture with 6-digit passcode pairing.',
+    hintLocation: 'src/main.jsx · src/GuestApp.jsx · src/couple-sync.js'
   },
   {
     index: 2,
@@ -47,27 +47,27 @@ export const VERSION_SEGMENTS = [
   },
   {
     index: 4,
-    digit: '3',
+    digit: '5',
     code: 'UPDATE_PATCH_LOC',
-    title: 'APK Notification Chime + Notch Safe-Area UI',
+    title: 'Zero-Blink Chat Typing + Public API/App ID Privacy Hardening',
     meaning:
-      'Dedicated Android APK Santoor-SubBass notification chime (distinct from Web Host & Guest sounds), spring-animated APK heads-up banner, and mobile notch clearance.',
-    hintLocation: 'src/notification-sound.js · src/style.css · api/[...route].js'
+      'Eliminated BroadcastChannel self-echo loop and poll re-render blinking during chat typing, and removed all exposed API/App/Device IDs from public links and bundles.',
+    hintLocation: 'src/couple-sync.js · src/main.jsx · src/GuestApp.jsx · src/google-auth.js · api/[...route].js'
   }
 ];
 
 export const VERSION_UPDATE_LOCATIONS = [
   {
     id: 'loc-version-core',
-    version: '2.0.2.3',
+    version: '2.0.2.5',
     area: 'Version & Telemetry Engine',
     file: 'src/version-manifest.js',
     status: 'UPDATED',
-    summary: '4-segment semantic version decoder (2.0.2.3), update-location map, and multi-store readiness matrix.'
+    summary: '4-segment semantic version decoder (2.0.2.5), update-location map, and multi-store readiness matrix.'
   },
   {
     id: 'loc-apk-notif-audio',
-    version: '2.0.2.3',
+    version: '2.0.2.5',
     area: 'Android APK Notification & 3-Way Sound Synthesizer',
     file: 'src/notification-sound.js · scripts/configure-android-apk.mjs',
     status: 'UPDATED',
@@ -76,7 +76,7 @@ export const VERSION_UPDATE_LOCATIONS = [
   },
   {
     id: 'loc-100-indian-brands',
-    version: '2.0.2.3',
+    version: '2.0.2.5',
     area: '100 Top Indian Brands In-Chat Ad Engine',
     file: 'src/indian-brands-100.js · src/commerce-data.js',
     status: 'UPDATED',
@@ -85,7 +85,7 @@ export const VERSION_UPDATE_LOCATIONS = [
   },
   {
     id: 'loc-traffic-control',
-    version: '2.0.2.3',
+    version: '2.0.2.5',
     area: 'Adaptive Traffic Control & Surge Protection',
     file: 'src/traffic-control.js · api/[...route].js',
     status: 'UPDATED',
@@ -94,12 +94,12 @@ export const VERSION_UPDATE_LOCATIONS = [
   },
   {
     id: 'loc-google-auth',
-    version: '2.0.2.3',
+    version: '2.0.2.5',
     area: 'Google Account Authentication (Web & APK)',
-    file: 'src/google-auth.js · firebase-applet-config.json · api/[...route].js',
+    file: 'src/google-auth.js · api/[...route].js',
     status: 'UPDATED',
     summary:
-      'Firebase Google Sign-In with official Google button, in-memory token management, and instant backend session issuing.'
+      'Environment-variable-backed Google Sign-In with official Google button, in-memory token management, and instant backend session issuing.'
   },
   {
     id: 'loc-e2ee-notch',

@@ -67,7 +67,7 @@ Before inviting real users, configure the runtime variables, test registration a
 
 > **Note:** Version numbers and update location metadata are maintained strictly in GitHub (`README.md`, `package.json`, `src/version-manifest.js`) for developer tracking and are hidden from the user-facing website UI.
 
-### Current Version: `2.0.2.4` (Previous: `2.0.2.3`)
+### Current Version: `2.0.2.5` (Previous: `2.0.2.4`)
 **Format:** `MAJOR_GEN . STORE_CHANNEL . FEATURE_MILESTONE . UPDATE_PATCH_LOC`
 
 | Segment | Value | Meaning | Update Locations |
@@ -75,5 +75,6 @@ Before inviting real users, configure the runtime variables, test registration a
 | **1. `MAJOR_GEN`** | `2` | Generation 2 Dual-Site Host + Guest 1-on-1 Architecture | `src/main.jsx`, `src/GuestApp.jsx`, `src/couple-sync.js` |
 | **2. `STORE_CHANNEL`** | `0` | Universal Cross-Device & Multi-Store Production Channel (Web, PWA, Android APK, Amazon Appstore, PhonePe Indus, Samsung Galaxy Store) | `manifest.webmanifest`, `capacitor.config.json`, `scripts/configure-android-apk.mjs` |
 | **3. `FEATURE_MILESTONE`** | `2` | 100 Top Indian Brands In-Chat Catalog + Google Account Auth + Adaptive Surge Traffic Control | `src/indian-brands-100.js`, `src/google-auth.js`, `src/traffic-control.js` |
-| **4. `UPDATE_PATCH_LOC`** | `4` | Clean User UI (Removed user-facing version & E2EE badges) + Guaranteed Audible & Visual Incoming Message Notifications (Web Audio unlock + PCM WAV fallback + first-message trigger) | `src/notification-sound.js`, `src/main.jsx`, `src/GuestApp.jsx`, `src/commerce-catalog.jsx` |
+| **4. `UPDATE_PATCH_LOC`** | `5` | Zero-Blink Chat Typing (Fixed BroadcastChannel self-echo loop & referential state stability during background polls) + Public Privacy Hardening (Removed exposed Cloud Run/Firebase/Device IDs from public links & bundles) | `src/couple-sync.js`, `src/main.jsx`, `src/GuestApp.jsx`, `src/commerce-data.js`, `src/google-auth.js`, `api/[...route].js` |
+
 

@@ -5,6 +5,7 @@ import {
   detectUserLiveCityAndAddress,
   flirtyHindiDrops,
   getPersonalizedInChatBrandAd,
+  analyzeChatContextLocally,
   QuickDropChipBar,
   InlineCommerceDrawer,
   LocationTreasureHuntDrawer,
@@ -13,28 +14,21 @@ import {
   IncomingMessageToast,
   ChatMediaInputActions,
   FlipkartBrandQuickStrip,
-  E2eeSecurityDrawer,
-  VersionHeaderBadge,
-  VersionAndTrafficControlDrawer,
-  GoogleSignInButton,
-  APP_VERSION_TAG,
-  brandCatalog
+  GoogleSignInButton
 } from './commerce-catalog';
 import {
   playIncomingMessageSound,
   playOutgoingMessageSound,
   playMessageSeenSound,
-  triggerIncomingPartnerAlert
+  triggerIncomingPartnerAlert,
+  requestNativeNotificationPermission
 } from './notification-sound';
 import {
   purgeStaleServiceWorkers,
   getClientDeviceId,
   isCurrentDeviceTheLinkGenerator,
   resilientApiRequest,
-  subscribeToCoupleSync,
-  resolveActiveE2eeKeyContext,
-  saveSessionE2eeContext,
-  setSessionHistoryLocked
+  subscribeToCoupleSync
 } from './couple-sync';
 import { signInWithGoogleAccount } from './google-auth';
 import { getAdaptivePollIntervalMs } from './traffic-control';
@@ -104,6 +98,77 @@ export function readInviteParamsFromLocation() {
   return { token: '', otp: '', k, creator, hint, cdev, cip, apiOrigin };
 }
 
+function stabilizeGuestConnection(prev, next) {
+  if (!next) return prev;
+  if (
+    prev &&
+    prev.id === next.id &&
+    prev.status === next.status &&
+    prev.creatorDisplayName === next.creatorDisplayName &&
+    prev.guestDisplayName === next.guestDisplayName
+  ) {
+    return prev;
+  }
+  return next;
+}
+
+function mergeMessagesStable(prev, incoming) {
+  if (!Array.isArray(incoming)) return prev;
+  if (incoming.length === 0 && prev.length > 0) {
+    return prev;
+  }
+  const byId = new Map();
+  for (const m of prev) {
+    if (m && m.id) byId.set(m.id, m);
+  }
+  for (const m of incoming) {
+    if (m && m.id) {
+      const existing = byId.get(m.id);
+      byId.set(m.id, existing ? { ...existing, ...m } : m);
+    }
+  }
+  const merged = Array.from(byId.values()).sort((a, b) => {
+    const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
+    const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
+    return ta - tb;
+  });
+  if (merged.length === prev.length) {
+    let identical = true;
+    for (let i = 0; i < merged.length; i += 1) {
+      const a = prev[i];
+      const b = merged[i];
+      if (
+        a.id !== b.id ||
+        (a.body || a.text) !== (b.body || b.text) ||
+        (a.seenAt || null) !== (b.seenAt || null)
+      ) {
+        identical = false;
+        break;
+      }
+    }
+    if (identical) return prev;
+  }
+  return merged;
+}
+
+function mergePhotosStable(prev, incoming) {
+  if (!Array.isArray(incoming)) return prev;
+  if (incoming.length === 0 && prev.length > 0) {
+    return prev;
+  }
+  if (incoming.length === prev.length) {
+    let identical = true;
+    for (let i = 0; i < incoming.length; i += 1) {
+      if (prev[i]?.id !== incoming[i]?.id) {
+        identical = false;
+        break;
+      }
+    }
+    if (identical) return prev;
+  }
+  return incoming;
+}
+
 export function GuestApp() {
   const urlContext = useMemo(() => readInviteParamsFromLocation(), []);
   const inviteToken = urlContext.token;
@@ -149,11 +214,9 @@ export function GuestApp() {
   const [photoCaption, setPhotoCaption] = useState('');
 
   // Hidden tool drawers inside chat so the UI is clean and uncluttered
-  const [activeDrawer, setActiveDrawer] = useState('none'); // 'none' | 'photos' | 'calendar' | 'flirt' | 'rooftop3d' | 'store' | 'treasure' | 'e2ee'
-  const [showVersionDrawer, setShowVersionDrawer] = useState(false);
+  const [activeDrawer, setActiveDrawer] = useState('none'); // 'none' | 'photos' | 'calendar' | 'flirt' | 'rooftop3d' | 'store' | 'treasure'
   const [googleBusy, setGoogleBusy] = useState(false);
   const [activeBrandId, setActiveBrandId] = useState('flipkart_minutes');
-  const [e2eeRefreshTick, setE2eeRefreshTick] = useState(0);
   const [userCity, setUserCity] = useState('Hyderabad');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [incomingToast, setIncomingToast] = useState(null);
@@ -235,23 +298,25 @@ export function GuestApp() {
         return false;
       }
 
-      setConnection(activeConnection);
+      setConnection((prev) => stabilizeGuestConnection(prev, activeConnection));
       const [messageData, photoData] = await Promise.all([
         api(`/guest/connections/${activeConnection.id}/messages`, {}, activeGuestToken),
         api(`/guest/connections/${activeConnection.id}/photos`, {}, activeGuestToken)
       ]);
       const nextMsgs = messageData.messages || [];
-      setMessages(nextMsgs);
-      if (nextMsgs.length > 0 && !initializedMsgStreamRef.current) {
+      setMessages((prev) => mergeMessagesStable(prev, nextMsgs));
+      if (!initializedMsgStreamRef.current) {
         initializedMsgStreamRef.current = true;
-        lastSeenMsgIdRef.current = nextMsgs[nextMsgs.length - 1].id;
-        nextMsgs.forEach((m) => {
-          if (m.senderRole === 'guest' && m.seenAt) {
-            seenByPartnerIdsRef.current.add(m.id);
-          }
-        });
+        if (nextMsgs.length > 0) {
+          lastSeenMsgIdRef.current = nextMsgs[nextMsgs.length - 1].id;
+          nextMsgs.forEach((m) => {
+            if (m.senderRole === 'guest' && m.seenAt) {
+              seenByPartnerIdsRef.current.add(m.id);
+            }
+          });
+        }
       }
-      setPhotos(photoData.photos || []);
+      setPhotos((prev) => mergePhotosStable(prev, photoData.photos || []));
       setStage('chat');
       return true;
     } catch {
@@ -280,9 +345,7 @@ export function GuestApp() {
         const data = await api(
           `/invites/${encodeURIComponent(inviteToken)}?creator=${encodeURIComponent(
             urlContext.creator || ''
-          )}&hint=${encodeURIComponent(urlContext.hint || '')}&cdev=${encodeURIComponent(
-            urlContext.cdev || ''
-          )}&cip=${encodeURIComponent(urlContext.cip || '')}`
+          )}&hint=${encodeURIComponent(urlContext.hint || '')}`
         );
         if (data?.invite?.status === 'revoked') {
           if (mounted) {
@@ -336,94 +399,86 @@ export function GuestApp() {
   useEffect(() => {
     if (stage !== 'chat' || !connection?.id) return undefined;
 
+    let pollInFlight = false;
     const refresh = async () => {
+      if (pollInFlight) return;
+      pollInFlight = true;
       try {
         const [messageData, photoData] = await Promise.all([
           api(`/guest/connections/${connection.id}/messages`, {}, guestToken),
           api(`/guest/connections/${connection.id}/photos`, {}, guestToken)
         ]);
         const nextMessages = messageData.messages || [];
-        setMessages(nextMessages);
-        if (photoData.photos) setPhotos(photoData.photos);
+        setMessages((prev) => mergeMessagesStable(prev, nextMessages));
+        if (photoData.photos) {
+          setPhotos((prev) => mergePhotosStable(prev, photoData.photos));
+        }
 
         // Detect newly arrived message from Host (creator) and play chime + show visual toast
-        if (nextMessages.length > 0) {
-          const latest = nextMessages[nextMessages.length - 1];
-          if (!initializedMsgStreamRef.current) {
-            initializedMsgStreamRef.current = true;
+        if (!initializedMsgStreamRef.current) {
+          initializedMsgStreamRef.current = true;
+          if (nextMessages.length > 0) {
+            const latest = nextMessages[nextMessages.length - 1];
             lastSeenMsgIdRef.current = latest.id;
             nextMessages.forEach((m) => {
               if (m.senderRole === 'guest' && m.seenAt) {
                 seenByPartnerIdsRef.current.add(m.id);
               }
             });
-          } else {
-            if (latest.id && latest.id !== lastSeenMsgIdRef.current) {
-              lastSeenMsgIdRef.current = latest.id;
-              if (latest.senderRole && latest.senderRole !== 'guest') {
-                const partnerName = connection.creatorDisplayName || 'Your Partner';
-                const textPreview =
-                  latest.body || latest.text || 'Sent you a voice note / live snap ♥';
-                triggerIncomingPartnerAlert({
-                  senderName: partnerName,
-                  messageText: textPreview,
-                  soundEnabled,
-                  viewerRole: 'guest'
-                });
-                setIncomingToast({
-                  id: latest.id,
-                  senderName: partnerName,
-                  text: textPreview
-                });
-              }
-            }
-
-            // Detect when partner reads our sent message (seenAt transitions from null -> timestamp)
-            let newlySeen = false;
-            for (const m of nextMessages) {
-              if (m.senderRole === 'guest' && m.seenAt && !seenByPartnerIdsRef.current.has(m.id)) {
-                seenByPartnerIdsRef.current.add(m.id);
-                newlySeen = true;
-              }
-            }
-            if (newlySeen) {
-              playMessageSeenSound(soundEnabled);
+          }
+        } else if (nextMessages.length > 0) {
+          const latest = nextMessages[nextMessages.length - 1];
+          if (latest.id && latest.id !== lastSeenMsgIdRef.current) {
+            lastSeenMsgIdRef.current = latest.id;
+            if (latest.senderRole && latest.senderRole !== 'guest') {
+              const partnerName = connection.creatorDisplayName || 'Your Partner';
+              const textPreview =
+                latest.body || latest.text || 'Sent you a voice note / live snap ♥';
+              triggerIncomingPartnerAlert({
+                senderName: partnerName,
+                messageText: textPreview,
+                soundEnabled,
+                viewerRole: 'guest'
+              });
+              setIncomingToast({
+                id: latest.id,
+                senderName: partnerName,
+                text: textPreview
+              });
             }
           }
 
-          // Background Free Server-Side Gemini Chat Analysis when message count changes
+          // Detect when partner reads our sent message (seenAt transitions from null -> timestamp)
+          let newlySeen = false;
+          for (const m of nextMessages) {
+            if (m.senderRole === 'guest' && m.seenAt && !seenByPartnerIdsRef.current.has(m.id)) {
+              seenByPartnerIdsRef.current.add(m.id);
+              newlySeen = true;
+            }
+          }
+          if (newlySeen) {
+            playMessageSeenSound(soundEnabled);
+          }
+        }
+
+        if (nextMessages.length > 0) {
           if (nextMessages.length !== lastAnalyzedCountRef.current) {
             lastAnalyzedCountRef.current = nextMessages.length;
-            api(
-              '/ai/analyze-chat',
-              {
-                method: 'POST',
-                body: JSON.stringify({
-                  messages: nextMessages.slice(-6),
-                  viewerRole: 'guest'
-                })
-              },
-              guestToken
-            )
-              .then((res) => {
-                if (res?.insight) setAiInsight(res.insight);
-              })
-              .catch(() => {});
+            setAiInsight(analyzeChatContextLocally(nextMessages.slice(-6), '', 'guest'));
           }
         }
       } catch (err) {
-        if (
-          String(err.message || '').toLowerCase().includes('closed') ||
-          String(err.message || '').toLowerCase().includes('revoked')
-        ) {
+        if (String(err.message || '').toLowerCase().includes('revoked')) {
           setRevokedError('Your partner revoked access and closed this private room.');
           setConnection(null);
           setStage('otp-gate');
         }
+      } finally {
+        pollInFlight = false;
       }
     };
 
-    const pollMs = getAdaptivePollIntervalMs(2000, stage === 'chat' && Boolean(connection?.id));
+    const pollMs = getAdaptivePollIntervalMs(2200, stage === 'chat' && Boolean(connection?.id));
     const interval = setInterval(refresh, pollMs);
     const unsubscribe = subscribeToCoupleSync(refresh);
     return () => {
@@ -456,6 +511,7 @@ export function GuestApp() {
   async function acceptInvite(event) {
     event.preventDefault();
     clearFeedback();
+    requestNativeNotificationPermission();
 
     if (!consentConfirmed) {
       setError('Please confirm your mutual consent to enter the private chat.');
@@ -767,99 +823,6 @@ export function GuestApp() {
     document.body.removeChild(anchor);
   }
 
-  const activeE2eeContext = useMemo(
-    () =>
-      resolveActiveE2eeKeyContext(
-        connection?.inviteToken || inviteToken,
-        connection?.id || ''
-      ),
-    [connection?.id, connection?.inviteToken, inviteToken, e2eeRefreshTick, messages.length]
-  );
-
-  async function handleLockE2eeHistory() {
-    setSessionHistoryLocked(
-      connection?.id || 'default',
-      true,
-      connection?.inviteToken || inviteToken
-    );
-    setE2eeRefreshTick((t) => t + 1);
-    setBanner(
-      '🔒 E2EE Message History Locked! Without the 6-digit OTP, all messages are masked as AES-256-GCM ciphertext.'
-    );
-    if (connection) {
-      await loadGuestSession(guestToken, connection);
-    }
-  }
-
-  function handleUnlockE2eeHistory(enteredOtp, enteredPass = '') {
-    const cleanOtp = String(enteredOtp || '').replace(/\D/g, '').slice(0, 6);
-    const expectedOtp = String(
-      connection?.verificationCode || verificationCode || ''
-    )
-      .replace(/\D/g, '')
-      .slice(0, 6);
-    if (expectedOtp.length === 6 && cleanOtp !== expectedOtp) {
-      return false;
-    }
-    const otpToUse = cleanOtp || expectedOtp;
-    if (connection?.id) {
-      saveSessionE2eeContext(connection.id, {
-        verificationCode: otpToUse,
-        customPassphrase: enteredPass,
-        locked: false
-      });
-    }
-    if (connection?.inviteToken || inviteToken) {
-      saveSessionE2eeContext(connection?.inviteToken || inviteToken, {
-        verificationCode: otpToUse,
-        customPassphrase: enteredPass,
-        locked: false
-      });
-    }
-    saveSessionE2eeContext('default', {
-      verificationCode: otpToUse,
-      customPassphrase: enteredPass,
-      locked: false
-    });
-    setE2eeRefreshTick((t) => t + 1);
-    setBanner('🔓 E2EE Message History Unlocked & Decrypted locally via AES-256-GCM!');
-    if (connection) {
-      loadGuestSession(guestToken, connection);
-    }
-    return true;
-  }
-
-  function handleSaveCustomE2eePassphrase(newPassphrase = '') {
-    const otpToUse =
-      activeE2eeContext.verificationCode ||
-      connection?.verificationCode ||
-      verificationCode ||
-      '';
-    if (connection?.id) {
-      saveSessionE2eeContext(connection.id, {
-        verificationCode: otpToUse,
-        customPassphrase: newPassphrase,
-        locked: false
-      });
-    }
-    if (connection?.inviteToken || inviteToken) {
-      saveSessionE2eeContext(connection?.inviteToken || inviteToken, {
-        verificationCode: otpToUse,
-        customPassphrase: newPassphrase,
-        locked: false
-      });
-    }
-    saveSessionE2eeContext('default', {
-      verificationCode: otpToUse,
-      customPassphrase: newPassphrase,
-      locked: false
-    });
-    setE2eeRefreshTick((t) => t + 1);
-    if (connection) {
-      loadGuestSession(guestToken, connection);
-    }
-  }
-
   return (
     <div className="guest-shell">
       <header className="guest-topbar">
@@ -870,32 +833,14 @@ export function GuestApp() {
           </span>
           <div className="guest-brand-text">
             <span className="guest-brand-name">
-              AFTERDARK · E2EE Private 1-on-1 Room{' '}
-              <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 800 }}>
-                {APP_VERSION_TAG}
-              </span>
+              AFTERDARK · Private 1-on-1 Room
             </span>
             <span className="guest-brand-sub">
-              AES-256-GCM Encrypted · APK Santoor Alert · Flipkart &amp; {brandCatalog.length} Top Indian Brands
+              Private Couple &amp; Bestie Space · Instant Passcode Pairing ♥
             </span>
           </div>
         </div>
         <div className="guest-topbar-actions">
-          <VersionHeaderBadge onClick={() => setShowVersionDrawer((prev) => !prev)} />
-          <button
-            type="button"
-            className={`guest-tool-btn ${activeDrawer === 'e2ee' ? 'active' : ''}`}
-            onClick={() => setActiveDrawer((prev) => (prev === 'e2ee' ? 'none' : 'e2ee'))}
-            style={{
-              background: activeE2eeContext.locked
-                ? 'rgba(244, 63, 94, 0.22)'
-                : 'rgba(16, 185, 129, 0.2)',
-              borderColor: activeE2eeContext.locked ? '#f43f5e' : '#10b981',
-              color: activeE2eeContext.locked ? '#fecdd3' : '#a7f3d0'
-            }}
-          >
-            {activeE2eeContext.locked ? '🔒 E2EE Locked' : '🔐 E2EE Vault'}
-          </button>
           <button
             type="button"
             className={`guest-tool-btn ${activeDrawer === 'store' ? 'active' : ''}`}
@@ -936,17 +881,6 @@ export function GuestApp() {
         onDismiss={() => setIncomingToast(null)}
       />
 
-      {showVersionDrawer && (
-        <div style={{ marginTop: '10px' }}>
-          <VersionAndTrafficControlDrawer
-            open={showVersionDrawer}
-            onClose={() => setShowVersionDrawer(false)}
-            viewerRole="guest"
-            onTriggerTestApkNotification={(toast) => setIncomingToast(toast)}
-          />
-        </div>
-      )}
-
       {(banner || error) && (
         <div className="guest-banner-wrap">
           {banner && (
@@ -964,23 +898,7 @@ export function GuestApp() {
         </div>
       )}
 
-      {/* Global Built-in Brand Store, E2EE Security Drawer & Flipkart Redirect when on OTP Gate */}
-      {(stage !== 'chat' || !connection) && activeDrawer === 'e2ee' && (
-        <div style={{ marginTop: '12px' }}>
-          <E2eeSecurityDrawer
-            open={activeDrawer === 'e2ee'}
-            onClose={() => setActiveDrawer('none')}
-            keyFingerprint={activeE2eeContext.keyFingerprint}
-            isHistoryLocked={activeE2eeContext.locked}
-            onLockHistory={handleLockE2eeHistory}
-            onUnlockHistoryWithOtp={handleUnlockE2eeHistory}
-            customPassphrase={activeE2eeContext.customPassphrase}
-            onSaveCustomPassphrase={handleSaveCustomE2eePassphrase}
-            messages={messages}
-            inviteLink={typeof window !== 'undefined' ? window.location.href : ''}
-          />
-        </div>
-      )}
+      {/* Global Built-in Brand Store & Flipkart Redirect when on OTP Gate */}
       {(stage !== 'chat' || !connection) && activeDrawer === 'store' && (
         <div style={{ marginTop: '12px' }}>
           <InlineCommerceDrawer
@@ -1123,7 +1041,7 @@ export function GuestApp() {
             <div className="guest-chat-head">
               <div>
                 <span className="guest-tag">
-                  ● AES-256-GCM END-TO-END ENCRYPTED · KEY FINGERPRINT: {activeE2eeContext.keyFingerprint}
+                  ● PRIVATE 1-ON-1 ROOM · LIVE CONNECTION
                 </span>
                 <h2>
                   {connection.guestDisplayName || 'You'} &amp; {connection.creatorDisplayName} ♥
@@ -1131,19 +1049,6 @@ export function GuestApp() {
               </div>
 
               <div className="guest-chat-toolbar">
-                <button
-                  type="button"
-                  className={`guest-tool-btn ${activeDrawer === 'e2ee' ? 'active' : ''}`}
-                  onClick={() =>
-                    setActiveDrawer((prev) => (prev === 'e2ee' ? 'none' : 'e2ee'))
-                  }
-                  style={{
-                    borderColor: activeE2eeContext.locked ? '#f43f5e' : '#10b981',
-                    color: activeE2eeContext.locked ? '#fecdd3' : '#a7f3d0'
-                  }}
-                >
-                  {activeE2eeContext.locked ? '🔒 Unlock E2EE History' : '🔐 E2EE Security & Lock'}
-                </button>
                 <button
                   type="button"
                   className={`guest-tool-btn ${activeDrawer === 'treasure' ? 'active' : ''}`}
@@ -1232,17 +1137,6 @@ export function GuestApp() {
                 >
                   {soundEnabled ? '🔔 Sound: ON' : '🔇 Sound: OFF'}
                 </button>
-                <button
-                  type="button"
-                  className={`guest-tool-btn ${showVersionDrawer ? 'active' : ''}`}
-                  onClick={() => setShowVersionDrawer((prev) => !prev)}
-                  style={{
-                    borderColor: 'rgba(56, 189, 248, 0.55)',
-                    color: '#bae6fd'
-                  }}
-                >
-                  📱 {APP_VERSION_TAG} · APK Sound &amp; Traffic
-                </button>
               </div>
             </div>
 
@@ -1250,20 +1144,6 @@ export function GuestApp() {
             <FlipkartBrandQuickStrip
               userCity={userCity}
               onOpenBrandDrawer={handleOpenBrandDrawer}
-            />
-
-            {/* COLLAPSIBLE DRAWER 0: END-TO-END ENCRYPTION (E2EE) VAULT & HISTORY LOCK */}
-            <E2eeSecurityDrawer
-              open={activeDrawer === 'e2ee'}
-              onClose={() => setActiveDrawer('none')}
-              keyFingerprint={activeE2eeContext.keyFingerprint}
-              isHistoryLocked={activeE2eeContext.locked}
-              onLockHistory={handleLockE2eeHistory}
-              onUnlockHistoryWithOtp={handleUnlockE2eeHistory}
-              customPassphrase={activeE2eeContext.customPassphrase}
-              onSaveCustomPassphrase={handleSaveCustomE2eePassphrase}
-              messages={messages}
-              inviteLink={typeof window !== 'undefined' ? window.location.href : ''}
             />
 
             {/* COLLAPSIBLE DRAWER 1: SEND & SAVE PHOTOS */}
@@ -1579,11 +1459,6 @@ export function GuestApp() {
                           voiceMeta={msg.voiceMeta}
                           isMine={msg.senderRole === 'guest'}
                           seenAt={msg.seenAt}
-                          e2ee={msg.e2ee !== false}
-                          e2eeLocked={Boolean(msg.e2eeLocked || activeE2eeContext.locked)}
-                          rawCiphertext={msg.rawCiphertext}
-                          keyFingerprint={msg.keyFingerprint || activeE2eeContext.keyFingerprint}
-                          onUnlockHistory={() => setActiveDrawer('e2ee')}
                           onOpenBrandDrawer={handleOpenBrandDrawer}
                           onSavePhoto={downloadDataUrl}
                         />

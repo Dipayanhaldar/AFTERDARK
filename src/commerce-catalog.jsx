@@ -429,45 +429,46 @@ export async function detectUserLiveCityAndAddress() {
         });
       });
       const { latitude, longitude } = pos.coords;
-      const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_DEMO_KEY}`;
-      const geoRes = await fetch(geoUrl);
-      if (geoRes.ok) {
-        const geoData = await geoRes.json();
-        const first = geoData.results?.[0];
-        if (first) {
-          const formatted = first.formatted_address || '';
-          const lowerAddr = formatted.toLowerCase();
-          let matchedCity = fallbackCity;
-          if (lowerAddr.includes('bihar') || lowerAddr.includes('patna') || lowerAddr.includes('gaya')) {
-            matchedCity = 'Patna';
-          } else if (
-            lowerAddr.includes('hyderabad') ||
-            lowerAddr.includes('secunderabad') ||
-            lowerAddr.includes('telangana')
-          ) {
-            matchedCity = 'Hyderabad';
-          } else if (
-            lowerAddr.includes('delhi') ||
-            lowerAddr.includes('noida') ||
-            lowerAddr.includes('gurugram')
-          ) {
-            matchedCity = 'Delhi';
-          } else if (lowerAddr.includes('mumbai') || lowerAddr.includes('maharashtra')) {
-            matchedCity = 'Mumbai';
-          } else if (lowerAddr.includes('bengaluru') || lowerAddr.includes('bangalore')) {
-            matchedCity = 'Bengaluru';
-          } else if (lowerAddr.includes('kolkata') || lowerAddr.includes('west bengal')) {
-            matchedCity = 'Kolkata';
+      let nearestCity = fallbackCity;
+      let minDistSq = Infinity;
+      for (const [cityKey, profile] of Object.entries(CITY_PROFILES)) {
+        if (typeof profile.lat === 'number' && typeof profile.lng === 'number') {
+          const dLat = latitude - profile.lat;
+          const dLng = longitude - profile.lng;
+          const distSq = dLat * dLat + dLng * dLng;
+          if (distSq < minDistSq) {
+            minDistSq = distSq;
+            nearestCity = cityKey;
           }
-          return {
-            city: matchedCity,
-            formattedAddress: formatted,
-            lat: latitude,
-            lng: longitude,
-            source: 'google-maps-gps'
-          };
         }
       }
+
+      if (GOOGLE_MAPS_DEMO_KEY) {
+        const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${latitude},${longitude}&key=${GOOGLE_MAPS_DEMO_KEY}`;
+        const geoRes = await fetch(geoUrl);
+        if (geoRes.ok) {
+          const geoData = await geoRes.json();
+          const first = geoData.results?.[0];
+          if (first) {
+            const formatted = first.formatted_address || '';
+            return {
+              city: nearestCity,
+              formattedAddress: formatted,
+              lat: latitude,
+              lng: longitude,
+              source: 'google-maps-gps'
+            };
+          }
+        }
+      }
+
+      return {
+        city: nearestCity,
+        formattedAddress: CITY_PROFILES[nearestCity]?.defaultArea || nearestCity,
+        lat: latitude,
+        lng: longitude,
+        source: 'local-gps'
+      };
     } catch {
       // Fall back to IP/default
     }

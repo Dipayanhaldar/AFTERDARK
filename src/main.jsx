@@ -8,6 +8,7 @@ import {
   flirtyHindiDrops,
   indianQrThemes,
   getPersonalizedInChatBrandAd,
+  analyzeChatContextLocally,
   QuickDropChipBar,
   InlineCommerceDrawer,
   LocationTreasureHuntDrawer,
@@ -188,6 +189,93 @@ function readCachedUser() {
   }
 }
 
+function stabilizeInviteState(prev, next) {
+  if (!next) return prev;
+  if (
+    prev &&
+    prev.inviteToken === next.inviteToken &&
+    prev.verificationCode === next.verificationCode &&
+    prev.status === next.status &&
+    prev.creatorCustomName === next.creatorCustomName &&
+    prev.partnerCustomName === next.partnerCustomName
+  ) {
+    return prev;
+  }
+  return next;
+}
+
+function stabilizeConnectionState(prev, next) {
+  if (!next) return prev;
+  if (
+    prev &&
+    prev.id === next.id &&
+    prev.status === next.status &&
+    prev.peerDisplayName === next.peerDisplayName &&
+    prev.creatorDisplayName === next.creatorDisplayName &&
+    prev.guestDisplayName === next.guestDisplayName
+  ) {
+    return prev;
+  }
+  return next;
+}
+
+function mergeMessagesStable(prev, incoming) {
+  if (!Array.isArray(incoming)) return prev;
+  if (incoming.length === 0 && prev.length > 0) {
+    return prev;
+  }
+  const byId = new Map();
+  for (const m of prev) {
+    if (m && m.id) byId.set(m.id, m);
+  }
+  for (const m of incoming) {
+    if (m && m.id) {
+      const existing = byId.get(m.id);
+      byId.set(m.id, existing ? { ...existing, ...m } : m);
+    }
+  }
+  const merged = Array.from(byId.values()).sort((a, b) => {
+    const ta = a.createdAt ? Date.parse(a.createdAt) : 0;
+    const tb = b.createdAt ? Date.parse(b.createdAt) : 0;
+    return ta - tb;
+  });
+  if (merged.length === prev.length) {
+    let identical = true;
+    for (let i = 0; i < merged.length; i += 1) {
+      const a = prev[i];
+      const b = merged[i];
+      if (
+        a.id !== b.id ||
+        (a.body || a.text) !== (b.body || b.text) ||
+        (a.seenAt || null) !== (b.seenAt || null)
+      ) {
+        identical = false;
+        break;
+      }
+    }
+    if (identical) return prev;
+  }
+  return merged;
+}
+
+function mergePhotosStable(prev, incoming) {
+  if (!Array.isArray(incoming)) return prev;
+  if (incoming.length === 0 && prev.length > 0) {
+    return prev;
+  }
+  if (incoming.length === prev.length) {
+    let identical = true;
+    for (let i = 0; i < incoming.length; i += 1) {
+      if (prev[i]?.id !== incoming[i]?.id) {
+        identical = false;
+        break;
+      }
+    }
+    if (identical) return prev;
+  }
+  return incoming;
+}
+
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(SESSION_KEY) || '');
   const [user, setUser] = useState(() =>
@@ -306,7 +394,6 @@ function App() {
     }
     return buildPublicInviteLinks({
       inviteToken: activeInvite.inviteToken,
-      verificationCode: activeInvite.verificationCode,
       creatorDisplayName:
         activeInvite.creatorCustomName ||
         user?.displayName ||
@@ -314,11 +401,17 @@ function App() {
         'Partner',
       recipientHint:
         activeInvite.partnerCustomName || activeInvite.recipientHint || 'Meri Jaan',
-      creatorDeviceId: activeInvite.creatorDeviceId || getClientDeviceId(),
-      creatorIp: activeInvite.creatorIp || '',
       customGuestOrigin
     });
-  }, [activeInvite, user?.displayName, customGuestOrigin]);
+  }, [
+    activeInvite?.inviteToken,
+    activeInvite?.creatorCustomName,
+    activeInvite?.creatorDisplayName,
+    activeInvite?.partnerCustomName,
+    activeInvite?.recipientHint,
+    user?.displayName,
+    customGuestOrigin
+  ]);
 
   const guestInviteLink = inviteLinks.primaryUrl;
 
@@ -395,6 +488,10 @@ function App() {
       if (activeInvite?.partnerCustomName || activeInvite?.recipientHint) {
         queryParams.set('hint', activeInvite.partnerCustomName || activeInvite.recipientHint);
       }
+      if (activeConnection?.id) queryParams.set('connId', activeConnection.id);
+      if (activeConnection?.peerDisplayName) {
+        queryParams.set('peer', activeConnection.peerDisplayName);
+      }
       const qs = queryParams.toString();
 
       const [meData, currentInviteData, connectionData] = await Promise.all([
@@ -407,7 +504,14 @@ function App() {
 
       const resolvedUser = meData?.user || readCachedUser();
       if (resolvedUser) {
-        setUser(resolvedUser);
+        setUser((prev) =>
+          prev &&
+          prev.id === resolvedUser.id &&
+          prev.email === resolvedUser.email &&
+          prev.displayName === resolvedUser.displayName
+            ? prev
+            : resolvedUser
+        );
         try {
           localStorage.setItem(USER_CACHE_KEY, JSON.stringify(resolvedUser));
         } catch {
@@ -422,13 +526,13 @@ function App() {
       }
 
       if (currentInviteData?.invite) {
-        setActiveInvite(currentInviteData.invite);
+        setActiveInvite((prev) => stabilizeInviteState(prev, currentInviteData.invite));
       }
 
       const list = connectionData?.connections || [];
       const active = list.find((item) => item.status === 'active') || null;
       if (active) {
-        setActiveConnection(active);
+        setActiveConnection((prev) => stabilizeConnectionState(prev, active));
       }
     } catch {
       // Never log the user out on transient background workspace poll errors
@@ -437,8 +541,6 @@ function App() {
 
   async function loadConnectionDetails(connection, currentToken = token) {
     if (!connection || connection.status !== 'active' || !currentToken) {
-      setMessages([]);
-      setPhotos([]);
       return;
     }
 
@@ -447,13 +549,29 @@ function App() {
         token: connection.inviteToken || activeInvite?.inviteToken || '',
         otp: connection.verificationCode || activeInvite?.verificationCode || ''
       };
+      const connParams = new URLSearchParams();
+      if (e2eeUrlCtx.token) connParams.set('inviteToken', e2eeUrlCtx.token);
+      if (e2eeUrlCtx.otp) connParams.set('otp', e2eeUrlCtx.otp);
+      if (connection.peerDisplayName) connParams.set('peer', connection.peerDisplayName);
+      const cqs = connParams.toString();
+
       const [msgData, photoData] = await Promise.all([
-        resilientApiRequest(`/connections/${connection.id}/messages`, {}, currentToken, e2eeUrlCtx),
-        resilientApiRequest(`/connections/${connection.id}/photos`, {}, currentToken, e2eeUrlCtx)
+        resilientApiRequest(
+          `/connections/${connection.id}/messages${cqs ? `?${cqs}` : ''}`,
+          {},
+          currentToken,
+          e2eeUrlCtx
+        ),
+        resilientApiRequest(
+          `/connections/${connection.id}/photos${cqs ? `?${cqs}` : ''}`,
+          {},
+          currentToken,
+          e2eeUrlCtx
+        )
       ]);
       const nextMessages = msgData.messages || [];
-      setMessages(nextMessages);
-      setPhotos(photoData.photos || []);
+      setMessages((prev) => mergeMessagesStable(prev, nextMessages));
+      setPhotos((prev) => mergePhotosStable(prev, photoData.photos || []));
 
       // Detect newly arrived message from partner (Guest) and trigger chime + visual toast
       if (!initializedMsgStreamRef.current) {
@@ -526,24 +644,9 @@ function App() {
       }
 
       if (nextMessages.length > 0) {
-        // Background Free Server-Side Gemini Chat Analysis when message count changes
         if (nextMessages.length !== lastAnalyzedCountRef.current) {
           lastAnalyzedCountRef.current = nextMessages.length;
-          resilientApiRequest(
-            '/ai/analyze-chat',
-            {
-              method: 'POST',
-              body: JSON.stringify({
-                messages: nextMessages.slice(-6),
-                viewerRole: 'creator'
-              })
-            },
-            currentToken
-          )
-            .then((res) => {
-              if (res?.insight) setAiInsight(res.insight);
-            })
-            .catch(() => {});
+          setAiInsight(analyzeChatContextLocally(nextMessages.slice(-6), '', 'creator'));
         }
       }
     } catch {
@@ -566,13 +669,20 @@ function App() {
   useEffect(() => {
     if (!token) return undefined;
 
+    let pollInFlight = false;
     const refresh = async () => {
+      if (pollInFlight) return;
+      pollInFlight = true;
       try {
         const queryParams = new URLSearchParams();
         if (activeInvite?.inviteToken) queryParams.set('inviteToken', activeInvite.inviteToken);
         if (activeInvite?.verificationCode) queryParams.set('otp', activeInvite.verificationCode);
         if (activeInvite?.partnerCustomName || activeInvite?.recipientHint) {
           queryParams.set('hint', activeInvite.partnerCustomName || activeInvite.recipientHint);
+        }
+        if (activeConnection?.id) queryParams.set('connId', activeConnection.id);
+        if (activeConnection?.peerDisplayName) {
+          queryParams.set('peer', activeConnection.peerDisplayName);
         }
         const qs = queryParams.toString();
         const connectionData = await resilientApiRequest(
@@ -582,29 +692,34 @@ function App() {
         );
         const list = connectionData.connections || [];
         const active = list.find((item) => item.status === 'active') || null;
+        const effectiveConn =
+          active ||
+          (activeConnection && activeConnection.status === 'active' ? activeConnection : null);
 
-        if (active) {
+        if (effectiveConn) {
           const justConnected =
             !activeConnection ||
             activeConnection.status !== 'active' ||
-            activeConnection.id !== active.id;
-          setActiveConnection(active);
+            activeConnection.id !== effectiveConn.id;
+          if (active) {
+            setActiveConnection((prev) => stabilizeConnectionState(prev, active));
+          }
           if (justConnected) {
             setStatusMessage(
-              `🎉 ${active.peerDisplayName} connected to your private 1-on-1 room! Start chatting ♥`
+              `🎉 ${effectiveConn.peerDisplayName} connected to your private 1-on-1 room! Start chatting ♥`
             );
             setTab('chat');
           }
-          await loadConnectionDetails(active, token);
-        } else if (activeConnection) {
-          setActiveConnection(null);
+          await loadConnectionDetails(effectiveConn, token);
         }
       } catch {
         // Ignore transient poll errors
+      } finally {
+        pollInFlight = false;
       }
     };
 
-    const pollMs = getAdaptivePollIntervalMs(2000, Boolean(activeConnection?.status === 'active'));
+    const pollMs = getAdaptivePollIntervalMs(2200, Boolean(activeConnection?.status === 'active'));
     const interval = setInterval(refresh, pollMs);
     const unsubscribe = subscribeToCoupleSync(refresh);
     return () => {
