@@ -5,3 +5,22 @@ dist/
 !.env.example
 .vercel/
 .DS_Store
+
+# Android store build outputs
+android/
+*.apk
+*.aab
+*.apks
+
+# Signing material and service credentials — never commit these
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.mobileprovision
+key.properties
+google-services.json
+service-account*.json
+firebase-adminsdk*.json
+.secrets/
+secrets/
