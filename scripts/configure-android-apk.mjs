@@ -282,7 +282,7 @@ function configureAndroidResources() {
     if (!manifest.includes('android:resizeableActivity')) {
       manifest = manifest.replace(
         '<application',
-        '<application\n        android:resizeableActivity="true"\n        android:hardwareAccelerated="true"\n        android:supportsRtl="true"'
+        '<application\n        android:resizeableActivity="true"\n        android:hardwareAccelerated="true"'
       );
     }
     if (!manifest.includes('android.allow_multiple_resumed_activities')) {
@@ -307,4 +307,3 @@ function configureAndroidResources() {
 }
 
 configureAndroidResources();
-
