@@ -53,6 +53,9 @@ jobs:
       - name: Sync Capacitor assets and plugins
         run: npx cap sync android
 
+      - name: Validate Android manifest XML
+        run: python -c "import xml.etree.ElementTree as ET; ET.parse('android/app/src/main/AndroidManifest.xml')"
+
       - name: Build store upload bundle
         working-directory: android
         run: |
@@ -75,4 +78,3 @@ jobs:
           path: store-output/*
           if-no-files-found: error
           retention-days: 30
-
