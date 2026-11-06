@@ -6,8 +6,8 @@
  *    website brand mark (dark #0c0612 luxury base + #ff4f9a -> #ffb36b gradient squircle + crescent moon ☾).
  * 2. Configures dark theme (`#0c0612`), notch/cutout safe-area protection (`android:fitsSystemWindows="true"`),
  *    and dark status/navigation bars in `styles.xml` and `ic_launcher_background.xml`.
- * 3. Optimizes `AndroidManifest.xml` for GitHub Releases, PhonePe Developer (Indus Appstore),
- *    and Amazon Appstore distribution.
+ * 3. Preserves the valid Capacitor-generated `AndroidManifest.xml` to avoid malformed XML
+ *    in CI builds.
  */
 
 import fs from 'node:fs';
@@ -282,8 +282,7 @@ function configureAndroidResources() {
     fs.writeFileSync(gradlePath, gradle, 'utf8');
   }
 
-  console.log('[configure-android-apk] Generated AFTERDARK v2.0.2.3 launcher icons, APK notification permissions, and multi-store manifest.');
+  console.log('[configure-android-apk] Generated AFTERDARK v2.0.2.3 launcher icons and Android theme resources.');
 }
 
 configureAndroidResources();
-
