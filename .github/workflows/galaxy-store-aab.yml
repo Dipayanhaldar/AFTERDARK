@@ -1,0 +1,79 @@
+name: Build AFTERDARK for Samsung Galaxy Store
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "galaxy-v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: afterdark-galaxy-store-build
+  cancel-in-progress: true
+
+jobs:
+  build-galaxy-store:
+    name: Build Samsung Galaxy Store AAB
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build web application
+        run: npm run build
+
+      - name: Generate Capacitor Android project
+        run: npx cap add android
+
+      - name: Apply existing AFTERDARK Android branding and manifest configuration
+        run: node scripts/configure-android-apk.mjs
+
+      - name: Sync Capacitor assets and plugins
+        run: npx cap sync android
+
+      - name: Build store upload bundle
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew bundleRelease --no-daemon
+
+      - name: Verify package and bundle output
+        run: |
+          test -s android/app/build/outputs/bundle/release/app-release.aab
+          mkdir -p store-output
+          cp android/app/build/outputs/bundle/release/app-release.aab store-output/AFTERDARK-galaxy-store.aab
+          file store-output/AFTERDARK-galaxy-store.aab
+          unzip -t store-output/AFTERDARK-galaxy-store.aab
+          sha256sum store-output/AFTERDARK-galaxy-store.aab | tee store-output/SHA256SUMS.txt
+
+      - name: Upload Galaxy Store bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: AFTERDARK-Galaxy-Store-AAB
+          path: store-output/*
+          if-no-files-found: error
+          retention-days: 30
+
