@@ -1,12 +1,15 @@
-name: Build AFTERDARK for Samsung Galaxy Store & PhonePe Indus Appstore
+name: Build AFTERDARK Multi-Store Release (Galaxy Store & PhonePe Indus Appstore)
 
 on:
   workflow_dispatch:
   push:
-    tags:
-      - "galaxy-v*"
-      - "indus-v*"
-      - "store-v*"
+    branches:
+      - main
+    paths:
+      - "capacitor.config.json"
+      - "manifest.webmanifest"
+      - "scripts/configure-android-apk.mjs"
+      - ".github/workflows/galaxy-store-aab.yml"
 
 permissions:
   contents: read
@@ -35,10 +38,10 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK
+      - name: Set up Android SDK (API 35 & 36)
         uses: android-actions/setup-android@v3
         with:
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          packages: 'platform-tools platforms;android-35 platforms;android-36 build-tools;35.0.0 build-tools;36.0.0'
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
@@ -55,30 +58,39 @@ jobs:
       - name: Prepare Release Signing Keystore (V1 + V2 Store-Compliant)
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026!' }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'afterdark_key' }}
-          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD || 'AfterDarkStore2026!' }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          STORE_PASS="${KEYSTORE_PASS:-AfterDarkStore2026}"
+          ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
+          ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
+          rm -f android/app/afterdark-upload.keystore
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 --decode > android/app/afterdark-upload.keystore
           else
-            keytool -genkeypair -v \
+            keytool -genkeypair -noprompt -v \
               -keystore android/app/afterdark-upload.keystore \
-              -alias "$KEY_ALIAS" \
+              -storetype PKCS12 \
+              -alias "$ALIAS_NAME" \
               -keyalg RSA \
               -keysize 2048 \
               -validity 10950 \
-              -storepass "$KEYSTORE_PASS" \
-              -keypass "$KEY_PASS" \
+              -storepass "$STORE_PASS" \
+              -keypass "$ALIAS_PASS" \
               -dname "CN=AFTERDARK Social, OU=Mobile, O=AFTERDARK, L=Hyderabad, ST=Telangana, C=IN"
           fi
 
       - name: Apply AFTERDARK Android branding, manifest & release signing configuration
         env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026!' }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'afterdark_key' }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || 'AfterDarkStore2026!' }}
-        run: node scripts/configure-android-apk.mjs
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:-AfterDarkStore2026}"
+          export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:-afterdark_key}"
+          export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
+          node scripts/configure-android-apk.mjs
 
       - name: Sync Capacitor assets and plugins
         run: npx cap sync android
@@ -91,13 +103,14 @@ jobs:
 
       - name: Verify and package store upload bundle (AAB + Signed APK + 512x512 Icon)
         run: |
-          test -s android/app/build/outputs/bundle/release/app-release.aab
-          test -s android/app/build/outputs/apk/release/app-release.apk
+          AAB_FILE=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          APK_FILE=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          test -s "$AAB_FILE"
+          test -s "$APK_FILE"
           mkdir -p store-output
-          cp android/app/build/outputs/bundle/release/app-release.aab store-output/AFTERDARK-galaxy-store.aab
-          cp android/app/build/outputs/apk/release/app-release.apk store-output/AFTERDARK-store-release-signed.apk
+          cp "$AAB_FILE" store-output/AFTERDARK-galaxy-store.aab
+          cp "$APK_FILE" store-output/AFTERDARK-store-release-signed.apk
           cp public/icon-512.png store-output/store-icon-512x512.png
-          cp android/app/afterdark-upload.keystore store-output/afterdark-upload.keystore
           file store-output/AFTERDARK-galaxy-store.aab
           file store-output/AFTERDARK-store-release-signed.apk
           unzip -t store-output/AFTERDARK-galaxy-store.aab

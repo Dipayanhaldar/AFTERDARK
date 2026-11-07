@@ -35,13 +35,13 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - name: Set up Android SDK
+      - name: Set up Android SDK (API 35 & 36)
         uses: android-actions/setup-android@v3
         with:
           # Do not request the removed legacy SDK package named `tools`.
-          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          packages: 'platform-tools platforms;android-35 platforms;android-36 build-tools;35.0.0 build-tools;36.0.0'
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
       - name: Generate Web & Store PNG Icons
         run: node scripts/configure-android-apk.mjs
       - name: Build web assets
@@ -51,29 +51,38 @@ jobs:
       - name: Generate Store-Compliant V1+V2 Release Keystore
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026!' }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'afterdark_key' }}
-          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD || 'AfterDarkStore2026!' }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          STORE_PASS="${KEYSTORE_PASS:-AfterDarkStore2026}"
+          ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
+          ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
+          rm -f android/app/afterdark-upload.keystore
           if [ -n "$KEYSTORE_B64" ]; then
             echo "$KEYSTORE_B64" | base64 --decode > android/app/afterdark-upload.keystore
           else
-            keytool -genkeypair -v \
+            keytool -genkeypair -noprompt -v \
               -keystore android/app/afterdark-upload.keystore \
-              -alias "$KEY_ALIAS" \
+              -storetype PKCS12 \
+              -alias "$ALIAS_NAME" \
               -keyalg RSA \
               -keysize 2048 \
               -validity 10950 \
-              -storepass "$KEYSTORE_PASS" \
-              -keypass "$KEY_PASS" \
+              -storepass "$STORE_PASS" \
+              -keypass "$ALIAS_PASS" \
               -dname "CN=AFTERDARK Social, OU=Mobile, O=AFTERDARK, L=Hyderabad, ST=Telangana, C=IN"
           fi
       - name: Configure AFTERDARK Launcher Icons, Dark Theme, Notch Safe-Area & Release Signing
         env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026!' }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'afterdark_key' }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || 'AfterDarkStore2026!' }}
-        run: node scripts/configure-android-apk.mjs
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:-AfterDarkStore2026}"
+          export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:-afterdark_key}"
+          export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
+          node scripts/configure-android-apk.mjs
       - name: Sync Capacitor
         run: npx cap sync android
       - name: Build Signed Release APK & AAB
@@ -83,10 +92,12 @@ jobs:
           ./gradlew assembleRelease bundleRelease --no-daemon
       - name: Prepare and verify store-signed APK & AAB
         run: |
-          cp android/app/build/outputs/apk/release/app-release.apk afterdark.apk
-          cp android/app/build/outputs/bundle/release/app-release.aab afterdark-release.aab
-          test -s afterdark.apk
-          test -s afterdark-release.aab
+          APK_FILE=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          AAB_FILE=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          test -s "$APK_FILE"
+          test -s "$AAB_FILE"
+          cp "$APK_FILE" afterdark.apk
+          cp "$AAB_FILE" afterdark-release.aab
           file afterdark.apk
           sha256sum afterdark.apk afterdark-release.aab
       - name: Keep build artifacts (Signed APK, Signed AAB & 512x512 Store Icon)
@@ -100,6 +111,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Publish Store-Ready APK & AAB release
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-build-${{ github.run_number }}

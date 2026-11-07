@@ -328,7 +328,7 @@ function configureAndroidResources() {
     if (!manifest.includes('android:resizeableActivity')) {
       manifest = manifest.replace(
         '<application',
-        '<application\n        android:resizeableActivity="true"\n        android:hardwareAccelerated="true"\n        android:usesCleartextTraffic="false"\n        android:supportsRtl="true"'
+        '<application\n        android:resizeableActivity="true"\n        android:hardwareAccelerated="true"\n        android:usesCleartextTraffic="false"'
       );
     }
     if (!manifest.includes('android.allow_multiple_resumed_activities')) {
@@ -340,6 +340,14 @@ function configureAndroidResources() {
     fs.writeFileSync(manifestPath, manifest, 'utf8');
   }
 
+  // Ensure variables.gradle uses targetSdkVersion = 35 (Android 15 store-compatible) while keeping compileSdkVersion >= 36 for AndroidX
+  const variablesGradlePath = path.resolve(ROOT_DIR, 'android/variables.gradle');
+  if (fs.existsSync(variablesGradlePath)) {
+    let varsGradle = fs.readFileSync(variablesGradlePath, 'utf8');
+    varsGradle = varsGradle.replace(/targetSdkVersion\s*=\s*\d+/, 'targetSdkVersion = 35');
+    fs.writeFileSync(variablesGradlePath, varsGradle, 'utf8');
+  }
+
   // Sync versionCode 2025, versionName "2.0.2.5", and Release Signing in android/app/build.gradle
   const gradlePath = path.resolve(ROOT_DIR, 'android/app/build.gradle');
   if (fs.existsSync(gradlePath)) {
@@ -349,26 +357,39 @@ function configureAndroidResources() {
 
     const keystorePath = path.resolve(ROOT_DIR, 'android/app/afterdark-upload.keystore');
     if (fs.existsSync(keystorePath) && !gradle.includes('signingConfigs')) {
-      const storePassword = process.env.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026!';
-      const keyAlias = process.env.ANDROID_KEY_ALIAS || 'afterdark_key';
-      const keyPassword = process.env.ANDROID_KEY_PASSWORD || storePassword;
+      const escapeGroovySingleQuote = (val) => String(val).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const storePassword = escapeGroovySingleQuote(
+        process.env.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026'
+      );
+      const keyAlias = escapeGroovySingleQuote(
+        process.env.ANDROID_KEY_ALIAS || 'afterdark_key'
+      );
+      const keyPassword = escapeGroovySingleQuote(
+        process.env.ANDROID_KEY_PASSWORD || process.env.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026'
+      );
 
-      const signingBlock = `
-    signingConfigs {
+      const signingBlock = `    signingConfigs {
         release {
-            storeFile file("afterdark-upload.keystore")
-            storePassword "${storePassword}"
-            keyAlias "${keyAlias}"
-            keyPassword "${keyPassword}"
+            storeFile file('afterdark-upload.keystore')
+            storePassword '${storePassword}'
+            keyAlias '${keyAlias}'
+            keyPassword '${keyPassword}'
             v1SigningEnabled true
             v2SigningEnabled true
         }
     }`;
 
-      gradle = gradle.replace(
-        /buildTypes\s*\{/,
-        `${signingBlock}\n    buildTypes {\n        release {\n            signingConfig signingConfigs.release\n        }`
-      );
+      if (/buildTypes\s*\{\s*release\s*\{/.test(gradle)) {
+        gradle = gradle.replace(
+          /buildTypes\s*\{\s*release\s*\{/,
+          `${signingBlock}\n    buildTypes {\n        release {\n            signingConfig signingConfigs.release`
+        );
+      } else {
+        gradle = gradle.replace(
+          /buildTypes\s*\{/,
+          `${signingBlock}\n    buildTypes {\n        release {\n            signingConfig signingConfigs.release\n        }`
+        );
+      }
     }
     fs.writeFileSync(gradlePath, gradle, 'utf8');
   }
