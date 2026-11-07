@@ -214,14 +214,102 @@ function renderAfterDarkIconPng(size, mode = 'square') {
   return encodeRgbaToPng(size, size, buf);
 }
 
+function renderStoreBannerPng(width, height, variant = 0) {
+  const buf = Buffer.alloc(width * height * 4);
+  const cx = width * (variant === 0 ? 0.5 : 0.5);
+  const cy = height * (variant === 0 ? 0.5 : 0.36);
+  const minDim = Math.min(width, height);
+  const aa = 1.5;
+
+  const squircleHalf = minDim * (variant === 0 ? 0.28 : 0.2);
+  const squircleRadius = squircleHalf * 0.48;
+  const moonOuterR = squircleHalf * 0.56;
+  const moonOuterCx = cx - squircleHalf * 0.04;
+  const moonOuterCy = cy + squircleHalf * 0.02;
+  const moonCutR = squircleHalf * 0.48;
+  const moonCutCx = cx + squircleHalf * 0.22;
+  const moonCutCy = cy - squircleHalf * 0.12;
+  const starCx = cx + squircleHalf * 0.36;
+  const starCy = cy - squircleHalf * 0.34;
+  const starR = Math.max(2, squircleHalf * 0.09);
+
+  for (let y = 0; y < height; y++) {
+    const ny = y / height;
+    for (let x = 0; x < width; x++) {
+      const nx = x / width;
+      const idx = (y * width + x) * 4;
+
+      const radialT = Math.min(1, Math.hypot(nx - 0.5, ny - 0.42) * 1.35);
+      let r = lerp(42 + variant * 6, 12, radialT);
+      let g = lerp(16 + variant * 3, 6, radialT);
+      let b = lerp(64 + variant * 8, 18, radialT);
+
+      // Decorative card frame for portrait screenshots (variant > 0)
+      if (variant > 0) {
+        const cardDist = signedDistanceRoundedRect(
+          x,
+          y,
+          width * 0.5,
+          height * 0.68,
+          width * 0.38,
+          width * 0.05
+        );
+        if (cardDist < 0 && Math.abs(y - height * 0.68) < height * 0.18) {
+          const cardAlpha = 1 - smoothstep(-2, 0, cardDist);
+          r = lerp(r, 34, cardAlpha * 0.85);
+          g = lerp(g, 15, cardAlpha * 0.85);
+          b = lerp(b, 52, cardAlpha * 0.85);
+        }
+      }
+
+      const sqDist = signedDistanceRoundedRect(x, y, cx, cy, squircleHalf, squircleRadius);
+      const sqAlpha = 1 - smoothstep(-aa, aa, sqDist);
+      if (sqAlpha > 0) {
+        const gradT = Math.max(
+          0,
+          Math.min(1, (x - (cx - squircleHalf) + (y - (cy - squircleHalf))) / (squircleHalf * 4))
+        );
+        const sr = 255;
+        const sg = gradT < 0.5 ? lerp(79, 124, gradT * 2) : lerp(124, 179, (gradT - 0.5) * 2);
+        const sb = gradT < 0.5 ? lerp(154, 131, gradT * 2) : lerp(131, 107, (gradT - 0.5) * 2);
+
+        const dOuter = Math.hypot(x - moonOuterCx, y - moonOuterCy) - moonOuterR;
+        const dCut = Math.hypot(x - moonCutCx, y - moonCutCy) - moonCutR;
+        const moonMask = (1 - smoothstep(-aa, aa, dOuter)) * smoothstep(-aa, aa, dCut);
+        const dStar = Math.hypot(x - starCx, y - starCy) - starR;
+        const starMask = 1 - smoothstep(-aa, aa, dStar);
+        const glyphMask = Math.min(1, moonMask + starMask);
+
+        const fgR = lerp(sr, 22, glyphMask);
+        const fgG = lerp(sg, 8, glyphMask);
+        const fgB = lerp(sb, 31, glyphMask);
+
+        r = lerp(r, fgR, sqAlpha);
+        g = lerp(g, fgG, sqAlpha);
+        b = lerp(b, fgB, sqAlpha);
+      }
+
+      buf[idx] = Math.round(r);
+      buf[idx + 1] = Math.round(g);
+      buf[idx + 2] = Math.round(b);
+      buf[idx + 3] = 255;
+    }
+  }
+  return encodeRgbaToPng(width, height, buf);
+}
+
 function generateWebAndStorePngIcons() {
   try {
     fs.mkdirSync(PUBLIC_DIR, { recursive: true });
     const icon192 = renderAfterDarkIconPng(192, 'store');
     const icon512 = renderAfterDarkIconPng(512, 'store');
+    const featureGraphic = renderStoreBannerPng(1024, 500, 0);
     fs.writeFileSync(path.join(PUBLIC_DIR, 'icon-192.png'), icon192);
     fs.writeFileSync(path.join(PUBLIC_DIR, 'icon-512.png'), icon512);
-    console.log('[configure-android-apk] Generated public/icon-192.png and public/icon-512.png (512x512 Store Icon).');
+    fs.writeFileSync(path.join(PUBLIC_DIR, 'feature-graphic-1024x500.png'), featureGraphic);
+    console.log(
+      '[configure-android-apk] Generated public/icon-192.png, public/icon-512.png (512x512 Store Icon), and public/feature-graphic-1024x500.png.'
+    );
   } catch (err) {
     console.warn('[configure-android-apk] Could not write public PNG icons:', err?.message);
   }

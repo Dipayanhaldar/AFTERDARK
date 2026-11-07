@@ -105,20 +105,29 @@ jobs:
           chmod +x gradlew
           ./gradlew bundleRelease assembleRelease --no-daemon
 
-      - name: Verify and package store upload bundle (AAB + Signed APK + 512x512 Icon)
+      - name: Verify and package store upload bundle (AAB + Signed APK + 512x512 Icon + Feature Graphic + Keystore Details)
+        env:
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
+          STORE_PASS="${KEYSTORE_PASS:-AfterDarkStore2026}"
+          ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
           AAB_FILE=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
           APK_FILE=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
           test -s "$AAB_FILE"
           test -s "$APK_FILE"
           mkdir -p store-output
+          cp "$AAB_FILE" store-output/AFTERDARK-indus-store.aab
           cp "$AAB_FILE" store-output/AFTERDARK-galaxy-store.aab
           cp "$APK_FILE" store-output/AFTERDARK-store-release-signed.apk
           cp public/icon-512.png store-output/store-icon-512x512.png
-          file store-output/AFTERDARK-galaxy-store.aab
+          cp public/feature-graphic-1024x500.png store-output/feature-graphic-1024x500.png
+          cp android/app/afterdark-upload.keystore store-output/afterdark-upload.keystore
+          keytool -list -v -keystore android/app/afterdark-upload.keystore -storepass "$STORE_PASS" -alias "$ALIAS_NAME" > store-output/KEYSTORE-FINGERPRINTS.txt
+          file store-output/AFTERDARK-indus-store.aab
           file store-output/AFTERDARK-store-release-signed.apk
-          unzip -t store-output/AFTERDARK-galaxy-store.aab
-          sha256sum store-output/AFTERDARK-galaxy-store.aab store-output/AFTERDARK-store-release-signed.apk | tee store-output/SHA256SUMS.txt
+          unzip -t store-output/AFTERDARK-indus-store.aab
+          sha256sum store-output/AFTERDARK-indus-store.aab store-output/AFTERDARK-galaxy-store.aab store-output/AFTERDARK-store-release-signed.apk | tee store-output/SHA256SUMS.txt
 
       - name: Upload Galaxy Store & PhonePe Indus Store bundle
         uses: actions/upload-artifact@v4
