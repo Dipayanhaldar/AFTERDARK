@@ -460,12 +460,12 @@ function configureAndroidResources() {
     fs.writeFileSync(variablesGradlePath, varsGradle, 'utf8');
   }
 
-  // Sync versionCode 2025, versionName "2.0.2.5", and Release Signing in android/app/build.gradle
+  // Sync versionCode 2026, versionName "2.0.2.6", and Release Signing in android/app/build.gradle
   const gradlePath = path.resolve(ROOT_DIR, 'android/app/build.gradle');
   if (fs.existsSync(gradlePath)) {
     let gradle = fs.readFileSync(gradlePath, 'utf8');
-    gradle = gradle.replace(/versionCode\s+\d+/, 'versionCode 2025');
-    gradle = gradle.replace(/versionName\s+"[^"]+"/, 'versionName "2.0.2.5"');
+    gradle = gradle.replace(/versionCode\s+\d+/, 'versionCode 2026');
+    gradle = gradle.replace(/versionName\s+"[^"]+"/, 'versionName "2.0.2.6"');
 
     const jksPath = path.resolve(ROOT_DIR, 'android/app/afterdark-upload.jks');
     const legacyKeystorePath = path.resolve(ROOT_DIR, 'android/app/afterdark-upload.keystore');
@@ -514,7 +514,7 @@ function configureAndroidResources() {
   }
 
   console.log(
-    '[configure-android-apk] Generated AFTERDARK v2.0.2.5 launcher icons, store icons, Galaxy/Indus manifest features, and release signing config.'
+    '[configure-android-apk] Generated AFTERDARK v2.0.2.6 launcher icons, store icons, Galaxy/Indus manifest features, and release signing config.'
   );
 }
 
