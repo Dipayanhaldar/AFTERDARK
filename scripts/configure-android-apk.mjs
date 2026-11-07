@@ -9,9 +9,7 @@
  *    all Android `mipmap-*` densities: `ic_launcher.png`, `ic_launcher_round.png`, `ic_launcher_foreground.png`).
  * 2. Configures dark theme (`#0c0612`), notch/cutout safe-area protection (`android:fitsSystemWindows="true"`),
  *    and dark status/navigation bars in `styles.xml` and `ic_launcher_background.xml`.
- * 3. Optimizes `AndroidManifest.xml` with optional `<uses-feature android:required="false" />` tags
- *    so Galaxy Store and Indus Appstore never block tablets/foldables, and configures
- *    V1 + V2 Release Signing in `android/app/build.gradle`.
+ * 3. Configures V1 + V2 Release Signing in `android/app/build.gradle`.
  */
 
 import fs from 'node:fs';
@@ -295,51 +293,6 @@ function configureAndroidResources() {
 `;
   fs.writeFileSync(path.join(valuesDir, 'styles.xml'), stylesXml, 'utf8');
 
-  // Update AndroidManifest.xml for PhonePe Developer (Indus Appstore), Samsung Galaxy Store, Amazon Appstore & GitHub Releases
-  const manifestPath = path.join(ANDROID_MAIN, 'AndroidManifest.xml');
-  if (fs.existsSync(manifestPath)) {
-    let manifest = fs.readFileSync(manifestPath, 'utf8');
-    if (!manifest.includes('android.permission.POST_NOTIFICATIONS')) {
-      const storePermissionsAndFeatures = [
-        '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
-        '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
-        '    <uses-permission android:name="android.permission.VIBRATE" />',
-        '    <uses-permission android:name="android.permission.CAMERA" />',
-        '    <uses-permission android:name="android.permission.RECORD_AUDIO" />',
-        '    <uses-feature android:name="android.hardware.camera" android:required="false" />',
-        '    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />',
-        '    <uses-feature android:name="android.hardware.microphone" android:required="false" />',
-        '    <uses-feature android:name="android.hardware.telephony" android:required="false" />',
-        '    <uses-feature android:name="android.hardware.location.gps" android:required="false" />',
-        '    <queries>',
-        '        <intent>',
-        '            <action android:name="android.intent.action.VIEW" />',
-        '            <data android:scheme="https" />',
-        '        </intent>',
-        '        <intent>',
-        '            <action android:name="android.intent.action.VIEW" />',
-        '            <data android:scheme="upi" />',
-        '        </intent>',
-        '    </queries>',
-        '    <application'
-      ].join('\n');
-      manifest = manifest.replace('<application', storePermissionsAndFeatures);
-    }
-    if (!manifest.includes('android:resizeableActivity')) {
-      manifest = manifest.replace(
-        '<application',
-        '<application\n        android:resizeableActivity="true"\n        android:hardwareAccelerated="true"\n        android:usesCleartextTraffic="false"'
-      );
-    }
-    if (!manifest.includes('android.allow_multiple_resumed_activities')) {
-      manifest = manifest.replace(
-        '</application>',
-        '        <meta-data android:name="android.allow_multiple_resumed_activities" android:value="true" />\n        <meta-data android:name="samsung.dex.support" android:value="true" />\n        <meta-data android:name="com.AfterDark.ReleaseVersion" android:value="2.0.2.5" />\n    </application>'
-      );
-    }
-    fs.writeFileSync(manifestPath, manifest, 'utf8');
-  }
-
   // Ensure variables.gradle uses targetSdkVersion = 35 (Android 15 store-compatible) while keeping compileSdkVersion >= 36 for AndroidX
   const variablesGradlePath = path.resolve(ROOT_DIR, 'android/variables.gradle');
   if (fs.existsSync(variablesGradlePath)) {
@@ -395,7 +348,7 @@ function configureAndroidResources() {
   }
 
   console.log(
-    '[configure-android-apk] Generated AFTERDARK v2.0.2.5 launcher icons, store icons, Galaxy/Indus manifest features, and release signing config.'
+    '[configure-android-apk] Generated AFTERDARK v2.0.2.5 launcher icons, store icons, and release signing config.'
   );
 }
 
