@@ -1,13 +1,13 @@
 {
   "id": "com.afterdark.social",
-  "name": "AFTERDARK — Couples Private Link & In-Chat Commerce",
+  "name": "AFTERDARK — Private 1-on-1 Couple & Bestie Room",
   "short_name": "AFTERDARK",
-  "description": "An 18+ invite-only couples space featuring dual-site QR + 6-digit OTP E2EE linking, private chat, and inline in-chat ordering.",
+  "description": "An 18+ consent-first 1-on-1 private room for couples and best friends featuring instant QR + 6-digit passcode pairing, private chat, voice notes, and curated Indian brand offers.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "background_color": "#0c0612",
   "theme_color": "#0c0612",
   "categories": [
@@ -18,7 +18,11 @@
   "prefer_related_applications": false,
   "related_applications": [
     {
-      "platform": "play",
+      "platform": "indus",
+      "id": "com.afterdark.social"
+    },
+    {
+      "platform": "galaxy",
       "id": "com.afterdark.social"
     },
     {
@@ -26,11 +30,23 @@
       "id": "com.afterdark.social"
     },
     {
-      "platform": "indus",
+      "platform": "play",
       "id": "com.afterdark.social"
     }
   ],
   "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
     {
       "src": "/icon-192.svg",
       "sizes": "192x192",

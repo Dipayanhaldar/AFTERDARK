@@ -42,39 +42,76 @@ jobs:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - name: Install dependencies
         run: npm install
+      - name: Generate Web & Store PNG Icons
+        run: node scripts/configure-android-apk.mjs
       - name: Build web assets
         run: npm run build
       - name: Create Android wrapper
         run: npx cap add android
-      - name: Configure AFTERDARK Launcher Icons, Dark Theme & Notch Safe-Area
+      - name: Generate Store-Compliant V1+V2 Release Keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026!' }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'afterdark_key' }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD || 'AfterDarkStore2026!' }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > android/app/afterdark-upload.keystore
+          else
+            keytool -genkeypair -v \
+              -keystore android/app/afterdark-upload.keystore \
+              -alias "$KEY_ALIAS" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10950 \
+              -storepass "$KEYSTORE_PASS" \
+              -keypass "$KEY_PASS" \
+              -dname "CN=AFTERDARK Social, OU=Mobile, O=AFTERDARK, L=Hyderabad, ST=Telangana, C=IN"
+          fi
+      - name: Configure AFTERDARK Launcher Icons, Dark Theme, Notch Safe-Area & Release Signing
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026!' }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS || 'afterdark_key' }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD || 'AfterDarkStore2026!' }}
         run: node scripts/configure-android-apk.mjs
       - name: Sync Capacitor
         run: npx cap sync android
-      - name: Build APK
+      - name: Build Signed Release APK & AAB
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
-      - name: Prepare and verify direct-download APK
+          ./gradlew assembleRelease bundleRelease --no-daemon
+      - name: Prepare and verify store-signed APK & AAB
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk afterdark.apk
+          cp android/app/build/outputs/apk/release/app-release.apk afterdark.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab afterdark-release.aab
           test -s afterdark.apk
+          test -s afterdark-release.aab
           file afterdark.apk
-          sha256sum afterdark.apk
-      - name: Keep a build artifact if release publishing fails
+          sha256sum afterdark.apk afterdark-release.aab
+      - name: Keep build artifacts (Signed APK, Signed AAB & 512x512 Store Icon)
         uses: actions/upload-artifact@v4
         with:
           name: afterdark-android-apk
-          path: afterdark.apk
+          path: |
+            afterdark.apk
+            afterdark-release.aab
+            public/icon-512.png
           if-no-files-found: error
           retention-days: 30
-      - name: Publish APK release
+      - name: Publish Store-Ready APK & AAB release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-build-${{ github.run_number }}
-          name: AFTERDARK Android APK ${{ github.run_number }}
+          name: AFTERDARK Store-Signed Android APK & AAB ${{ github.run_number }}
           body: |
-            Direct-download Android build of AFTERDARK (Store-ready for GitHub Releases, PhonePe Developer / Indus Appstore, and Amazon Appstore).
-            Includes the custom AFTERDARK Crescent Moon launcher icon, native dark theme (#0c0612), camera notch safe-area protection, and E2EE private chat.
-          files: afterdark.apk
+            Store-Signed Release Android build of AFTERDARK (`com.afterdark.social`, v2.0.2.5 / versionCode 2025).
+            Ready for direct upload to **PhonePe Indus Appstore**, **Samsung Galaxy Store**, **Amazon Appstore**, and direct phone installation.
+            - `afterdark.apk`: V1+V2 Release-Signed APK (for Samsung Galaxy Store, PhonePe Indus Appstore & direct install)
+            - `afterdark-release.aab`: Release-Signed Android App Bundle (for PhonePe Indus Appstore & Play/Galaxy AAB upload)
+            - `icon-512.png`: 512x512 High-Res Store Listing Icon
+          files: |
+            afterdark.apk
+            afterdark-release.aab
+            public/icon-512.png
           make_latest: true

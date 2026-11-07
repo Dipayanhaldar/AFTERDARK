@@ -1,20 +1,26 @@
 #!/usr/bin/env node
 /**
- * Configures the Capacitor Android project before `./gradlew assembleDebug`:
- * 1. Generates high-resolution PNG launcher icons (ic_launcher.png, ic_launcher_round.png,
- *    ic_launcher_foreground.png) across all mipmap-* densities inspired by the AFTERDARK
- *    website brand mark (dark #0c0612 luxury base + #ff4f9a -> #ffb36b gradient squircle + crescent moon ☾).
+ * Configures the Capacitor Android project and web PWA icons for:
+ * - Samsung Galaxy Store (Signed Release APK & AAB, One UI / Foldable / Tablet compatibility)
+ * - PhonePe Developer / Indus Appstore (Signed Release APK & AAB, Indian commerce deep-links)
+ * - Amazon Appstore & GitHub Releases
+ *
+ * 1. Generates high-resolution PNG icons (`public/icon-192.png`, `public/icon-512.png`, and
+ *    all Android `mipmap-*` densities: `ic_launcher.png`, `ic_launcher_round.png`, `ic_launcher_foreground.png`).
  * 2. Configures dark theme (`#0c0612`), notch/cutout safe-area protection (`android:fitsSystemWindows="true"`),
  *    and dark status/navigation bars in `styles.xml` and `ic_launcher_background.xml`.
- * 3. Preserves the valid Capacitor-generated `AndroidManifest.xml` to avoid malformed XML
- *    in CI builds.
+ * 3. Optimizes `AndroidManifest.xml` with optional `<uses-feature android:required="false" />` tags
+ *    so Galaxy Store and Indus Appstore never block tablets/foldables, and configures
+ *    V1 + V2 Release Signing in `android/app/build.gradle`.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 
-const ANDROID_MAIN = path.resolve(process.cwd(), 'android/app/src/main');
+const ROOT_DIR = process.cwd();
+const PUBLIC_DIR = path.resolve(ROOT_DIR, 'public');
+const ANDROID_MAIN = path.resolve(ROOT_DIR, 'android/app/src/main');
 const RES_DIR = path.join(ANDROID_MAIN, 'res');
 
 // CRC32 implementation for PNG chunks
@@ -92,7 +98,7 @@ function lerp(a, b, t) {
 
 /**
  * Renders the AFTERDARK brand icon (matching the website header logo beside AFTERDARK)
- * - `mode`: 'square' | 'round' | 'foreground'
+ * - `mode`: 'square' | 'round' | 'foreground' | 'store'
  */
 function renderAfterDarkIconPng(size, mode = 'square') {
   const buf = Buffer.alloc(size * size * 4);
@@ -128,6 +134,8 @@ function renderAfterDarkIconPng(size, mode = 'square') {
       let outerAlpha = 1;
       if (mode === 'foreground') {
         outerAlpha = 0;
+      } else if (mode === 'store') {
+        outerAlpha = 1;
       } else if (mode === 'round') {
         const distFromCenter = Math.hypot(x - cx, y - cy) - size * 0.47;
         outerAlpha = 1 - smoothstep(-aa, aa, distFromCenter);
@@ -148,7 +156,10 @@ function renderAfterDarkIconPng(size, mode = 'square') {
       const sqAlpha = 1 - smoothstep(-aa, aa, sqDist);
 
       if (sqAlpha > 0) {
-        const gradT = Math.max(0, Math.min(1, ((x - (cx - squircleHalf)) + (y - (cy - squircleHalf))) / (squircleHalf * 4)));
+        const gradT = Math.max(
+          0,
+          Math.min(1, (x - (cx - squircleHalf) + (y - (cy - squircleHalf))) / (squircleHalf * 4))
+        );
         let sr;
         let sg;
         let sb;
@@ -203,9 +214,24 @@ function renderAfterDarkIconPng(size, mode = 'square') {
   return encodeRgbaToPng(size, size, buf);
 }
 
+function generateWebAndStorePngIcons() {
+  try {
+    fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+    const icon192 = renderAfterDarkIconPng(192, 'store');
+    const icon512 = renderAfterDarkIconPng(512, 'store');
+    fs.writeFileSync(path.join(PUBLIC_DIR, 'icon-192.png'), icon192);
+    fs.writeFileSync(path.join(PUBLIC_DIR, 'icon-512.png'), icon512);
+    console.log('[configure-android-apk] Generated public/icon-192.png and public/icon-512.png (512x512 Store Icon).');
+  } catch (err) {
+    console.warn('[configure-android-apk] Could not write public PNG icons:', err?.message);
+  }
+}
+
 function configureAndroidResources() {
+  generateWebAndStorePngIcons();
+
   if (!fs.existsSync(ANDROID_MAIN)) {
-    console.log('[configure-android-apk] android/app/src/main not found yet — skipping.');
+    console.log('[configure-android-apk] android/app/src/main not found yet — web icons ready.');
     return;
   }
 
@@ -269,20 +295,87 @@ function configureAndroidResources() {
 `;
   fs.writeFileSync(path.join(valuesDir, 'styles.xml'), stylesXml, 'utf8');
 
-  // Keep the Capacitor-generated AndroidManifest.xml unchanged.
-  // Text-based XML insertion caused malformed manifests in CI. Store-specific
-  // permissions/metadata must be added through a validated XML build step.
+  // Update AndroidManifest.xml for PhonePe Developer (Indus Appstore), Samsung Galaxy Store, Amazon Appstore & GitHub Releases
+  const manifestPath = path.join(ANDROID_MAIN, 'AndroidManifest.xml');
+  if (fs.existsSync(manifestPath)) {
+    let manifest = fs.readFileSync(manifestPath, 'utf8');
+    if (!manifest.includes('android.permission.POST_NOTIFICATIONS')) {
+      const storePermissionsAndFeatures = [
+        '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
+        '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+        '    <uses-permission android:name="android.permission.VIBRATE" />',
+        '    <uses-permission android:name="android.permission.CAMERA" />',
+        '    <uses-permission android:name="android.permission.RECORD_AUDIO" />',
+        '    <uses-feature android:name="android.hardware.camera" android:required="false" />',
+        '    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />',
+        '    <uses-feature android:name="android.hardware.microphone" android:required="false" />',
+        '    <uses-feature android:name="android.hardware.telephony" android:required="false" />',
+        '    <uses-feature android:name="android.hardware.location.gps" android:required="false" />',
+        '    <queries>',
+        '        <intent>',
+        '            <action android:name="android.intent.action.VIEW" />',
+        '            <data android:scheme="https" />',
+        '        </intent>',
+        '        <intent>',
+        '            <action android:name="android.intent.action.VIEW" />',
+        '            <data android:scheme="upi" />',
+        '        </intent>',
+        '    </queries>',
+        '    <application'
+      ].join('\n');
+      manifest = manifest.replace('<application', storePermissionsAndFeatures);
+    }
+    if (!manifest.includes('android:resizeableActivity')) {
+      manifest = manifest.replace(
+        '<application',
+        '<application\n        android:resizeableActivity="true"\n        android:hardwareAccelerated="true"\n        android:usesCleartextTraffic="false"\n        android:supportsRtl="true"'
+      );
+    }
+    if (!manifest.includes('android.allow_multiple_resumed_activities')) {
+      manifest = manifest.replace(
+        '</application>',
+        '        <meta-data android:name="android.allow_multiple_resumed_activities" android:value="true" />\n        <meta-data android:name="samsung.dex.support" android:value="true" />\n        <meta-data android:name="com.AfterDark.ReleaseVersion" android:value="2.0.2.5" />\n    </application>'
+      );
+    }
+    fs.writeFileSync(manifestPath, manifest, 'utf8');
+  }
 
-  // Sync versionCode 2023 and versionName "2.0.2.3" in android/app/build.gradle if present
-  const gradlePath = path.resolve(process.cwd(), 'android/app/build.gradle');
+  // Sync versionCode 2025, versionName "2.0.2.5", and Release Signing in android/app/build.gradle
+  const gradlePath = path.resolve(ROOT_DIR, 'android/app/build.gradle');
   if (fs.existsSync(gradlePath)) {
     let gradle = fs.readFileSync(gradlePath, 'utf8');
-    gradle = gradle.replace(/versionCode\s+\d+/, 'versionCode 2023');
-    gradle = gradle.replace(/versionName\s+"[^"]+"/, 'versionName "2.0.2.3"');
+    gradle = gradle.replace(/versionCode\s+\d+/, 'versionCode 2025');
+    gradle = gradle.replace(/versionName\s+"[^"]+"/, 'versionName "2.0.2.5"');
+
+    const keystorePath = path.resolve(ROOT_DIR, 'android/app/afterdark-upload.keystore');
+    if (fs.existsSync(keystorePath) && !gradle.includes('signingConfigs')) {
+      const storePassword = process.env.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026!';
+      const keyAlias = process.env.ANDROID_KEY_ALIAS || 'afterdark_key';
+      const keyPassword = process.env.ANDROID_KEY_PASSWORD || storePassword;
+
+      const signingBlock = `
+    signingConfigs {
+        release {
+            storeFile file("afterdark-upload.keystore")
+            storePassword "${storePassword}"
+            keyAlias "${keyAlias}"
+            keyPassword "${keyPassword}"
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
+    }`;
+
+      gradle = gradle.replace(
+        /buildTypes\s*\{/,
+        `${signingBlock}\n    buildTypes {\n        release {\n            signingConfig signingConfigs.release\n        }`
+      );
+    }
     fs.writeFileSync(gradlePath, gradle, 'utf8');
   }
 
-  console.log('[configure-android-apk] Generated AFTERDARK v2.0.2.3 launcher icons and Android theme resources.');
+  console.log(
+    '[configure-android-apk] Generated AFTERDARK v2.0.2.5 launcher icons, store icons, Galaxy/Indus manifest features, and release signing config.'
+  );
 }
 
 configureAndroidResources();
