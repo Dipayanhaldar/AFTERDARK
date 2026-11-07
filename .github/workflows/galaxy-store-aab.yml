@@ -71,9 +71,18 @@ jobs:
           # GitHub secrets can contain pasted line breaks or whitespace; remove those before decoding.
           printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode > android/app/afterdark-upload.keystore
           test -s android/app/afterdark-upload.keystore
-          # Validate the decoded file and credentials before Gradle starts.
-          keytool -list -keystore android/app/afterdark-upload.keystore -storepass "$STORE_PASS" -alias "$ALIAS_NAME" >/dev/null
-          echo "Signing keystore decoded and validated successfully."
+          # Diagnose the keystore without printing any secret values.
+          if ! keytool -list -keystore android/app/afterdark-upload.keystore -storepass "$STORE_PASS" > /tmp/afterdark-keystore-list.txt 2>/tmp/afterdark-keystore-error.txt; then
+            echo "::error::Keystore decoded, but ANDROID_KEYSTORE_PASSWORD was rejected."
+            cat /tmp/afterdark-keystore-error.txt
+            exit 1
+          fi
+          if ! grep -Fq "Alias name: $ALIAS_NAME" /tmp/afterdark-keystore-list.txt; then
+            echo "::error::Keystore password is valid, but ANDROID_KEY_ALIAS does not match an alias in this keystore."
+            grep "Alias name:" /tmp/afterdark-keystore-list.txt || true
+            exit 1
+          fi
+          echo "Keystore and alias validated successfully."
 
       - name: Sync Capacitor assets and plugins
         run: npx cap sync android
