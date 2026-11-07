@@ -9,7 +9,6 @@ on:
       - "capacitor.config.json"
       - "manifest.webmanifest"
       - "scripts/configure-android-apk.mjs"
-      - ".github/workflows/galaxy-store-aab.yml"
 
 permissions:
   contents: read
@@ -67,44 +66,28 @@ jobs:
           ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
           rm -f android/app/afterdark-upload.jks android/app/afterdark-upload.keystore
 
-          USE_GENERATED=0
-          if [ -n "${KEYSTORE_B64:-}" ]; then
-            if printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode > android/app/afterdark-upload.jks 2>/dev/null && [ -s android/app/afterdark-upload.jks ]; then
-              if keytool -list -keystore android/app/afterdark-upload.jks -storepass "$STORE_PASS" > /tmp/afterdark-keystore-list.txt 2>/tmp/afterdark-keystore-error.txt; then
-                DETECTED_ALIAS=$(awk -F': ' '/Alias name:/ {print $2; exit}' /tmp/afterdark-keystore-list.txt | tr -d '\r')
-                if ! grep -Fqi "Alias name: $ALIAS_NAME" /tmp/afterdark-keystore-list.txt && [ -n "$DETECTED_ALIAS" ]; then
-                  echo "Using detected keystore alias: $DETECTED_ALIAS"
-                  ALIAS_NAME="$DETECTED_ALIAS"
-                fi
-                echo "Provided .jks keystore and alias validated successfully."
-              else
-                echo "Provided keystore password did not match ANDROID_KEYSTORE_BASE64 — falling back to fresh .jks keystore generation."
-                USE_GENERATED=1
-              fi
-            else
-              echo "ANDROID_KEYSTORE_BASE64 could not be decoded — falling back to fresh .jks keystore generation."
-              USE_GENERATED=1
-            fi
-          else
-            USE_GENERATED=1
+          if [ -z "${KEYSTORE_B64:-}" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is missing. Refusing to generate a new signing key because this is an app update."
+            exit 1
           fi
 
-          if [ "$USE_GENERATED" -eq 1 ]; then
-            rm -f android/app/afterdark-upload.jks
-            STORE_PASS="AfterDarkStore2026"
-            ALIAS_NAME="afterdark_key"
-            ALIAS_PASS="AfterDarkStore2026"
-            keytool -genkeypair -noprompt -v \
-              -keystore android/app/afterdark-upload.jks \
-              -storetype JKS \
-              -alias "$ALIAS_NAME" \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10950 \
-              -storepass "$STORE_PASS" \
-              -keypass "$ALIAS_PASS" \
-              -dname "CN=AFTERDARK Social, OU=Mobile, O=AFTERDARK, L=Hyderabad, ST=Telangana, C=IN"
+          if ! printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode > android/app/afterdark-upload.jks 2>/dev/null || [ ! -s android/app/afterdark-upload.jks ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is invalid. Refusing to generate a replacement signing key."
+            exit 1
           fi
+
+          if ! keytool -list -keystore android/app/afterdark-upload.jks -storepass "$STORE_PASS" > /tmp/afterdark-keystore-list.txt 2>/tmp/afterdark-keystore-error.txt; then
+            echo "::error::The configured keystore could not be opened with ANDROID_KEYSTORE_PASSWORD. Refusing to generate a replacement signing key."
+            cat /tmp/afterdark-keystore-error.txt
+            exit 1
+          fi
+
+          DETECTED_ALIAS=$(awk -F': ' '/Alias name:/ {print $2; exit}' /tmp/afterdark-keystore-list.txt | tr -d '\r')
+          if ! grep -Fqi "Alias name: $ALIAS_NAME" /tmp/afterdark-keystore-list.txt && [ -n "$DETECTED_ALIAS" ]; then
+            echo "Using detected alias from the existing keystore: $DETECTED_ALIAS"
+            ALIAS_NAME="$DETECTED_ALIAS"
+          fi
+          echo "Existing release keystore validated. No new signing key will be generated."
 
           echo "ANDROID_KEYSTORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_ALIAS=$ALIAS_NAME" >> "$GITHUB_ENV"
