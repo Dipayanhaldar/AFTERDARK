@@ -12,10 +12,10 @@
  * - [3] Patch & Scope 3: Native Android APK Animated Notification & Distinct Santoor Audio + Camera Notch Safe-Area
  */
 
-export const APP_VERSION = '2.0.2.5';
-export const APP_VERSION_TAG = 'v2.0.2.5';
-export const APP_VERSION_CODENAME = 'Moonlight Santoor · Zero-Blink Chat & Privacy Hardening';
-export const APP_RELEASE_DATE = '2026-11-06';
+export const APP_VERSION = '2.0.2.6';
+export const APP_VERSION_TAG = 'v2.0.2.6';
+export const APP_VERSION_CODENAME = 'Moonlight Santoor · Auto-Increment Store Release (.jks + AAB)';
+export const APP_RELEASE_DATE = '2026-11-07';
 
 export const VERSION_SEGMENTS = [
   {
@@ -47,12 +47,12 @@ export const VERSION_SEGMENTS = [
   },
   {
     index: 4,
-    digit: '5',
+    digit: '6',
     code: 'UPDATE_PATCH_LOC',
-    title: 'Zero-Blink Chat Typing + Public API/App ID Privacy Hardening',
+    title: 'Auto-Incrementing Multi-Store AAB/APK VersionCode & JKS Signing',
     meaning:
-      'Eliminated BroadcastChannel self-echo loop and poll re-render blinking during chat typing, and removed all exposed API/App/Device IDs from public links and bundles.',
-    hintLocation: 'src/couple-sync.js · src/main.jsx · src/GuestApp.jsx · src/google-auth.js · api/[...route].js'
+      'Bumped release version to 2.0.2.6+ with CI-driven monotonically increasing versionCode (202600 + run_number) and JKS keystore packaging so Indus Appstore & Galaxy Store uploads never collide with previous versions.',
+    hintLocation: 'scripts/configure-android-apk.mjs · .github/workflows/galaxy-store-aab.yml · .github/workflows/android-apk.yml'
   }
 ];
 

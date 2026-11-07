@@ -120,6 +120,7 @@ jobs:
           cp public/icon-512.png store-output/store-icon-512x512.png
           cp public/feature-graphic-1024x500.png store-output/feature-graphic-1024x500.png
           cp android/app/afterdark-upload.jks store-output/afterdark-upload.jks
+          grep -E "versionCode|versionName" android/app/build.gradle | tee store-output/VERSION-DETAILS.txt
           keytool -list -v -keystore android/app/afterdark-upload.jks -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" > store-output/KEYSTORE-FINGERPRINTS.txt || true
           file store-output/AFTERDARK-indus-store.aab
           file store-output/AFTERDARK-store-release-signed.apk
