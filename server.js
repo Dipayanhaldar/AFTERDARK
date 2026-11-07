@@ -34,7 +34,13 @@ async function startServer() {
   if (!useStaticDist) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        watch: {
+          ignored: ['**/.data/**', '**/android/**', '**/guest-site/**', '**/dist/**', '**/store-output/**']
+        }
+      },
       appType: 'spa'
     });
 
@@ -71,9 +77,21 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`AFTERDARK server running on http://0.0.0.0:${PORT}`);
   });
+
+  server.on('error', (err) => {
+    console.error('[server] HTTP server error:', err?.message || err);
+  });
 }
+
+process.on('uncaughtException', (err) => {
+  console.error('[server] Uncaught exception (kept alive):', err?.message || err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled rejection (kept alive):', reason);
+});
 
 startServer();

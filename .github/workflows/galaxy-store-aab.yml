@@ -81,6 +81,9 @@ jobs:
               -dname "CN=AFTERDARK Social, OU=Mobile, O=AFTERDARK, L=Hyderabad, ST=Telangana, C=IN"
           fi
 
+      - name: Sync Capacitor assets and plugins
+        run: npx cap sync android
+
       - name: Apply AFTERDARK Android branding, manifest & release signing configuration
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -91,9 +94,7 @@ jobs:
           export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:-afterdark_key}"
           export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
           node scripts/configure-android-apk.mjs
-
-      - name: Sync Capacitor assets and plugins
-        run: npx cap sync android
+          python3 -c "import xml.etree.ElementTree as ET, sys; [ET.parse(f) for f in sys.argv[1:]]" android/app/src/main/AndroidManifest.xml android/app/src/main/res/values/styles.xml android/app/src/main/res/values/ic_launcher_background.xml
 
       - name: Build Signed Store Release AAB and Signed Store Release APK
         working-directory: android

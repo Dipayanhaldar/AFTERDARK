@@ -9,7 +9,9 @@
  *    all Android `mipmap-*` densities: `ic_launcher.png`, `ic_launcher_round.png`, `ic_launcher_foreground.png`).
  * 2. Configures dark theme (`#0c0612`), notch/cutout safe-area protection (`android:fitsSystemWindows="true"`),
  *    and dark status/navigation bars in `styles.xml` and `ic_launcher_background.xml`.
- * 3. Configures V1 + V2 Release Signing in `android/app/build.gradle`.
+ * 3. Optimizes `AndroidManifest.xml` with optional `<uses-feature android:required="false" />` tags
+ *    so Galaxy Store and Indus Appstore never block tablets/foldables, and configures
+ *    V1 + V2 Release Signing in `android/app/build.gradle`.
  */
 
 import fs from 'node:fs';
@@ -293,6 +295,75 @@ function configureAndroidResources() {
 `;
   fs.writeFileSync(path.join(valuesDir, 'styles.xml'), stylesXml, 'utf8');
 
+  // Write canonical, store-compliant AndroidManifest.xml (zero regex patching, zero duplicate attributes)
+  const manifestPath = path.join(ANDROID_MAIN, 'AndroidManifest.xml');
+  if (fs.existsSync(manifestPath)) {
+    const canonicalManifest = `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Optional hardware features so Galaxy Store, PhonePe Indus Appstore & tablets/foldables never filter out the app -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <application
+        android:allowBackup="true"
+        android:hardwareAccelerated="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:resizeableActivity="true"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme"
+        android:usesCleartextTraffic="false">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="\${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <meta-data
+            android:name="android.allow_multiple_resumed_activities"
+            android:value="true" />
+        <meta-data
+            android:name="samsung.dex.support"
+            android:value="true" />
+    </application>
+</manifest>
+`;
+    fs.writeFileSync(manifestPath, canonicalManifest, 'utf8');
+  }
+
   // Ensure variables.gradle uses targetSdkVersion = 35 (Android 15 store-compatible) while keeping compileSdkVersion >= 36 for AndroidX
   const variablesGradlePath = path.resolve(ROOT_DIR, 'android/variables.gradle');
   if (fs.existsSync(variablesGradlePath)) {
@@ -348,7 +419,7 @@ function configureAndroidResources() {
   }
 
   console.log(
-    '[configure-android-apk] Generated AFTERDARK v2.0.2.5 launcher icons, store icons, and release signing config.'
+    '[configure-android-apk] Generated AFTERDARK v2.0.2.5 launcher icons, store icons, Galaxy/Indus manifest features, and release signing config.'
   );
 }
 
