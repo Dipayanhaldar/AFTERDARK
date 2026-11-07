@@ -59,9 +59,30 @@ jobs:
           ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
           ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
           rm -f android/app/afterdark-upload.keystore
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 --decode > android/app/afterdark-upload.keystore
+
+          USE_GENERATED=0
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            if printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode > android/app/afterdark-upload.keystore 2>/dev/null && [ -s android/app/afterdark-upload.keystore ]; then
+              if keytool -list -keystore android/app/afterdark-upload.keystore -storepass "$STORE_PASS" > /tmp/afterdark-keystore-list.txt 2>/tmp/afterdark-keystore-error.txt; then
+                DETECTED_ALIAS=$(awk -F': ' '/Alias name:/ {print $2; exit}' /tmp/afterdark-keystore-list.txt | tr -d '\r')
+                if ! grep -Fqi "Alias name: $ALIAS_NAME" /tmp/afterdark-keystore-list.txt && [ -n "$DETECTED_ALIAS" ]; then
+                  ALIAS_NAME="$DETECTED_ALIAS"
+                fi
+              else
+                USE_GENERATED=1
+              fi
+            else
+              USE_GENERATED=1
+            fi
           else
+            USE_GENERATED=1
+          fi
+
+          if [ "$USE_GENERATED" -eq 1 ]; then
+            rm -f android/app/afterdark-upload.keystore
+            STORE_PASS="AfterDarkStore2026"
+            ALIAS_NAME="afterdark_key"
+            ALIAS_PASS="AfterDarkStore2026"
             keytool -genkeypair -noprompt -v \
               -keystore android/app/afterdark-upload.keystore \
               -storetype PKCS12 \
@@ -73,17 +94,14 @@ jobs:
               -keypass "$ALIAS_PASS" \
               -dname "CN=AFTERDARK Social, OU=Mobile, O=AFTERDARK, L=Hyderabad, ST=Telangana, C=IN"
           fi
+
+          echo "ANDROID_KEYSTORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$ALIAS_NAME" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$ALIAS_PASS" >> "$GITHUB_ENV"
       - name: Sync Capacitor
         run: npx cap sync android
       - name: Configure AFTERDARK Launcher Icons, Dark Theme, Notch Safe-Area & Release Signing
-        env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          export ANDROID_KEYSTORE_PASSWORD="${ANDROID_KEYSTORE_PASSWORD:-AfterDarkStore2026}"
-          export ANDROID_KEY_ALIAS="${ANDROID_KEY_ALIAS:-afterdark_key}"
-          export ANDROID_KEY_PASSWORD="${ANDROID_KEY_PASSWORD:-$ANDROID_KEYSTORE_PASSWORD}"
           node scripts/configure-android-apk.mjs
           python3 -c "import xml.etree.ElementTree as ET, sys; [ET.parse(f) for f in sys.argv[1:]]" android/app/src/main/AndroidManifest.xml android/app/src/main/res/values/styles.xml android/app/src/main/res/values/ic_launcher_background.xml
       - name: Build Signed Release APK & AAB
