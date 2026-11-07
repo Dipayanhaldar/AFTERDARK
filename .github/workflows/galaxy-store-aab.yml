@@ -55,7 +55,7 @@ jobs:
       - name: Generate Capacitor Android project
         run: npx cap add android
 
-      - name: Prepare Release Signing Keystore (V1 + V2 Store-Compliant)
+      - name: Prepare Release Signing Keystore (.jks V1 + V2 Store-Compliant)
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -65,24 +65,24 @@ jobs:
           STORE_PASS="${KEYSTORE_PASS:-AfterDarkStore2026}"
           ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
           ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
-          rm -f android/app/afterdark-upload.keystore
+          rm -f android/app/afterdark-upload.jks android/app/afterdark-upload.keystore
 
           USE_GENERATED=0
           if [ -n "${KEYSTORE_B64:-}" ]; then
-            if printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode > android/app/afterdark-upload.keystore 2>/dev/null && [ -s android/app/afterdark-upload.keystore ]; then
-              if keytool -list -keystore android/app/afterdark-upload.keystore -storepass "$STORE_PASS" > /tmp/afterdark-keystore-list.txt 2>/tmp/afterdark-keystore-error.txt; then
+            if printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode > android/app/afterdark-upload.jks 2>/dev/null && [ -s android/app/afterdark-upload.jks ]; then
+              if keytool -list -keystore android/app/afterdark-upload.jks -storepass "$STORE_PASS" > /tmp/afterdark-keystore-list.txt 2>/tmp/afterdark-keystore-error.txt; then
                 DETECTED_ALIAS=$(awk -F': ' '/Alias name:/ {print $2; exit}' /tmp/afterdark-keystore-list.txt | tr -d '\r')
                 if ! grep -Fqi "Alias name: $ALIAS_NAME" /tmp/afterdark-keystore-list.txt && [ -n "$DETECTED_ALIAS" ]; then
                   echo "Using detected keystore alias: $DETECTED_ALIAS"
                   ALIAS_NAME="$DETECTED_ALIAS"
                 fi
-                echo "Provided keystore and alias validated successfully."
+                echo "Provided .jks keystore and alias validated successfully."
               else
-                echo "Provided keystore password did not match ANDROID_KEYSTORE_BASE64 — falling back to fresh release keystore generation."
+                echo "Provided keystore password did not match ANDROID_KEYSTORE_BASE64 — falling back to fresh .jks keystore generation."
                 USE_GENERATED=1
               fi
             else
-              echo "ANDROID_KEYSTORE_BASE64 could not be decoded — falling back to fresh release keystore generation."
+              echo "ANDROID_KEYSTORE_BASE64 could not be decoded — falling back to fresh .jks keystore generation."
               USE_GENERATED=1
             fi
           else
@@ -90,13 +90,13 @@ jobs:
           fi
 
           if [ "$USE_GENERATED" -eq 1 ]; then
-            rm -f android/app/afterdark-upload.keystore
+            rm -f android/app/afterdark-upload.jks
             STORE_PASS="AfterDarkStore2026"
             ALIAS_NAME="afterdark_key"
             ALIAS_PASS="AfterDarkStore2026"
             keytool -genkeypair -noprompt -v \
-              -keystore android/app/afterdark-upload.keystore \
-              -storetype PKCS12 \
+              -keystore android/app/afterdark-upload.jks \
+              -storetype JKS \
               -alias "$ALIAS_NAME" \
               -keyalg RSA \
               -keysize 2048 \
@@ -124,7 +124,7 @@ jobs:
           chmod +x gradlew
           ./gradlew bundleRelease assembleRelease --no-daemon
 
-      - name: Verify and package store upload bundle (AAB + Signed APK + 512x512 Icon + Feature Graphic + Keystore Details)
+      - name: Verify and package store upload bundle (AAB + Signed APK + .jks Keystore + 512x512 Icon + Feature Graphic)
         run: |
           AAB_FILE=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
           APK_FILE=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
@@ -136,12 +136,12 @@ jobs:
           cp "$APK_FILE" store-output/AFTERDARK-store-release-signed.apk
           cp public/icon-512.png store-output/store-icon-512x512.png
           cp public/feature-graphic-1024x500.png store-output/feature-graphic-1024x500.png
-          cp android/app/afterdark-upload.keystore store-output/afterdark-upload.keystore
-          keytool -list -v -keystore android/app/afterdark-upload.keystore -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" > store-output/KEYSTORE-FINGERPRINTS.txt || true
+          cp android/app/afterdark-upload.jks store-output/afterdark-upload.jks
+          keytool -list -v -keystore android/app/afterdark-upload.jks -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" > store-output/KEYSTORE-FINGERPRINTS.txt || true
           file store-output/AFTERDARK-indus-store.aab
           file store-output/AFTERDARK-store-release-signed.apk
           unzip -t store-output/AFTERDARK-indus-store.aab
-          sha256sum store-output/AFTERDARK-indus-store.aab store-output/AFTERDARK-galaxy-store.aab store-output/AFTERDARK-store-release-signed.apk | tee store-output/SHA256SUMS.txt
+          sha256sum store-output/AFTERDARK-indus-store.aab store-output/AFTERDARK-galaxy-store.aab store-output/AFTERDARK-store-release-signed.apk store-output/afterdark-upload.jks | tee store-output/SHA256SUMS.txt
 
       - name: Upload Galaxy Store & PhonePe Indus Store bundle
         uses: actions/upload-artifact@v4

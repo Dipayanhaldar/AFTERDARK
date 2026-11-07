@@ -467,8 +467,15 @@ function configureAndroidResources() {
     gradle = gradle.replace(/versionCode\s+\d+/, 'versionCode 2025');
     gradle = gradle.replace(/versionName\s+"[^"]+"/, 'versionName "2.0.2.5"');
 
-    const keystorePath = path.resolve(ROOT_DIR, 'android/app/afterdark-upload.keystore');
-    if (fs.existsSync(keystorePath) && !gradle.includes('signingConfigs')) {
+    const jksPath = path.resolve(ROOT_DIR, 'android/app/afterdark-upload.jks');
+    const legacyKeystorePath = path.resolve(ROOT_DIR, 'android/app/afterdark-upload.keystore');
+    const keystoreFileName = fs.existsSync(jksPath)
+      ? 'afterdark-upload.jks'
+      : fs.existsSync(legacyKeystorePath)
+        ? 'afterdark-upload.keystore'
+        : null;
+
+    if (keystoreFileName && !gradle.includes('signingConfigs')) {
       const escapeGroovySingleQuote = (val) => String(val).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       const storePassword = escapeGroovySingleQuote(
         process.env.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026'
@@ -482,7 +489,7 @@ function configureAndroidResources() {
 
       const signingBlock = `    signingConfigs {
         release {
-            storeFile file('afterdark-upload.keystore')
+            storeFile file('${keystoreFileName}')
             storePassword '${storePassword}'
             keyAlias '${keyAlias}'
             keyPassword '${keyPassword}'

@@ -48,7 +48,7 @@ jobs:
         run: npm run build
       - name: Create Android wrapper
         run: npx cap add android
-      - name: Generate Store-Compliant V1+V2 Release Keystore
+      - name: Generate Store-Compliant V1+V2 Release Keystore (.jks)
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -58,12 +58,12 @@ jobs:
           STORE_PASS="${KEYSTORE_PASS:-AfterDarkStore2026}"
           ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
           ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
-          rm -f android/app/afterdark-upload.keystore
+          rm -f android/app/afterdark-upload.jks android/app/afterdark-upload.keystore
 
           USE_GENERATED=0
           if [ -n "${KEYSTORE_B64:-}" ]; then
-            if printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode > android/app/afterdark-upload.keystore 2>/dev/null && [ -s android/app/afterdark-upload.keystore ]; then
-              if keytool -list -keystore android/app/afterdark-upload.keystore -storepass "$STORE_PASS" > /tmp/afterdark-keystore-list.txt 2>/tmp/afterdark-keystore-error.txt; then
+            if printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode > android/app/afterdark-upload.jks 2>/dev/null && [ -s android/app/afterdark-upload.jks ]; then
+              if keytool -list -keystore android/app/afterdark-upload.jks -storepass "$STORE_PASS" > /tmp/afterdark-keystore-list.txt 2>/tmp/afterdark-keystore-error.txt; then
                 DETECTED_ALIAS=$(awk -F': ' '/Alias name:/ {print $2; exit}' /tmp/afterdark-keystore-list.txt | tr -d '\r')
                 if ! grep -Fqi "Alias name: $ALIAS_NAME" /tmp/afterdark-keystore-list.txt && [ -n "$DETECTED_ALIAS" ]; then
                   ALIAS_NAME="$DETECTED_ALIAS"
@@ -79,13 +79,13 @@ jobs:
           fi
 
           if [ "$USE_GENERATED" -eq 1 ]; then
-            rm -f android/app/afterdark-upload.keystore
+            rm -f android/app/afterdark-upload.jks
             STORE_PASS="AfterDarkStore2026"
             ALIAS_NAME="afterdark_key"
             ALIAS_PASS="AfterDarkStore2026"
             keytool -genkeypair -noprompt -v \
-              -keystore android/app/afterdark-upload.keystore \
-              -storetype PKCS12 \
+              -keystore android/app/afterdark-upload.jks \
+              -storetype JKS \
               -alias "$ALIAS_NAME" \
               -keyalg RSA \
               -keysize 2048 \
@@ -117,16 +117,19 @@ jobs:
           test -s "$AAB_FILE"
           cp "$APK_FILE" afterdark.apk
           cp "$AAB_FILE" afterdark-release.aab
+          cp android/app/afterdark-upload.jks afterdark-upload.jks
           file afterdark.apk
-          sha256sum afterdark.apk afterdark-release.aab
-      - name: Keep build artifacts (Signed APK, Signed AAB & 512x512 Store Icon)
+          sha256sum afterdark.apk afterdark-release.aab afterdark-upload.jks
+      - name: Keep build artifacts (Signed APK, Signed AAB, .jks Keystore & Store Graphics)
         uses: actions/upload-artifact@v4
         with:
           name: afterdark-android-apk
           path: |
             afterdark.apk
             afterdark-release.aab
+            afterdark-upload.jks
             public/icon-512.png
+            public/feature-graphic-1024x500.png
           if-no-files-found: error
           retention-days: 30
       - name: Publish Store-Ready APK & AAB release
