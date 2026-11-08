@@ -168,18 +168,6 @@ a {
   animation: adMoonCradleFloat 3.8s ease-in-out infinite;
 }
 
-.ad-logo-star-dot {
-  position: absolute;
-  top: 9px;
-  right: 9px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #16081f;
-  z-index: 2;
-  animation: adStarTwinklePulse 2.6s ease-in-out infinite;
-}
-
 @keyframes adBrandAuraPulse {
   0%,
   100% {

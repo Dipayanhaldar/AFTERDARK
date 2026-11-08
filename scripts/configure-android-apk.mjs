@@ -119,11 +119,6 @@ function renderAfterDarkIconPng(size, mode = 'square') {
   const moonCutCx = cx + squircleHalf * 0.22;
   const moonCutCy = cy - squircleHalf * 0.12;
 
-  // Starlight dot geometry
-  const starCx = cx + squircleHalf * 0.36;
-  const starCy = cy - squircleHalf * 0.34;
-  const starR = Math.max(1.5, squircleHalf * 0.09);
-
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const idx = (y * size + x) * 4;
@@ -175,18 +170,12 @@ function renderAfterDarkIconPng(size, mode = 'square') {
           sb = lerp(131, 107, t2);
         }
 
-        // 3. Crescent Moon glyph (#16081f) inside the squircle
+        // 3. Crescent Moon glyph (#16081f) inside the squircle (no dot)
         const dOuter = Math.hypot(x - moonOuterCx, y - moonOuterCy) - moonOuterR;
         const dCut = Math.hypot(x - moonCutCx, y - moonCutCy) - moonCutR;
         const inOuter = 1 - smoothstep(-aa, aa, dOuter);
         const outOfCut = smoothstep(-aa, aa, dCut);
-        const moonMask = inOuter * outOfCut;
-
-        // 4. Starlight dot (#16081f)
-        const dStar = Math.hypot(x - starCx, y - starCy) - starR;
-        const starMask = 1 - smoothstep(-aa, aa, dStar);
-
-        const glyphMask = Math.min(1, moonMask + starMask);
+        const glyphMask = Math.min(1, inOuter * outOfCut);
 
         const fgR = lerp(sr, 22, glyphMask);
         const fgG = lerp(sg, 8, glyphMask);
@@ -229,9 +218,6 @@ function renderStoreBannerPng(width, height, variant = 0) {
   const moonCutR = squircleHalf * 0.48;
   const moonCutCx = cx + squircleHalf * 0.22;
   const moonCutCy = cy - squircleHalf * 0.12;
-  const starCx = cx + squircleHalf * 0.36;
-  const starCy = cy - squircleHalf * 0.34;
-  const starR = Math.max(2, squircleHalf * 0.09);
 
   for (let y = 0; y < height; y++) {
     const ny = y / height;
@@ -276,9 +262,7 @@ function renderStoreBannerPng(width, height, variant = 0) {
         const dOuter = Math.hypot(x - moonOuterCx, y - moonOuterCy) - moonOuterR;
         const dCut = Math.hypot(x - moonCutCx, y - moonCutCy) - moonCutR;
         const moonMask = (1 - smoothstep(-aa, aa, dOuter)) * smoothstep(-aa, aa, dCut);
-        const dStar = Math.hypot(x - starCx, y - starCy) - starR;
-        const starMask = 1 - smoothstep(-aa, aa, dStar);
-        const glyphMask = Math.min(1, moonMask + starMask);
+        const glyphMask = Math.min(1, moonMask);
 
         const fgR = lerp(sr, 22, glyphMask);
         const fgG = lerp(sg, 8, glyphMask);

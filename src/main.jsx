@@ -1267,7 +1267,6 @@ function App() {
         <div className="ad-brand">
           <span className="ad-brand-mark ad-animated-logo" aria-hidden="true">
             <span className="ad-logo-moon-glyph">☾</span>
-            <span className="ad-logo-star-dot" />
           </span>
           <div>
             <p className="ad-brand-title">AFTERDARK</p>

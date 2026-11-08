@@ -829,7 +829,6 @@ export function GuestApp() {
         <div className="guest-brand">
           <span className="guest-moon-icon ad-animated-logo" aria-hidden="true">
             <span className="ad-logo-moon-glyph">☾</span>
-            <span className="ad-logo-star-dot" />
           </span>
           <div className="guest-brand-text">
             <span className="guest-brand-name">
