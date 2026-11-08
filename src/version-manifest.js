@@ -116,28 +116,28 @@ export const STORE_COMPATIBILITY_MATRIX = [
   {
     storeId: 'amazon-appstore',
     name: 'Amazon Appstore',
-    packageId: 'com.afterdark.social',
+    packageId: 'com.afterdark.universe',
     status: 'READY',
     features: 'Fire OS / Android 9–15 compatible · Adaptive Icon · Hardware Accelerated WebView'
   },
   {
     storeId: 'phonepe-indus',
     name: 'PhonePe Developer (Indus Appstore)',
-    packageId: 'com.afterdark.social',
+    packageId: 'com.afterdark.universe',
     status: 'READY',
     features: '100 Indian Brands · Hinglish/Regional UI · UPI & Indian Commerce Deep-Links'
   },
   {
     storeId: 'samsung-galaxy-store',
     name: 'Samsung Galaxy Store',
-    packageId: 'com.afterdark.social',
+    packageId: 'com.afterdark.universe',
     status: 'READY',
     features: 'One UI DeX & Foldable Multi-Window (`resizeableActivity="true"`) · Infinity-O Punch-Hole Safe-Area'
   },
   {
     storeId: 'github-releases-pwa',
     name: 'GitHub Releases APK & Universal PWA',
-    packageId: 'com.afterdark.social',
+    packageId: 'com.afterdark.universe',
     status: 'READY',
     features: 'Automated CI/CD signed debug/release APK + standalone installable Web App Manifest'
   }

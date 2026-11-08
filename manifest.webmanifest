@@ -1,5 +1,5 @@
 {
-  "id": "com.afterdark.social",
+  "id": "com.afterdark.universe",
   "name": "AFTERDARK — Private 1-on-1 Couple & Bestie Room",
   "short_name": "AFTERDARK",
   "description": "An 18+ consent-first 1-on-1 private room for couples and best friends featuring instant QR + 6-digit passcode pairing, private chat, voice notes, and curated Indian brand offers.",
@@ -19,19 +19,19 @@
   "related_applications": [
     {
       "platform": "indus",
-      "id": "com.afterdark.social"
+      "id": "com.afterdark.universe"
     },
     {
       "platform": "galaxy",
-      "id": "com.afterdark.social"
+      "id": "com.afterdark.universe"
     },
     {
       "platform": "amazon",
-      "id": "com.afterdark.social"
+      "id": "com.afterdark.universe"
     },
     {
       "platform": "play",
-      "id": "com.afterdark.social"
+      "id": "com.afterdark.universe"
     }
   ],
   "icons": [

@@ -58,69 +58,24 @@ jobs:
         run: npx cap add android
 
       - name: Prepare Release Signing Keystore (.jks V1 + V2 Store-Compliant)
-        env:
-          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           rm -f android/app/afterdark-upload.jks android/app/afterdark-upload.keystore /tmp/afterdark-fixed.p12
-          VALIDATED=0
-          STORE_PASS=""
-          ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
-          ALIAS_PASS=""
+          STORE_PASS="AfterDarkStore2026"
+          ALIAS_NAME="afterdark_key"
+          ALIAS_PASS="AfterDarkStore2026"
 
-          if [ -n "${KEYSTORE_B64:-}" ]; then
-            if printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode > android/app/afterdark-upload.jks 2>/dev/null && [ -s android/app/afterdark-upload.jks ]; then
-              for CANDIDATE_PASS in "${KEYSTORE_PASS:-}" "AfterDarkStore2026" "AfterDarkStore2026!"; do
-                [ -z "$CANDIDATE_PASS" ] && continue
-                if keytool -list -keystore android/app/afterdark-upload.jks -storepass "$CANDIDATE_PASS" > /tmp/afterdark-keystore-list.txt 2>/tmp/afterdark-keystore-error.txt; then
-                  STORE_PASS="$CANDIDATE_PASS"
-                  VALIDATED=1
-                  break
-                fi
-              done
-              if [ "$VALIDATED" -eq 1 ]; then
-                DETECTED_ALIAS=$(awk -F': ' '/Alias name:/ {print $2; exit}' /tmp/afterdark-keystore-list.txt | tr -d '\r')
-                if ! grep -Fqi "Alias name: $ALIAS_NAME" /tmp/afterdark-keystore-list.txt && [ -n "$DETECTED_ALIAS" ]; then
-                  ALIAS_NAME="$DETECTED_ALIAS"
-                fi
-                ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
-                echo "Validated keystore from ANDROID_KEYSTORE_BASE64 with alias: $ALIAS_NAME"
-              fi
-            fi
-          fi
-
-          if [ "$VALIDATED" -eq 0 ]; then
-            rm -f android/app/afterdark-upload.jks
-            STORE_PASS="AfterDarkStore2026"
-            ALIAS_NAME="afterdark_key"
-            ALIAS_PASS="AfterDarkStore2026"
-            if [ -f scripts/afterdark-signing-cert.p12.b64 ]; then
-              tr -d '[:space:]' < scripts/afterdark-signing-cert.p12.b64 | base64 --decode > /tmp/afterdark-fixed.p12
-              keytool -importkeystore -noprompt \
-                -srckeystore /tmp/afterdark-fixed.p12 \
-                -srcstoretype PKCS12 \
-                -srcstorepass "$STORE_PASS" \
-                -destkeystore android/app/afterdark-upload.jks \
-                -deststoretype JKS \
-                -deststorepass "$STORE_PASS" \
-                -destkeypass "$ALIAS_PASS"
-              rm -f /tmp/afterdark-fixed.p12
-              echo "Loaded persistent repository signing certificate into android/app/afterdark-upload.jks"
-            else
-              keytool -genkeypair -noprompt -v \
-                -keystore android/app/afterdark-upload.jks \
-                -storetype JKS \
-                -alias "$ALIAS_NAME" \
-                -keyalg RSA \
-                -keysize 2048 \
-                -validity 10950 \
-                -storepass "$STORE_PASS" \
-                -keypass "$ALIAS_PASS" \
-                -dname "CN=AFTERDARK Social, OU=Mobile, O=AFTERDARK, L=Hyderabad, ST=Telangana, C=IN"
-            fi
-          fi
+          tr -d '[:space:]' < scripts/afterdark-signing-cert.p12.b64 | base64 --decode > /tmp/afterdark-fixed.p12
+          keytool -importkeystore -noprompt \
+            -srckeystore /tmp/afterdark-fixed.p12 \
+            -srcstoretype PKCS12 \
+            -srcstorepass "$STORE_PASS" \
+            -destkeystore android/app/afterdark-upload.jks \
+            -deststoretype JKS \
+            -deststorepass "$STORE_PASS" \
+            -destkeypass "$ALIAS_PASS"
+          rm -f /tmp/afterdark-fixed.p12
+          test -s android/app/afterdark-upload.jks
+          echo "Loaded permanent locked signing certificate into android/app/afterdark-upload.jks"
 
           echo "ANDROID_KEYSTORE_PASSWORD=$STORE_PASS" >> "$GITHUB_ENV"
           echo "ANDROID_KEY_ALIAS=$ALIAS_NAME" >> "$GITHUB_ENV"
