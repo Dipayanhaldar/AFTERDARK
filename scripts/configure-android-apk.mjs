@@ -477,12 +477,19 @@ function configureAndroidResources() {
         : null;
 
     if (keystoreFileName && !gradle.includes('signingConfigs')) {
+      const escapeGroovySingleQuote = (val) => String(val || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      const storePassword = escapeGroovySingleQuote(process.env.ANDROID_KEYSTORE_PASSWORD);
+      const keyAlias = escapeGroovySingleQuote(process.env.ANDROID_KEY_ALIAS);
+      const keyPassword = escapeGroovySingleQuote(
+        process.env.ANDROID_KEY_PASSWORD || process.env.ANDROID_KEYSTORE_PASSWORD
+      );
+
       const signingBlock = `    signingConfigs {
         release {
             storeFile file('${keystoreFileName}')
-            storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
-            keyAlias System.getenv('ANDROID_KEY_ALIAS')
-            keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            storePassword '${storePassword}'
+            keyAlias '${keyAlias}'
+            keyPassword '${keyPassword}'
             v1SigningEnabled true
             v2SigningEnabled true
         }
