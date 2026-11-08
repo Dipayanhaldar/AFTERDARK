@@ -29,9 +29,11 @@ import {
 import {
   purgeStaleServiceWorkers,
   buildPublicInviteLinks,
+  clearCreatorSessionCache,
   getClientDeviceId,
   isGuestInviteLocation,
   isInternalPreviewOrigin,
+  isolateCreatorCacheForUser,
   mirrorInviteLocally,
   resilientApiRequest,
   subscribeToCoupleSync
@@ -165,18 +167,6 @@ async function renderStyledQrDataUrl(text, options) {
   return canvas.toDataURL('image/png');
 }
 
-function readCachedInvite() {
-  try {
-    const raw = localStorage.getItem(INVITE_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || parsed.status === 'revoked') return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
 function readCachedUser() {
   try {
     const raw = localStorage.getItem(USER_CACHE_KEY);
@@ -189,8 +179,25 @@ function readCachedUser() {
   }
 }
 
+function readCachedInvite(currentUser = readCachedUser()) {
+  try {
+    if (!currentUser || !currentUser.id) return null;
+    const raw = localStorage.getItem(INVITE_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || parsed.status === 'revoked') return null;
+    if (!parsed.creatorId || String(parsed.creatorId) !== String(currentUser.id)) {
+      localStorage.removeItem(INVITE_CACHE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function stabilizeInviteState(prev, next) {
-  if (!next) return prev;
+  if (!next) return null;
   if (
     prev &&
     prev.inviteToken === next.inviteToken &&
@@ -205,7 +212,7 @@ function stabilizeInviteState(prev, next) {
 }
 
 function stabilizeConnectionState(prev, next) {
-  if (!next) return prev;
+  if (!next) return null;
   if (
     prev &&
     prev.id === next.id &&
@@ -295,7 +302,9 @@ function App() {
   });
 
   const [activeConnection, setActiveConnection] = useState(null);
-  const [activeInvite, setActiveInvite] = useState(() => readCachedInvite());
+  const [activeInvite, setActiveInvite] = useState(() =>
+    localStorage.getItem(SESSION_KEY) ? readCachedInvite(readCachedUser()) : null
+  );
 
   const [customGuestOrigin, setCustomGuestOrigin] = useState(() => {
     const saved = localStorage.getItem(CUSTOM_GUEST_ORIGIN_KEY) || '';
@@ -417,16 +426,24 @@ function App() {
 
   useEffect(() => {
     try {
-      if (activeInvite && activeInvite.status !== 'revoked') {
-        localStorage.setItem(INVITE_CACHE_KEY, JSON.stringify(activeInvite));
-        mirrorInviteLocally(activeInvite);
-      } else {
+      if (
+        activeInvite &&
+        activeInvite.status !== 'revoked' &&
+        user?.id &&
+        (!activeInvite.creatorId || String(activeInvite.creatorId) === String(user.id))
+      ) {
+        const inviteWithCreator = activeInvite.creatorId
+          ? activeInvite
+          : { ...activeInvite, creatorId: user.id };
+        localStorage.setItem(INVITE_CACHE_KEY, JSON.stringify(inviteWithCreator));
+        mirrorInviteLocally(inviteWithCreator);
+      } else if (!activeInvite || activeInvite.status === 'revoked') {
         localStorage.removeItem(INVITE_CACHE_KEY);
       }
     } catch {
       // Ignore storage issues
     }
-  }, [activeInvite]);
+  }, [activeInvite, user?.id]);
 
   useEffect(() => {
     let mounted = true;
@@ -479,18 +496,50 @@ function App() {
     generatorForm.customLabel
   ]);
 
-  async function loadWorkspace(currentToken = token) {
+  function resetAccountWorkspaceState() {
+    setActiveInvite(null);
+    setActiveConnection(null);
+    setMessages([]);
+    setPhotos([]);
+    setStandardQrDataUrl('');
+    setCustomQrDataUrl('');
+    setShowCustomQrCard(false);
+    setGroundedSpots([]);
+    setAiInsight(null);
+    setIncomingToast(null);
+    lastSeenMsgIdRef.current = null;
+    initializedMsgStreamRef.current = false;
+    seenByPartnerIdsRef.current = new Set();
+    lastAnalyzedCountRef.current = 0;
+  }
+
+  async function loadWorkspace(currentToken = token, explicitUser = null) {
     if (!currentToken) return;
     try {
+      const effectiveUser = explicitUser || user || readCachedUser();
       const queryParams = new URLSearchParams();
-      if (activeInvite?.inviteToken) queryParams.set('inviteToken', activeInvite.inviteToken);
-      if (activeInvite?.verificationCode) queryParams.set('otp', activeInvite.verificationCode);
-      if (activeInvite?.partnerCustomName || activeInvite?.recipientHint) {
-        queryParams.set('hint', activeInvite.partnerCustomName || activeInvite.recipientHint);
+      const inviteBelongsToUser =
+        activeInvite &&
+        effectiveUser?.id &&
+        activeInvite.creatorId &&
+        String(activeInvite.creatorId) === String(effectiveUser.id);
+      if (inviteBelongsToUser) {
+        if (activeInvite?.inviteToken) queryParams.set('inviteToken', activeInvite.inviteToken);
+        if (activeInvite?.verificationCode) queryParams.set('otp', activeInvite.verificationCode);
+        if (activeInvite?.partnerCustomName || activeInvite?.recipientHint) {
+          queryParams.set('hint', activeInvite.partnerCustomName || activeInvite.recipientHint);
+        }
       }
-      if (activeConnection?.id) queryParams.set('connId', activeConnection.id);
-      if (activeConnection?.peerDisplayName) {
-        queryParams.set('peer', activeConnection.peerDisplayName);
+      const connBelongsToUser =
+        activeConnection &&
+        effectiveUser?.id &&
+        activeConnection.creatorId &&
+        String(activeConnection.creatorId) === String(effectiveUser.id);
+      if (connBelongsToUser) {
+        if (activeConnection?.id) queryParams.set('connId', activeConnection.id);
+        if (activeConnection?.peerDisplayName) {
+          queryParams.set('peer', activeConnection.peerDisplayName);
+        }
       }
       const qs = queryParams.toString();
 
@@ -502,7 +551,7 @@ function App() {
         }))
       ]);
 
-      const resolvedUser = meData?.user || readCachedUser();
+      const resolvedUser = meData?.user || effectiveUser;
       if (resolvedUser) {
         setUser((prev) =>
           prev &&
@@ -526,13 +575,32 @@ function App() {
       }
 
       if (currentInviteData?.invite) {
-        setActiveInvite((prev) => stabilizeInviteState(prev, currentInviteData.invite));
+        const nextInvite =
+          resolvedUser?.id && !currentInviteData.invite.creatorId
+            ? { ...currentInviteData.invite, creatorId: resolvedUser.id }
+            : currentInviteData.invite;
+        setActiveInvite((prev) => stabilizeInviteState(prev, nextInvite));
+      } else {
+        setActiveInvite(null);
+        try {
+          localStorage.removeItem(INVITE_CACHE_KEY);
+        } catch {
+          // ignore
+        }
       }
 
       const list = connectionData?.connections || [];
       const active = list.find((item) => item.status === 'active') || null;
       if (active) {
-        setActiveConnection((prev) => stabilizeConnectionState(prev, active));
+        const nextConn =
+          resolvedUser?.id && !active.creatorId
+            ? { ...active, creatorId: resolvedUser.id }
+            : active;
+        setActiveConnection((prev) => stabilizeConnectionState(prev, nextConn));
+      } else {
+        setActiveConnection(null);
+        setMessages([]);
+        setPhotos([]);
       }
     } catch {
       // Never log the user out on transient background workspace poll errors
@@ -656,7 +724,7 @@ function App() {
 
   useEffect(() => {
     if (token) {
-      loadWorkspace(token);
+      loadWorkspace(token, user);
     }
   }, [token]);
 
@@ -675,14 +743,28 @@ function App() {
       pollInFlight = true;
       try {
         const queryParams = new URLSearchParams();
-        if (activeInvite?.inviteToken) queryParams.set('inviteToken', activeInvite.inviteToken);
-        if (activeInvite?.verificationCode) queryParams.set('otp', activeInvite.verificationCode);
-        if (activeInvite?.partnerCustomName || activeInvite?.recipientHint) {
-          queryParams.set('hint', activeInvite.partnerCustomName || activeInvite.recipientHint);
+        const inviteBelongsToUser =
+          activeInvite &&
+          user?.id &&
+          activeInvite.creatorId &&
+          String(activeInvite.creatorId) === String(user.id);
+        if (inviteBelongsToUser) {
+          if (activeInvite?.inviteToken) queryParams.set('inviteToken', activeInvite.inviteToken);
+          if (activeInvite?.verificationCode) queryParams.set('otp', activeInvite.verificationCode);
+          if (activeInvite?.partnerCustomName || activeInvite?.recipientHint) {
+            queryParams.set('hint', activeInvite.partnerCustomName || activeInvite.recipientHint);
+          }
         }
-        if (activeConnection?.id) queryParams.set('connId', activeConnection.id);
-        if (activeConnection?.peerDisplayName) {
-          queryParams.set('peer', activeConnection.peerDisplayName);
+        const connBelongsToUser =
+          activeConnection &&
+          user?.id &&
+          activeConnection.creatorId &&
+          String(activeConnection.creatorId) === String(user.id);
+        if (connBelongsToUser) {
+          if (activeConnection?.id) queryParams.set('connId', activeConnection.id);
+          if (activeConnection?.peerDisplayName) {
+            queryParams.set('peer', activeConnection.peerDisplayName);
+          }
         }
         const qs = queryParams.toString();
         const connectionData = await resilientApiRequest(
@@ -694,7 +776,7 @@ function App() {
         const active = list.find((item) => item.status === 'active') || null;
         const effectiveConn =
           active ||
-          (activeConnection && activeConnection.status === 'active' ? activeConnection : null);
+          (connBelongsToUser && activeConnection.status === 'active' ? activeConnection : null);
 
         if (effectiveConn) {
           const justConnected =
@@ -702,7 +784,9 @@ function App() {
             activeConnection.status !== 'active' ||
             activeConnection.id !== effectiveConn.id;
           if (active) {
-            setActiveConnection((prev) => stabilizeConnectionState(prev, active));
+            const nextConn =
+              user?.id && !active.creatorId ? { ...active, creatorId: user.id } : active;
+            setActiveConnection((prev) => stabilizeConnectionState(prev, nextConn));
           }
           if (justConnected) {
             setStatusMessage(
@@ -726,7 +810,7 @@ function App() {
       clearInterval(interval);
       unsubscribe();
     };
-  }, [token, activeConnection?.id, activeConnection?.status, activeInvite?.inviteToken]);
+  }, [token, user?.id, activeConnection?.id, activeConnection?.status, activeInvite?.inviteToken]);
 
   function clearBanners() {
     setErrorMessage('');
@@ -744,6 +828,8 @@ function App() {
         method: 'POST',
         body: JSON.stringify(authForm)
       });
+      isolateCreatorCacheForUser(data.user);
+      resetAccountWorkspaceState();
       localStorage.setItem(SESSION_KEY, data.sessionToken);
       try {
         localStorage.setItem(USER_CACHE_KEY, JSON.stringify(data.user));
@@ -777,6 +863,8 @@ function App() {
         setErrorMessage(result.error || 'Google Sign-In could not complete. Please try again.');
         return;
       }
+      isolateCreatorCacheForUser(result.user);
+      resetAccountWorkspaceState();
       localStorage.setItem(SESSION_KEY, result.sessionToken);
       try {
         localStorage.setItem(USER_CACHE_KEY, JSON.stringify(result.user));
@@ -814,11 +902,13 @@ function App() {
     } catch {
       // Ignore
     }
+    clearCreatorSessionCache();
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(USER_CACHE_KEY);
+    resetAccountWorkspaceState();
     setToken('');
     setUser(null);
-    setActiveConnection(null);
+    setTab('invite');
   }
 
   async function handleGenerateSingleInvite(event) {
@@ -856,13 +946,13 @@ function App() {
         token
       );
 
-      setActiveInvite(data);
+      setActiveInvite(user?.id && !data.creatorId ? { ...data, creatorId: user.id } : data);
       setStatusMessage(
         `✨ Unique Couple Link, QR Code & OTP (${data.verificationCode}) generated for ${creatorCustomName} ♥ ${partnerCustomName}!`
       );
     } catch (error) {
       setErrorMessage(error.message);
-      await loadWorkspace(token);
+      await loadWorkspace(token, user);
     } finally {
       setBusy(false);
     }
@@ -873,12 +963,8 @@ function App() {
     setBusy(true);
     try {
       await resilientApiRequest('/invites/revoke', { method: 'POST' }, token);
-      localStorage.removeItem(INVITE_CACHE_KEY);
-      setActiveInvite(null);
-      setActiveConnection(null);
-      setMessages([]);
-      setPhotos([]);
-      setShowCustomQrCard(false);
+      clearCreatorSessionCache();
+      resetAccountWorkspaceState();
       setStatusMessage(
         '🔒 Access revoked and QR code removed! The previous link & OTP are now permanently disabled. You can generate a new one now.'
       );

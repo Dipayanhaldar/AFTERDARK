@@ -121,34 +121,51 @@ jobs:
       - name: Sync Capacitor assets and plugins
         run: npx cap sync android
 
-      - name: Apply AFTERDARK Android branding, manifest & release signing configuration
+      - name: Apply AFTERDARK Android branding, manifest & release signing configuration (com.afterdark.universe)
+        env:
+          ANDROID_PACKAGE_ID: "com.afterdark.universe"
+          ANDROID_APP_NAME: "AFTERDARK"
         run: |
           node scripts/configure-android-apk.mjs
-          python3 -c "import xml.etree.ElementTree as ET, sys; [ET.parse(f) for f in sys.argv[1:]]" android/app/src/main/AndroidManifest.xml android/app/src/main/res/values/styles.xml android/app/src/main/res/values/ic_launcher_background.xml
+          python3 -c "import xml.etree.ElementTree as ET, sys; [ET.parse(f) for f in sys.argv[1:]]" android/app/src/main/AndroidManifest.xml android/app/src/main/res/values/styles.xml android/app/src/main/res/values/strings.xml android/app/src/main/res/values/ic_launcher_background.xml
 
-      - name: Build Signed Store Release AAB and Signed Store Release APK
-        working-directory: android
+      - name: Build Signed Store Release AAB and APK (com.afterdark.universe)
         run: |
-          chmod +x gradlew
-          ./gradlew bundleRelease assembleRelease --no-daemon
-          rm -f app/afterdark-upload.jks app/afterdark-upload.keystore
+          mkdir -p store-output
+          chmod +x android/gradlew
+          (cd android && ./gradlew bundleRelease assembleRelease --no-daemon)
+          AAB_UNIVERSE=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          APK_UNIVERSE=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          test -s "$AAB_UNIVERSE"
+          test -s "$APK_UNIVERSE"
+          cp "$APK_UNIVERSE" store-output/com.afterdark.universe.apk
+          cp "$AAB_UNIVERSE" store-output/com.afterdark.universe.aab
+          cp "$APK_UNIVERSE" store-output/AFTERDARK.apk
+          cp "$AAB_UNIVERSE" store-output/AFTERDARK.aab
+          cp "$APK_UNIVERSE" store-output/AFTERDARK-indus-release-signed.apk
+          cp "$AAB_UNIVERSE" store-output/AFTERDARK-indus-store.aab
+
+      - name: Build Signed Store Release AAB and APK for Legacy Listing (com.afterdark.app)
+        env:
+          ANDROID_PACKAGE_ID: "com.afterdark.app"
+          ANDROID_APP_NAME: "AFTERDARK"
+        run: |
+          node scripts/configure-android-apk.mjs
+          (cd android && ./gradlew bundleRelease assembleRelease --no-daemon)
+          AAB_LEGACY=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          APK_LEGACY=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          test -s "$AAB_LEGACY"
+          test -s "$APK_LEGACY"
+          cp "$APK_LEGACY" store-output/com.afterdark.app.apk
+          cp "$AAB_LEGACY" store-output/com.afterdark.app.aab
+          rm -f android/app/afterdark-upload.jks android/app/afterdark-upload.keystore
 
       - name: Verify and package PhonePe Indus Store bundle (Signed AAB + Signed APK + Store Graphics)
         run: |
-          AAB_FILE=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
-          APK_FILE=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
-          test -s "$AAB_FILE"
-          test -s "$APK_FILE"
-          mkdir -p store-output
-          cp "$AAB_FILE" store-output/AFTERDARK-indus-store.aab
-          cp "$APK_FILE" store-output/AFTERDARK-indus-release-signed.apk
           cp public/icon-512.png store-output/store-icon-512x512.png
           cp public/feature-graphic-1024x500.png store-output/feature-graphic-1024x500.png
           grep -E "versionCode|versionName" android/app/build.gradle | tee store-output/VERSION-DETAILS.txt
-          file store-output/AFTERDARK-indus-store.aab
-          file store-output/AFTERDARK-indus-release-signed.apk
-          unzip -t store-output/AFTERDARK-indus-store.aab
-          sha256sum store-output/AFTERDARK-indus-store.aab store-output/AFTERDARK-indus-release-signed.apk | tee store-output/SHA256SUMS.txt
+          sha256sum store-output/*.aab store-output/*.apk | tee store-output/SHA256SUMS.txt
 
       - name: Upload PhonePe Indus Appstore bundle
         uses: actions/upload-artifact@v4

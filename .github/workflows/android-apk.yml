@@ -111,33 +111,55 @@ jobs:
           echo "ANDROID_KEY_PASSWORD=$ALIAS_PASS" >> "$GITHUB_ENV"
       - name: Sync Capacitor
         run: npx cap sync android
-      - name: Configure AFTERDARK Launcher Icons, Dark Theme, Notch Safe-Area & Release Signing
+      - name: Configure AFTERDARK Launcher Icons, Dark Theme, Notch Safe-Area & Release Signing (com.afterdark.universe)
+        env:
+          ANDROID_PACKAGE_ID: "com.afterdark.universe"
+          ANDROID_APP_NAME: "AFTERDARK"
         run: |
           node scripts/configure-android-apk.mjs
-          python3 -c "import xml.etree.ElementTree as ET, sys; [ET.parse(f) for f in sys.argv[1:]]" android/app/src/main/AndroidManifest.xml android/app/src/main/res/values/styles.xml android/app/src/main/res/values/ic_launcher_background.xml
-      - name: Build Signed Release APK & AAB
+          python3 -c "import xml.etree.ElementTree as ET, sys; [ET.parse(f) for f in sys.argv[1:]]" android/app/src/main/AndroidManifest.xml android/app/src/main/res/values/styles.xml android/app/src/main/res/values/strings.xml android/app/src/main/res/values/ic_launcher_background.xml
+      - name: Build Signed Release APK & AAB (com.afterdark.universe)
         run: |
-          cd android
-          chmod +x gradlew
-          ./gradlew assembleRelease bundleRelease --no-daemon
-          rm -f app/afterdark-upload.jks app/afterdark-upload.keystore
-      - name: Prepare and verify store-signed APK & AAB
-        run: |
+          chmod +x android/gradlew
+          (cd android && ./gradlew assembleRelease bundleRelease --no-daemon)
           APK_FILE=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
           AAB_FILE=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
           test -s "$APK_FILE"
           test -s "$AAB_FILE"
           cp "$APK_FILE" afterdark.apk
+          cp "$APK_FILE" AFTERDARK.apk
+          cp "$APK_FILE" com.afterdark.universe.apk
           cp "$AAB_FILE" afterdark-release.aab
-          file afterdark.apk
-          sha256sum afterdark.apk afterdark-release.aab
+          cp "$AAB_FILE" AFTERDARK.aab
+          cp "$AAB_FILE" com.afterdark.universe.aab
+      - name: Build Signed Release APK & AAB for Legacy Listing (com.afterdark.app)
+        env:
+          ANDROID_PACKAGE_ID: "com.afterdark.app"
+          ANDROID_APP_NAME: "AFTERDARK"
+        run: |
+          node scripts/configure-android-apk.mjs
+          (cd android && ./gradlew assembleRelease bundleRelease --no-daemon)
+          APK_LEGACY=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          AAB_LEGACY=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          test -s "$APK_LEGACY"
+          test -s "$AAB_LEGACY"
+          cp "$APK_LEGACY" com.afterdark.app.apk
+          cp "$AAB_LEGACY" com.afterdark.app.aab
+          rm -f android/app/afterdark-upload.jks android/app/afterdark-upload.keystore
+          sha256sum afterdark.apk AFTERDARK.apk com.afterdark.universe.apk com.afterdark.app.apk afterdark-release.aab com.afterdark.universe.aab com.afterdark.app.aab
       - name: Keep build artifacts (Signed APK, Signed AAB & Store Graphics)
         uses: actions/upload-artifact@v4
         with:
           name: afterdark-android-apk
           path: |
             afterdark.apk
+            AFTERDARK.apk
+            com.afterdark.universe.apk
+            com.afterdark.app.apk
             afterdark-release.aab
+            AFTERDARK.aab
+            com.afterdark.universe.aab
+            com.afterdark.app.aab
             public/icon-512.png
             public/feature-graphic-1024x500.png
           if-no-files-found: error
@@ -149,13 +171,18 @@ jobs:
           tag_name: android-build-${{ github.run_number }}
           name: AFTERDARK Store-Signed Android APK & AAB ${{ github.run_number }}
           body: |
-            Store-Signed Release Android build of AFTERDARK (`com.afterdark.universe`).
-            Ready for **PhonePe Indus Appstore** and direct Android phone installation.
-            - `afterdark.apk`: V1+V2 Release-Signed APK (for PhonePe Indus Appstore & direct phone install)
-            - `afterdark-release.aab`: Release-Signed Android App Bundle (for PhonePe Indus Appstore AAB upload)
+            Store-Signed Release Android builds of AFTERDARK for **PhonePe Indus Appstore**:
+            - **If your Indus Appstore listing uses Package Name `com.afterdark.universe`**: upload `com.afterdark.universe.apk` (or `com.afterdark.universe.aab` / `AFTERDARK.apk`)
+            - **If your existing Indus Appstore listing is locked to `com.afterdark.app`**: upload `com.afterdark.app.apk` (or `com.afterdark.app.aab`)
             - `icon-512.png`: 512x512 High-Res Store Listing Icon
           files: |
             afterdark.apk
+            AFTERDARK.apk
+            com.afterdark.universe.apk
+            com.afterdark.app.apk
             afterdark-release.aab
+            AFTERDARK.aab
+            com.afterdark.universe.aab
+            com.afterdark.app.aab
             public/icon-512.png
           make_latest: true

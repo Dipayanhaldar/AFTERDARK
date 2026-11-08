@@ -328,9 +328,92 @@ export function subscribeToCoupleSync(callback) {
   };
 }
 
+function getCurrentCachedUser() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(CREATOR_USER_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearCreatorSessionCache() {
+  if (typeof window === 'undefined') return;
+  try {
+    const currentUser = getCurrentCachedUser();
+    localStorage.removeItem(CREATOR_SESSION_KEY);
+    localStorage.removeItem(CREATOR_USER_CACHE_KEY);
+    localStorage.removeItem(CREATOR_INVITE_CACHE_KEY);
+
+    // Clear all E2EE keyring entries in sessionStorage & localStorage so another user never inherits keys
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('afterdark_e2ee_ctx_v1_')) {
+        keysToRemove.push(k);
+      }
+    }
+    for (const k of keysToRemove) {
+      localStorage.removeItem(k);
+    }
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.clear();
+    }
+
+    // Remove the logged-out user's active session state from shared local storage
+    localStorage.removeItem(SHARED_STATE_KEY);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function isolateCreatorCacheForUser(userData) {
+  if (typeof window === 'undefined' || !userData?.id) return;
+  const userId = String(userData.id);
+  try {
+    // 1. Check cached invite: if it belongs to a different user (or has no creatorId), purge it immediately!
+    const cachedInviteRaw = localStorage.getItem(CREATOR_INVITE_CACHE_KEY);
+    if (cachedInviteRaw) {
+      const cachedInvite = JSON.parse(cachedInviteRaw);
+      if (!cachedInvite?.creatorId || String(cachedInvite.creatorId) !== userId) {
+        localStorage.removeItem(CREATOR_INVITE_CACHE_KEY);
+      }
+    }
+
+    // 2. Purge any unowned or other-account users, invites, connections, and messages from local shared state
+    const state = readSharedState();
+    const validConnIds = new Set(
+      state.connections
+        .filter((c) => c.creatorId && String(c.creatorId) === userId)
+        .map((c) => c.id)
+    );
+    state.users = state.users.filter((u) => u.id && String(u.id) === userId);
+    state.invites = state.invites.filter(
+      (i) => i.creatorId && String(i.creatorId) === userId
+    );
+    state.connections = state.connections.filter(
+      (c) => c.creatorId && String(c.creatorId) === userId
+    );
+    state.messages = state.messages.filter((m) => validConnIds.has(m.connectionId));
+    state.photos = state.photos.filter((p) => validConnIds.has(p.connectionId));
+    state.dates = state.dates.filter((d) => validConnIds.has(d.connectionId));
+    state.orders = state.orders.filter((o) => validConnIds.has(o.connectionId));
+    writeSharedState(state, { broadcast: false });
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export function mirrorUserLocally(userData, sessionToken = '') {
   if (!userData?.email && !userData?.displayName) return;
   try {
+    const prevUser = getCurrentCachedUser();
+    if (prevUser && userData?.id && String(prevUser.id) !== String(userData.id)) {
+      isolateCreatorCacheForUser(userData);
+    }
     localStorage.setItem(CREATOR_USER_CACHE_KEY, JSON.stringify(userData));
   } catch {
     // ignore
@@ -357,13 +440,15 @@ export function mirrorUserLocally(userData, sessionToken = '') {
 
 export function mirrorInviteLocally(inviteData) {
   if (!inviteData?.inviteToken || !inviteData?.verificationCode) return;
+  const currentUser = getCurrentCachedUser();
+  const resolvedCreatorId = inviteData.creatorId || currentUser?.id || null;
   const state = readSharedState();
   const exists = state.invites.find((i) => i.inviteToken === inviteData.inviteToken);
   if (!exists) {
     state.invites.unshift({
       inviteToken: inviteData.inviteToken,
       verificationCode: String(inviteData.verificationCode),
-      creatorId: inviteData.creatorId || null,
+      creatorId: resolvedCreatorId,
       creatorDeviceId: inviteData.creatorDeviceId || getClientDeviceId(),
       creatorIp: '',
       creatorDisplayName: inviteData.creatorDisplayName || 'Your Partner',
@@ -379,11 +464,15 @@ export function mirrorInviteLocally(inviteData) {
       expiresAt: inviteData.expiresAt || new Date(Date.now() + 7 * 86400000).toISOString()
     });
     writeSharedState(state, { broadcast: false });
+  } else if (resolvedCreatorId && !exists.creatorId) {
+    exists.creatorId = resolvedCreatorId;
+    writeSharedState(state, { broadcast: false });
   }
 }
 
 export function mirrorConnectionLocally(connData, guestSessionToken = '') {
   if (!connData?.id) return;
+  const currentUser = getCurrentCachedUser();
   const state = readSharedState();
   const existingIdx = state.connections.findIndex(
     (c) =>
@@ -399,7 +488,7 @@ export function mirrorConnectionLocally(connData, guestSessionToken = '') {
       `chan_${String(connData.inviteToken || connData.id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 14)}`,
     paired: true,
     status: connData.status || existingConn?.status || 'active',
-    creatorId: connData.creatorId || existingConn?.creatorId || null,
+    creatorId: connData.creatorId || existingConn?.creatorId || currentUser?.id || null,
     creatorDisplayName:
       connData.creatorDisplayName || existingConn?.creatorDisplayName || 'Your Partner',
     guestDisplayName:
@@ -526,41 +615,32 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
   if (cleanPath === 'me' && method === 'GET') {
     let user = state.users.find((u) => u.sessionToken === token);
     if (!user) {
-      try {
-        const cachedRaw = localStorage.getItem(CREATOR_USER_CACHE_KEY);
-        if (cachedRaw) {
-          user = JSON.parse(cachedRaw);
-        }
-      } catch {
-        // ignore
-      }
-    }
-    if (!user && state.users.length > 0) {
-      user = state.users[0];
+      user = getCurrentCachedUser();
     }
     if (!user) throw new Error('Unauthorized session. Please sign in.');
     return { user };
   }
 
   if (cleanPath === 'invites/current' && method === 'GET') {
-    const user = state.users.find((u) => u.sessionToken === token);
+    const user = state.users.find((u) => u.sessionToken === token) || getCurrentCachedUser();
+    if (!user?.id) return { invite: null };
     const activeInvite = state.invites.find(
       (i) =>
-        (!user || !i.creatorId || i.creatorId === user.id) &&
+        i.creatorId === user.id &&
         (i.status === 'pending' || i.status === 'active')
     );
     return { invite: activeInvite || null };
   }
 
   if (cleanPath === 'invites/revoke' && method === 'POST') {
-    const user = state.users.find((u) => u.sessionToken === token);
+    const user = state.users.find((u) => u.sessionToken === token) || getCurrentCachedUser();
     for (const inv of state.invites) {
-      if (!user || !inv.creatorId || inv.creatorId === user.id) {
+      if (!user?.id || inv.creatorId === user.id) {
         inv.status = 'revoked';
       }
     }
     for (const conn of state.connections) {
-      if (!user || !conn.creatorId || conn.creatorId === user.id) {
+      if (!user?.id || conn.creatorId === user.id) {
         conn.status = 'closed';
       }
     }
@@ -574,10 +654,11 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
   }
 
   if (cleanPath === 'invites' && method === 'POST') {
-    const user = state.users.find((u) => u.sessionToken === token);
+    const user = state.users.find((u) => u.sessionToken === token) || getCurrentCachedUser();
     const existing = state.invites.find(
       (i) =>
-        (!user || !i.creatorId || i.creatorId === user.id) &&
+        user?.id &&
+        i.creatorId === user.id &&
         (i.status === 'pending' || i.status === 'active')
     );
     if (existing) {
@@ -783,13 +864,15 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
   }
 
   if (cleanPath === 'connections' && method === 'GET') {
-    const user = state.users.find((u) => u.sessionToken === token);
+    const user = state.users.find((u) => u.sessionToken === token) || getCurrentCachedUser();
+    if (!user?.id) return { connections: [] };
     return {
       connections: state.connections
         .filter(
           (c) =>
             c.status === 'active' &&
-            (!user || !c.creatorId || c.creatorId === user.id)
+            c.creatorId &&
+            String(c.creatorId) === String(user.id)
         )
         .map((c) => ({
           ...c,

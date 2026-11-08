@@ -1,4 +1,11 @@
-import { createHash, randomBytes, randomInt, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  randomInt,
+  scrypt as scryptCb,
+  timingSafeEqual
+} from 'node:crypto';
 import { promisify } from 'node:util';
 import { getLocalDatabase, ObjectId } from './local-db.js';
 import { brandCatalog, CITY_PROFILES, analyzeChatContextLocally } from '../src/commerce-data.js';
@@ -22,7 +29,125 @@ import {
 const scrypt = promisify(scryptCb);
 
 // =========================================================================
-// ADAPTIVE TRAFFIC CONTROL & SURGE PROTECTION ENGINE (SERVER-SIDE v2.0.2.3)
+// CRYPTOGRAPHIC SESSION SIGNING & BRUTE-FORCE INTRUSION SHIELD
+// =========================================================================
+const SESSION_SIGNING_KEY = createHash('sha256')
+  .update(
+    String(
+      process.env.AFTERDARK_SESSION_SECRET ||
+        process.env.SESSION_SECRET ||
+        process.env.VERCEL_GIT_COMMIT_SHA ||
+        process.env.RENDER_GIT_COMMIT ||
+        'afterdark_hmac_256_v2_isolated_vault'
+    )
+  )
+  .digest();
+
+const securityFailures = new Map();
+
+function checkSecurityLockout(scopeKey, maxAttempts = 5, windowMs = 15 * 60 * 1000) {
+  const now = Date.now();
+  const entry = securityFailures.get(scopeKey);
+  if (!entry) return { locked: false, remainingAttempts: maxAttempts };
+  if (now - entry.firstAttemptAt > windowMs) {
+    securityFailures.delete(scopeKey);
+    return { locked: false, remainingAttempts: maxAttempts };
+  }
+  if (entry.count >= maxAttempts) {
+    const retryAfterSec = Math.max(1, Math.ceil((entry.firstAttemptAt + windowMs - now) / 1000));
+    return { locked: true, remainingAttempts: 0, retryAfterSec };
+  }
+  return { locked: false, remainingAttempts: Math.max(0, maxAttempts - entry.count) };
+}
+
+function recordSecurityFailure(scopeKey, windowMs = 15 * 60 * 1000) {
+  const now = Date.now();
+  const existing = securityFailures.get(scopeKey);
+  if (!existing || now - existing.firstAttemptAt > windowMs) {
+    securityFailures.set(scopeKey, { count: 1, firstAttemptAt: now });
+  } else {
+    existing.count += 1;
+  }
+}
+
+function clearSecurityFailures(scopeKey) {
+  securityFailures.delete(scopeKey);
+}
+
+function sanitizeInputValue(val) {
+  if (Array.isArray(val)) return val.map(sanitizeInputValue);
+  if (val && typeof val === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(val)) {
+      // Strip MongoDB/NoSQL operator keys ($ne, $gt, $where, __proto__, etc.)
+      if (k.startsWith('$') || k === '__proto__' || k === 'constructor' || k === 'prototype') {
+        continue;
+      }
+      out[k] = sanitizeInputValue(v);
+    }
+    return out;
+  }
+  return val;
+}
+
+function signTokenPayload(prefix, payloadObj) {
+  const payloadB64 = Buffer.from(JSON.stringify(payloadObj), 'utf8').toString('base64url');
+  const dataToSign = `${prefix}.${payloadB64}`;
+  const sigB64 = createHmac('sha256', SESSION_SIGNING_KEY).update(dataToSign).digest('base64url');
+  return `${dataToSign}.${sigB64}`;
+}
+
+function verifyTokenPayload(rawToken, expectedPrefix) {
+  if (!rawToken || typeof rawToken !== 'string') return null;
+  const parts = rawToken.split('.');
+  if (parts.length !== 3 || parts[0] !== expectedPrefix) return null;
+  const [prefix, payloadB64, sigB64] = parts;
+  const expectedSigB64 = createHmac('sha256', SESSION_SIGNING_KEY)
+    .update(`${prefix}.${payloadB64}`)
+    .digest('base64url');
+  if (sigB64.length !== expectedSigB64.length) return null;
+  try {
+    if (!timingSafeEqual(Buffer.from(sigB64), Buffer.from(expectedSigB64))) {
+      return null;
+    }
+    const parsed = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
+    if (!parsed || typeof parsed !== 'object') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function issueSignedCreatorToken(user) {
+  return signTokenPayload('ad_s2', {
+    uid: String(user._id),
+    email: String(user.email || '').toLowerCase(),
+    name: String(user.displayName || user.handle || 'Creator').slice(0, 40),
+    jti: randomBytes(18).toString('base64url'),
+    iat: Date.now()
+  });
+}
+
+function issueSignedGuestToken({
+  connectionId,
+  inviteToken,
+  verificationCode,
+  guestDeviceId,
+  guestDisplayName
+}) {
+  return signTokenPayload('ad_g2', {
+    cid: String(connectionId),
+    inv: String(inviteToken || ''),
+    otpHash: hashValue(String(verificationCode || '')),
+    dev: String(guestDeviceId || ''),
+    name: String(guestDisplayName || 'Meri Jaan').slice(0, 40),
+    jti: randomBytes(18).toString('base64url'),
+    iat: Date.now()
+  });
+}
+
+// =========================================================================
+// ADAPTIVE TRAFFIC CONTROL & SURGE PROTECTION ENGINE (SERVER-SIDE v2.0.2.6)
 // =========================================================================
 const trafficTimestamps = [];
 const clientTokenBuckets = new Map();
@@ -92,6 +217,11 @@ function setCorsHeaders(req, res, trafficInfo = null) {
     'Access-Control-Expose-Headers',
     'X-AfterDark-Version, X-AfterDark-Traffic-Mode, X-AfterDark-Poll-Ms, X-AfterDark-Rpm'
   );
+  // Anti-Sniffing, Anti-Clickjacking & Zero Referrer Leakage for Private Invite Tokens
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'geolocation=(self), camera=(self), microphone=(self)');
   res.setHeader('X-AfterDark-Version', APP_VERSION);
   if (trafficInfo) {
     res.setHeader('X-AfterDark-Traffic-Mode', trafficInfo.mode);
@@ -135,7 +265,7 @@ function randomToken(bytes = 24) {
 
 async function readBody(req) {
   if (req.body && typeof req.body === 'object') {
-    return req.body;
+    return sanitizeInputValue(req.body);
   }
   const chunks = [];
   for await (const chunk of req) {
@@ -143,7 +273,8 @@ async function readBody(req) {
   }
   if (!chunks.length) return {};
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return sanitizeInputValue(parsed);
   } catch {
     return {};
   }
@@ -152,51 +283,74 @@ async function readBody(req) {
 function extractBearerToken(req) {
   const header = String(req.headers?.authorization || '');
   const match = header.match(/^Bearer\s+(.+)$/i);
-  return match ? match[1].trim() : '';
+  if (match) return match[1].trim();
+  const guestHeader = String(req.headers?.['x-guest-session'] || '').trim();
+  return guestHeader;
 }
 
 async function getCreatorFromRequest(req, db) {
   const rawToken = extractBearerToken(req);
   if (!rawToken) return null;
   const tokenHash = hashValue(rawToken);
+
+  // Check if token was explicitly revoked on logout
+  const revoked = await db.collection('revoked_sessions').findOne({ tokenHash });
+  if (revoked) return null;
+
   let session = await db.collection('sessions').findOne({
     tokenHash
   });
   let user = null;
   if (session) {
-    const userId = session.userId instanceof ObjectId ? session.userId : new ObjectId(session.userId);
+    const userId =
+      session.userId instanceof ObjectId
+        ? session.userId
+        : /^[a-fA-F0-9]{24}$/.test(String(session.userId))
+        ? new ObjectId(String(session.userId))
+        : session.userId;
     user = await db.collection('users').findOne({ _id: userId });
   }
 
-  // Stateless serverless container rehydration (e.g., Vercel Lambda instances without MongoDB)
+  // Stateless serverless container rehydration ONLY via cryptographically signed HMAC token (never via spoofable headers!)
   if (!user) {
-    const fallbackEmail = String(req.headers?.['x-user-email'] || '').trim().toLowerCase();
-    const fallbackName = String(req.headers?.['x-user-name'] || '').trim();
-    if (fallbackEmail) {
-      user = await db.collection('users').findOne({ email: fallbackEmail });
+    const verifiedPayload = verifyTokenPayload(rawToken, 'ad_s2');
+    if (verifiedPayload && verifiedPayload.email && verifiedPayload.uid) {
+      const targetId = /^[a-fA-F0-9]{24}$/.test(String(verifiedPayload.uid))
+        ? new ObjectId(String(verifiedPayload.uid))
+        : verifiedPayload.uid;
+      user =
+        (await db.collection('users').findOne({ _id: targetId })) ||
+        (await db.collection('users').findOne({ email: verifiedPayload.email }));
+
       if (!user) {
         const nowIso = new Date().toISOString();
-        const created = await db.collection('users').insertOne({
-          email: fallbackEmail,
-          displayName: fallbackName || fallbackEmail.split('@')[0] || 'Creator',
-          handle: fallbackName || fallbackEmail.split('@')[0] || 'Creator',
+        await db.collection('users').insertOne({
+          _id: targetId,
+          email: verifiedPayload.email,
+          displayName: verifiedPayload.name || verifiedPayload.email.split('@')[0] || 'Creator',
+          handle: verifiedPayload.name || verifiedPayload.email.split('@')[0] || 'Creator',
           createdAt: nowIso
         });
-        user = {
-          _id: created.insertedId,
-          email: fallbackEmail,
-          displayName: fallbackName || fallbackEmail.split('@')[0] || 'Creator'
-        };
+        user = await db.collection('users').findOne({ _id: targetId });
       }
-      await db.collection('sessions').insertOne({
-        userId: user._id,
-        tokenHash,
-        createdAt: new Date().toISOString()
-      });
+      if (user) {
+        await db.collection('sessions').insertOne({
+          userId: user._id,
+          tokenHash,
+          createdAt: new Date().toISOString()
+        });
+      }
     }
   }
 
   if (!user) return null;
+
+  // Anti-Contamination Check: If client sent an X-User-Email header, it MUST match the authenticated session's owner!
+  const headerEmail = String(req.headers?.['x-user-email'] || '').trim().toLowerCase();
+  if (headerEmail && user.email && headerEmail !== String(user.email).toLowerCase()) {
+    return null;
+  }
+
   return {
     id: user._id.toString(),
     _id: user._id,
@@ -208,20 +362,57 @@ async function getCreatorFromRequest(req, db) {
 async function getGuestFromRequest(req, db) {
   const rawToken = extractBearerToken(req);
   if (!rawToken) return null;
-  const guestSession = await db.collection('guest_sessions').findOne({
-    tokenHash: hashValue(rawToken)
+  const tokenHash = hashValue(rawToken);
+  let guestSession = await db.collection('guest_sessions').findOne({
+    tokenHash
   });
-  if (!guestSession) return null;
-  const connectionId =
-    guestSession.connectionId instanceof ObjectId
-      ? guestSession.connectionId
-      : new ObjectId(guestSession.connectionId);
-  const connection = await db.collection('connections').findOne({ _id: connectionId });
+  let connection = null;
+
+  if (guestSession) {
+    const connectionId =
+      guestSession.connectionId instanceof ObjectId
+        ? guestSession.connectionId
+        : /^[a-fA-F0-9]{24}$/.test(String(guestSession.connectionId))
+        ? new ObjectId(String(guestSession.connectionId))
+        : guestSession.connectionId;
+    connection = await db.collection('connections').findOne({ _id: connectionId });
+  } else {
+    // Stateless cold-start rehydration ONLY if the guest token has a valid HMAC signature
+    const verifiedGuest = verifyTokenPayload(rawToken, 'ad_g2');
+    if (verifiedGuest && verifiedGuest.cid) {
+      const cid = /^[a-fA-F0-9]{24}$/.test(String(verifiedGuest.cid))
+        ? new ObjectId(String(verifiedGuest.cid))
+        : verifiedGuest.cid;
+      connection = await db.collection('connections').findOne({ _id: cid });
+      if (connection && connection.status === 'active') {
+        guestSession = {
+          tokenHash,
+          connectionId: connection._id,
+          inviteToken: verifiedGuest.inv || connection.inviteToken || '',
+          guestDeviceId: verifiedGuest.dev || connection.guestDeviceId || '',
+          guestDisplayName: verifiedGuest.name || connection.guestDisplayName || 'Meri Jaan'
+        };
+      }
+    }
+  }
+
   if (!connection || connection.status !== 'active') return null;
+
+  // Enforce 1-on-1 Device Lock: A 3rd device cannot use or hijack an active guest session!
+  const reqDeviceId = getRequestDeviceId(req);
+  const boundDeviceId = connection.guestDeviceId || guestSession?.guestDeviceId || '';
+  if (boundDeviceId && reqDeviceId && boundDeviceId !== reqDeviceId) {
+    return {
+      intrusionBlocked: true,
+      error:
+        '🛡️ Security Shield: This 1-on-1 room is locked to the paired partner device. No third device can enter in between!'
+    };
+  }
+
   return {
     guestSession,
     connection,
-    guestDisplayName: guestSession.guestDisplayName || connection.guestDisplayName || 'Meri Jaan'
+    guestDisplayName: guestSession?.guestDisplayName || connection.guestDisplayName || 'Meri Jaan'
   };
 }
 
@@ -251,6 +442,7 @@ function formatConnectionForCreator(conn) {
   const idStr = conn._id.toString();
   return {
     id: idStr,
+    creatorId: conn.creatorId ? conn.creatorId.toString() : '',
     channelId: conn.channelId || buildChannelId(conn.inviteToken, idStr),
     paired: (conn.status || 'active') === 'active',
     status: conn.status || 'active',
@@ -272,6 +464,7 @@ function formatConnectionForGuest(conn) {
   const idStr = conn._id.toString();
   return {
     id: idStr,
+    creatorId: conn.creatorId ? conn.creatorId.toString() : '',
     channelId: conn.channelId || buildChannelId(conn.inviteToken, idStr),
     paired: (conn.status || 'active') === 'active',
     status: conn.status || 'active',
@@ -460,6 +653,22 @@ export default async function handler(req, res) {
     if ((action === 'auth/signup' || action === 'register') && req.method === 'POST') {
       const email = String(body.email || '').trim().toLowerCase();
       const password = String(body.password || '');
+      const clientIp = getClientIp(req, body);
+      const lockoutKey = `auth:${email}:${clientIp}`;
+      const lockStatus = checkSecurityLockout(lockoutKey, 6);
+      if (lockStatus.locked) {
+        return json(
+          res,
+          429,
+          {
+            error: `🔒 Security Shield: Too many failed attempts. Please wait ${Math.ceil(
+              lockStatus.retryAfterSec / 60
+            )} minutes before trying again.`
+          },
+          req
+        );
+      }
+
       const displayName =
         String(body.displayName || body.handle || '')
           .trim()
@@ -476,13 +685,49 @@ export default async function handler(req, res) {
 
       const existing = await db.collection('users').findOne({ email });
       if (existing) {
-        const sessionToken = randomToken(32);
+        // NEVER allow passwordless login into an existing account via signup!
+        if (!existing.passwordHash) {
+          recordSecurityFailure(lockoutKey);
+          return json(
+            res,
+            409,
+            {
+              error:
+                'An account with this email already exists. Please sign in with your linked account or password.'
+            },
+            req
+          );
+        }
+        const [salt, storedHash] = String(existing.passwordHash).split(':');
+        const derived = (await scrypt(password, salt, 64)).toString('hex');
+        if (
+          !storedHash ||
+          storedHash.length !== derived.length ||
+          !timingSafeEqual(Buffer.from(storedHash), Buffer.from(derived))
+        ) {
+          recordSecurityFailure(lockoutKey);
+          return json(
+            res,
+            409,
+            {
+              error:
+                'An account with this email already exists. Switch to "Sign In" and enter your correct password.'
+            },
+            req
+          );
+        }
+        clearSecurityFailures(lockoutKey);
+        const name = existing.displayName || displayName;
+        const sessionToken = issueSignedCreatorToken({
+          _id: existing._id,
+          email: existing.email,
+          displayName: name
+        });
         await db.collection('sessions').insertOne({
           tokenHash: hashValue(sessionToken),
           userId: existing._id,
           createdAt: new Date().toISOString()
         });
-        const name = existing.displayName || displayName;
         return json(
           res,
           200,
@@ -509,7 +754,11 @@ export default async function handler(req, res) {
         createdAt: new Date().toISOString()
       });
 
-      const sessionToken = randomToken(32);
+      const sessionToken = issueSignedCreatorToken({
+        _id: created.insertedId,
+        email,
+        displayName
+      });
       await db.collection('sessions').insertOne({
         tokenHash: hashValue(sessionToken),
         userId: created.insertedId,
@@ -535,13 +784,44 @@ export default async function handler(req, res) {
     if ((action === 'auth/login' || action === 'login') && req.method === 'POST') {
       const email = String(body.email || '').trim().toLowerCase();
       const password = String(body.password || '');
-      const user = await db.collection('users').findOne({ email });
+      const clientIp = getClientIp(req, body);
+      const lockoutKey = `auth:${email}:${clientIp}`;
+      const lockStatus = checkSecurityLockout(lockoutKey, 6);
+      if (lockStatus.locked) {
+        return json(
+          res,
+          429,
+          {
+            error: `🔒 Security Shield: Too many failed sign-in attempts. Please wait ${Math.ceil(
+              lockStatus.retryAfterSec / 60
+            )} minutes before trying again.`
+          },
+          req
+        );
+      }
+
+      let user = await db.collection('users').findOne({ email });
+
+      // Idempotent Reviewer Account Provisioning for PhonePe Indus Appstore Review
+      if (!user && email === 'reviewer@afterdark.app' && password === 'IndusReview2026!') {
+        const salt = randomBytes(16).toString('hex');
+        const derived = (await scrypt(password, salt, 64)).toString('hex');
+        const created = await db.collection('users').insertOne({
+          email,
+          displayName: 'Store Reviewer',
+          handle: 'Store Reviewer',
+          passwordHash: `${salt}:${derived}`,
+          createdAt: new Date().toISOString()
+        });
+        user = await db.collection('users').findOne({ _id: created.insertedId });
+      }
 
       if (!user || !user.passwordHash) {
+        recordSecurityFailure(lockoutKey);
         return json(
           res,
           401,
-          { error: 'Account not found. Switch to "Create Couple Account" to join!' },
+          { error: 'Account not found. Switch to "Create Account" to join!' },
           req
         );
       }
@@ -549,20 +829,27 @@ export default async function handler(req, res) {
       const [salt, storedHash] = String(user.passwordHash).split(':');
       const derived = (await scrypt(password, salt, 64)).toString('hex');
       if (
+        !storedHash ||
         storedHash.length !== derived.length ||
         !timingSafeEqual(Buffer.from(storedHash), Buffer.from(derived))
       ) {
+        recordSecurityFailure(lockoutKey);
         return json(res, 401, { error: 'Incorrect password. Please try again.' }, req);
       }
 
-      const sessionToken = randomToken(32);
+      clearSecurityFailures(lockoutKey);
+      const name = user.displayName || user.handle || 'Jaan';
+      const sessionToken = issueSignedCreatorToken({
+        _id: user._id,
+        email: user.email,
+        displayName: name
+      });
       await db.collection('sessions').insertOne({
         tokenHash: hashValue(sessionToken),
         userId: user._id,
         createdAt: new Date().toISOString()
       });
 
-      const name = user.displayName || user.handle || 'Jaan';
       return json(
         res,
         200,
@@ -636,14 +923,18 @@ export default async function handler(req, res) {
         );
       }
 
-      const sessionToken = randomToken(32);
+      const resolvedName = user.displayName || displayName;
+      const sessionToken = issueSignedCreatorToken({
+        _id: user._id,
+        email: user.email,
+        displayName: resolvedName
+      });
       await db.collection('sessions').insertOne({
         tokenHash: hashValue(sessionToken),
         userId: user._id,
         createdAt: nowIso
       });
 
-      const resolvedName = user.displayName || displayName;
       return json(
         res,
         200,
@@ -665,7 +956,12 @@ export default async function handler(req, res) {
     if ((action === 'auth/logout' || action === 'logout') && req.method === 'POST') {
       const rawToken = extractBearerToken(req);
       if (rawToken) {
-        await db.collection('sessions').deleteMany({ tokenHash: hashValue(rawToken) });
+        const tokenHash = hashValue(rawToken);
+        await db.collection('sessions').deleteMany({ tokenHash });
+        await db.collection('revoked_sessions').insertOne({
+          tokenHash,
+          revokedAt: new Date().toISOString()
+        });
       }
       return json(res, 200, { ok: true }, req);
     }
@@ -710,6 +1006,7 @@ export default async function handler(req, res) {
             ? {
                 inviteToken: existing.inviteToken,
                 verificationCode: existing.verificationCode,
+                creatorId: creator.id,
                 creatorDisplayName: existing.creatorDisplayName || creator.displayName,
                 recipientHint: existing.recipientHint || 'Meri Jaan',
                 creatorCustomName: existing.creatorCustomName || creator.displayName,
@@ -763,13 +1060,15 @@ export default async function handler(req, res) {
 
     if (action === 'invites/sync' && req.method === 'POST') {
       const creator = await getCreatorFromRequest(req, db);
+      if (!creator) return json(res, 401, { error: 'Unauthorized. Please sign in.' }, req);
+
       const inviteToken = String(body.inviteToken || body.invite || '').trim();
       const verificationCode = String(body.verificationCode || body.inviteCode || '')
         .replace(/\D/g, '')
         .slice(0, 6);
       const recipientHint = String(body.recipientHint || 'Meri Jaan').trim();
       const creatorDisplayName =
-        creator?.displayName || String(body.creatorDisplayName || 'Tumhari Jaan').trim();
+        creator.displayName || String(body.creatorDisplayName || 'Tumhari Jaan').trim();
 
       if (inviteToken && verificationCode.length === 6) {
         const existing = await db.collection('invites').findOne({ inviteToken });
@@ -781,7 +1080,7 @@ export default async function handler(req, res) {
             tokenHash: hashValue(inviteToken),
             verificationCode,
             codeHash: hashValue(verificationCode),
-            creatorId: creator?._id || null,
+            creatorId: creator._id,
             creatorIp,
             creatorDeviceId,
             creatorDisplayName,
@@ -824,6 +1123,7 @@ export default async function handler(req, res) {
               ? {
                   inviteToken: existingInvite.inviteToken,
                   verificationCode: existingInvite.verificationCode,
+                  creatorId: creator.id,
                   creatorDisplayName: existingInvite.creatorDisplayName,
                   recipientHint: existingInvite.recipientHint,
                   status: existingInvite.status
@@ -880,6 +1180,7 @@ export default async function handler(req, res) {
           verificationCode,
           invite: inviteToken,
           inviteCode: verificationCode,
+          creatorId: creator.id,
           creatorIp,
           creatorDeviceId,
           creatorDisplayName: creatorCustomName,
@@ -896,22 +1197,23 @@ export default async function handler(req, res) {
       );
     }
 
-    // Public Invite Preview for Guest Site: GET /api/invites/:token
-    // Strictly matches ONLY the exact inviteToken and blocks Same-Device or Same-IP self-chat!
-    if (parts[0] === 'invites' && parts[1] && parts.length === 2 && req.method === 'GET') {
-      const rawToken = parts[1].trim();
+    // Public Invite Preview for Guest Site: GET /api/invites/:token or GET /api/guest/invites/:token
+    // Strictly matches ONLY the exact inviteToken and blocks Same-Device or 3rd-Person intrusion!
+    const isGetInvitePreview =
+      req.method === 'GET' &&
+      ((parts[0] === 'invites' && parts[1] && parts.length === 2 && parts[1] !== 'current') ||
+        (parts[0] === 'guest' && parts[1] === 'invites' && parts[2] && parts.length === 3));
+    if (isGetInvitePreview) {
+      const rawToken = (parts[0] === 'guest' ? parts[2] : parts[1]).trim();
       const invite = await db.collection('invites').findOne({
         $or: [{ inviteToken: rawToken }, { tokenHash: hashValue(rawToken) }]
       });
 
-      const guestIp = getClientIp(req);
       const guestDeviceId = getRequestDeviceId(req);
-      const urlCreatorIp = String(url.searchParams.get('cip') || '').trim();
       const urlCreatorDev = String(url.searchParams.get('cdev') || '').trim();
 
       if (!invite) {
         const sameDev = Boolean(guestDeviceId && urlCreatorDev && guestDeviceId === urlCreatorDev);
-        const blocked = sameDev;
         return json(
           res,
           200,
@@ -919,8 +1221,8 @@ export default async function handler(req, res) {
             invite: {
               status: 'pending',
               actualStatus: 'pending',
-              ownInvite: blocked,
-              sameDeviceOrIpBlocked: blocked,
+              ownInvite: sameDev,
+              sameDeviceOrIpBlocked: sameDev,
               blockReason: sameDev
                 ? '🚫 Same-Device Blocked: One device cannot chat with itself! You generated this link on this device. Send the QR or link to your partner’s phone.'
                 : '',
@@ -948,7 +1250,13 @@ export default async function handler(req, res) {
       const isSameDevice = Boolean(
         guestDeviceId && effectiveCreatorDev && guestDeviceId === effectiveCreatorDev
       );
-      const blocked = isSameDevice;
+      const isThirdPartyIntrusion = Boolean(
+        invite.status === 'active' &&
+          invite.guestDeviceId &&
+          guestDeviceId &&
+          invite.guestDeviceId !== guestDeviceId
+      );
+      const blocked = isSameDevice || isThirdPartyIntrusion;
 
       return json(
         res,
@@ -957,10 +1265,12 @@ export default async function handler(req, res) {
           invite: {
             status: invite.status === 'active' ? 'active' : 'pending',
             actualStatus: invite.status,
-            ownInvite: blocked,
+            ownInvite: isSameDevice,
             sameDeviceOrIpBlocked: blocked,
             blockReason: isSameDevice
               ? '🚫 Same-Device Blocked: One device cannot chat with itself! You generated this Couple Link on this device. Send the QR code or link to your partner’s separate device.'
+              : isThirdPartyIntrusion
+              ? '🛡️ Security Shield: This 1-on-1 room is already locked between the two paired devices. No third person can enter in between!'
               : '',
             handle: invite.creatorDisplayName || 'Your Partner',
             creatorDisplayName: invite.creatorDisplayName || 'Your Partner',
@@ -975,8 +1285,6 @@ export default async function handler(req, res) {
     // -------------------------------------------------------------------------
     // 3. GUEST OTP APPROVAL (STRICTLY ISOLATED PER UNIQUE INVITE TOKEN + OTP)
     // -------------------------------------------------------------------------
-    // 3. GUEST OTP VERIFICATION & HOST-GUEST CHANNEL PAIRING
-    // -------------------------------------------------------------------------
     const isGuestApproveRoute =
       action === 'guest/verify-otp' ||
       (parts[0] === 'guest' &&
@@ -990,7 +1298,9 @@ export default async function handler(req, res) {
         action === 'guest/verify-otp'
           ? String(body.inviteToken || body.token || 'otp-direct').trim()
           : (parts[0] === 'guest' ? parts[2] : parts[1]).trim();
-      const suppliedOtp = String(body.verificationCode || body.code || body.otp || '')
+      const suppliedOtp = String(
+        body.verificationCode || body.otpCode || body.code || body.otp || ''
+      )
         .replace(/\D/g, '')
         .slice(0, 6);
       const guestDisplayName =
@@ -999,6 +1309,23 @@ export default async function handler(req, res) {
           .slice(0, 40) || 'Meri Jaan';
       const hintCreatorName =
         String(body.creatorDisplayName || '').trim().slice(0, 40) || 'Your Partner';
+      const clientIp = getClientIp(req, body);
+      const guestDeviceId = getRequestDeviceId(req, body);
+
+      // Brute-force OTP lockout shield (max 5 failed attempts per 15 minutes)
+      const otpLockoutKey = `otp:${clientIp}:${guestDeviceId || 'anon'}:${rawToken}`;
+      const otpLockStatus = checkSecurityLockout(otpLockoutKey, 5);
+      if (otpLockStatus.locked) {
+        return json(
+          res,
+          429,
+          {
+            error:
+              '🔒 Security Shield: Too many incorrect 6-digit OTP attempts! Access is temporarily locked for 15 minutes to prevent unauthorized entry.'
+          },
+          req
+        );
+      }
 
       if (suppliedOtp.length !== 6) {
         return json(
@@ -1055,9 +1382,7 @@ export default async function handler(req, res) {
       }
 
       // Step 3: Enforce Same-Device Security Block (One device cannot chat with itself!)
-      const guestDeviceId = getRequestDeviceId(req, body);
       const effectiveCreatorDev = invite?.creatorDeviceId || String(body.creatorDeviceId || '').trim();
-
       if (guestDeviceId && effectiveCreatorDev && guestDeviceId === effectiveCreatorDev) {
         return json(
           res,
@@ -1072,6 +1397,7 @@ export default async function handler(req, res) {
 
       // Step 4: Validate the Guest's 6-digit entry code against the Host's generated session!
       if (invite && !verifyOtpMatchesInvite(invite, suppliedOtp)) {
+        recordSecurityFailure(otpLockoutKey);
         return json(
           res,
           401,
@@ -1080,10 +1406,11 @@ export default async function handler(req, res) {
         );
       }
 
-      // Step 4: If server cold-started and invite wasn't in DB, rehydrate from inviteToken + 6-digit OTP
+      // Step 4b: If server cold-started and invite wasn't in DB, rehydrate from inviteToken + 6-digit OTP
       if (!invite) {
         const expectedSig = String(body.expectedSignature || '').trim();
         if (!rawToken || rawToken === 'otp-direct') {
+          recordSecurityFailure(otpLockoutKey);
           return json(
             res,
             401,
@@ -1096,6 +1423,7 @@ export default async function handler(req, res) {
         }
 
         if (expectedSig && !verifyOtpSignature(suppliedOtp, rawToken, expectedSig)) {
+          recordSecurityFailure(otpLockoutKey);
           return json(
             res,
             401,
@@ -1119,7 +1447,28 @@ export default async function handler(req, res) {
         invite = await db.collection('invites').findOne({ _id: insertedInvite.insertedId });
       }
 
-      // Step 5: Pair Guest & Host into the shared Secure Chat Channel
+      // Step 5: Anti-Intrusion / No 3rd-Person Entry Check!
+      // Once a Guest device has paired with this invite, NO third device can enter in between!
+      if (
+        invite.status === 'active' &&
+        invite.guestDeviceId &&
+        guestDeviceId &&
+        invite.guestDeviceId !== guestDeviceId
+      ) {
+        return json(
+          res,
+          403,
+          {
+            error:
+              '🛡️ Security Shield: This 1-on-1 room is already locked between the two paired devices. No third person can enter in between!'
+          },
+          req
+        );
+      }
+
+      clearSecurityFailures(otpLockoutKey);
+
+      // Step 6: Pair Guest & Host into the shared Secure Chat Channel
       const effectiveInviteToken = invite.inviteToken || rawToken;
       const channelId = buildChannelId(effectiveInviteToken, invite._id?.toString());
       let connection = null;
@@ -1142,11 +1491,28 @@ export default async function handler(req, res) {
       }
 
       if (connection && connection.status === 'active') {
+        if (
+          connection.guestDeviceId &&
+          guestDeviceId &&
+          connection.guestDeviceId !== guestDeviceId
+        ) {
+          return json(
+            res,
+            403,
+            {
+              error:
+                '🛡️ Security Shield: This 1-on-1 room is already locked between the two paired devices. No third person can enter in between!'
+            },
+            req
+          );
+        }
+
         await db.collection('connections').updateOne(
           { _id: connection._id },
           {
             $set: {
               guestDisplayName: guestDisplayName || connection.guestDisplayName,
+              guestDeviceId: connection.guestDeviceId || guestDeviceId || '',
               verificationCode: suppliedOtp,
               channelId,
               creatorId: connection.creatorId || invite.creatorId || null
@@ -1167,6 +1533,7 @@ export default async function handler(req, res) {
           creatorId,
           creatorDisplayName: invite.creatorDisplayName || hintCreatorName,
           guestDisplayName,
+          guestDeviceId: guestDeviceId || '',
           recipientHint: invite.recipientHint || guestDisplayName,
           inviteId: invite._id,
           inviteToken: effectiveInviteToken,
@@ -1189,6 +1556,7 @@ export default async function handler(req, res) {
               connectionId: createdConn.insertedId,
               channelId,
               guestDisplayName,
+              guestDeviceId: guestDeviceId || '',
               approvedAt: nowIso
             }
           }
@@ -1219,13 +1587,20 @@ export default async function handler(req, res) {
         });
       }
 
-      const guestSessionToken = randomToken(32);
+      const guestSessionToken = issueSignedGuestToken({
+        connectionId: connection._id,
+        inviteToken: effectiveInviteToken,
+        verificationCode: suppliedOtp,
+        guestDeviceId: connection.guestDeviceId || guestDeviceId || '',
+        guestDisplayName: connection.guestDisplayName || guestDisplayName
+      });
       await db.collection('guest_sessions').insertOne({
         tokenHash: hashValue(guestSessionToken),
         connectionId: connection._id,
         inviteToken: effectiveInviteToken,
         verificationCode: suppliedOtp,
         channelId,
+        guestDeviceId: connection.guestDeviceId || guestDeviceId || '',
         guestDisplayName: connection.guestDisplayName || guestDisplayName,
         createdAt: new Date().toISOString()
       });
@@ -1257,6 +1632,9 @@ export default async function handler(req, res) {
     // -------------------------------------------------------------------------
     if ((action === 'guest/me' || action === 'guest/session') && req.method === 'GET') {
       const guestCtx = await getGuestFromRequest(req, db);
+      if (guestCtx?.intrusionBlocked) {
+        return json(res, 403, { error: guestCtx.error }, req);
+      }
       if (!guestCtx) {
         return json(res, 401, { error: 'Guest session not active or revoked.' }, req);
       }
@@ -1278,45 +1656,38 @@ export default async function handler(req, res) {
     }
 
     if (parts[0] === 'guest' && parts[1] === 'connections' && parts[2] && parts[3]) {
-      const guestCtx = await getGuestFromRequest(req, db);
-      let connection = guestCtx?.connection || null;
       const rawConnId = parts[2].trim();
-      const isHexObjectId = /^[a-fA-F0-9]{24}$/.test(rawConnId);
-
-      if (!connection) {
-        try {
-          const idQuery = isHexObjectId
-            ? { $or: [{ _id: new ObjectId(rawConnId) }, { _id: rawConnId }] }
-            : { $or: [{ _id: rawConnId }, { id: rawConnId }, { channelId: rawConnId }] };
-          const found = await db.collection('connections').findOne(idQuery);
-          if (found) {
-            connection = found;
-          }
-        } catch {
-          // ignore
-        }
+      const guestCtx = await getGuestFromRequest(req, db);
+      if (guestCtx?.intrusionBlocked) {
+        return json(res, 403, { error: guestCtx.error }, req);
+      }
+      if (!guestCtx || !guestCtx.connection) {
+        return json(
+          res,
+          401,
+          { error: '🔒 Unauthorized guest session. Please verify the 6-digit OTP first.' },
+          req
+        );
       }
 
-      if (connection && connection.status === 'closed') {
+      const connection = guestCtx.connection;
+      if (connection.status === 'closed') {
         return json(res, 401, { error: 'This private room has been closed or revoked.' }, req);
       }
 
-      if (!connection) {
-        const nowIso = new Date().toISOString();
-        const rehydratedId = isHexObjectId ? new ObjectId(rawConnId) : rawConnId;
-        await db.collection('connections').insertOne({
-          _id: rehydratedId,
-          creatorDisplayName: url.searchParams.get('creator') || 'Your Partner',
-          guestDisplayName: url.searchParams.get('guest') || 'Meri Jaan',
-          inviteToken: url.searchParams.get('inviteToken') || '',
-          verificationCode: url.searchParams.get('otp') || '',
-          channelId: buildChannelId(url.searchParams.get('inviteToken') || '', rawConnId),
-          status: 'active',
-          createdAt: nowIso,
-          approvedAt: nowIso
-        });
-        connection = await db.collection('connections').findOne({ _id: rehydratedId });
+      // Ensure guest token can ONLY access its own bound connectionId!
+      if (
+        connection._id.toString() !== rawConnId &&
+        connection.channelId !== rawConnId
+      ) {
+        return json(
+          res,
+          403,
+          { error: '🛡️ Security Shield: Access denied to another couple’s room.' },
+          req
+        );
       }
+
       const connId = connection._id;
       const subRoute = parts[3];
 
@@ -1588,6 +1959,7 @@ export default async function handler(req, res) {
 
     // -------------------------------------------------------------------------
     // 5. CREATOR CONNECTION ENDPOINTS (/api/connections/*)
+    //    STRICTLY ISOLATED PER CREATOR ACCOUNT — ZERO CROSS-USER MERGING!
     // -------------------------------------------------------------------------
     const creator = await getCreatorFromRequest(req, db);
     if (!creator) {
@@ -1600,96 +1972,60 @@ export default async function handler(req, res) {
         .replace(/\D/g, '')
         .slice(0, 6);
 
-      // Ensure the Host's active invite is registered in the DB if server cold-started
+      // Only allow cold-start invite/connection binding if the inviteToken does NOT belong to another user!
       if (tokenHint && otpHint.length === 6) {
         const existingInvite = await db.collection('invites').findOne({ inviteToken: tokenHint });
-        if (!existingInvite) {
-          await db.collection('invites').insertOne({
+        const ownedByAnotherUser = Boolean(
+          existingInvite?.creatorId &&
+            existingInvite.creatorId.toString() !== creator._id.toString()
+        );
+
+        if (!ownedByAnotherUser) {
+          if (!existingInvite) {
+            await db.collection('invites').insertOne({
+              inviteToken: tokenHint,
+              tokenHash: hashValue(tokenHint),
+              verificationCode: otpHint,
+              codeHash: hashValue(otpHint),
+              creatorId: creator._id,
+              creatorDisplayName: creator.displayName,
+              recipientHint: url.searchParams.get('hint') || 'Meri Jaan',
+              status: 'pending',
+              createdAt: new Date().toISOString(),
+              expiresAt: new Date(Date.now() + 7 * 86400000).toISOString()
+            });
+          } else if (!existingInvite.creatorId) {
+            await db.collection('invites').updateOne(
+              { _id: existingInvite._id },
+              { $set: { creatorId: creator._id, creatorDisplayName: creator.displayName } }
+            );
+          }
+
+          // Only bind an unowned cold-start connection if BOTH exact inviteToken AND 6-digit OTP match!
+          const matchedConn = await db.collection('connections').findOne({
+            status: 'active',
             inviteToken: tokenHint,
-            tokenHash: hashValue(tokenHint),
-            verificationCode: otpHint,
-            codeHash: hashValue(otpHint),
-            creatorId: creator._id,
-            creatorDisplayName: creator.displayName,
-            recipientHint: url.searchParams.get('hint') || 'Meri Jaan',
-            status: 'pending',
-            createdAt: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 7 * 86400000).toISOString()
+            verificationCode: otpHint
           });
-        } else if (!existingInvite.creatorId || existingInvite.creatorId.toString() !== creator._id.toString()) {
-          await db.collection('invites').updateOne(
-            { _id: existingInvite._id },
-            { $set: { creatorId: creator._id, creatorDisplayName: creator.displayName } }
-          );
-        }
-      }
-
-      // Bind any active connection matching this Host's inviteToken or 6-digit OTP to this Host's session
-      if (tokenHint || otpHint.length === 6) {
-        const matchOr = [];
-        if (tokenHint) matchOr.push({ inviteToken: tokenHint });
-        if (otpHint.length === 6) matchOr.push({ verificationCode: otpHint });
-
-        const matchedConn = await db.collection('connections').findOne({
-          status: 'active',
-          $or: matchOr
-        });
-        if (
-          matchedConn &&
-          (!matchedConn.creatorId || matchedConn.creatorId.toString() !== creator._id.toString())
-        ) {
-          await db.collection('connections').updateOne(
-            { _id: matchedConn._id },
-            {
-              $set: {
-                creatorId: creator._id,
-                creatorDisplayName: matchedConn.creatorDisplayName || creator.displayName
+          if (matchedConn && !matchedConn.creatorId) {
+            await db.collection('connections').updateOne(
+              { _id: matchedConn._id },
+              {
+                $set: {
+                  creatorId: creator._id,
+                  creatorDisplayName: matchedConn.creatorDisplayName || creator.displayName
+                }
               }
-            }
-          );
+            );
+          }
         }
       }
 
-      let list = await db
+      const list = await db
         .collection('connections')
         .find({ creatorId: creator._id, status: 'active' })
         .sort({ createdAt: -1 })
         .toArray();
-
-      const connIdHint = String(url.searchParams.get('connId') || '').trim();
-      const peerHint = String(url.searchParams.get('peer') || url.searchParams.get('hint') || 'Meri Jaan').trim();
-      if (list.length === 0 && connIdHint) {
-        const isHex = /^[a-fA-F0-9]{24}$/.test(connIdHint);
-        const existingById = await db.collection('connections').findOne(
-          isHex
-            ? { $or: [{ _id: new ObjectId(connIdHint) }, { _id: connIdHint }] }
-            : { _id: connIdHint }
-        );
-        if (!existingById) {
-          const nowIso = new Date().toISOString();
-          const rehydratedId = isHex ? new ObjectId(connIdHint) : connIdHint;
-          await db.collection('connections').insertOne({
-            _id: rehydratedId,
-            creatorId: creator._id,
-            creatorDisplayName: creator.displayName,
-            guestDisplayName: peerHint,
-            recipientHint: peerHint,
-            inviteToken: tokenHint,
-            verificationCode: otpHint,
-            channelId: buildChannelId(tokenHint, connIdHint),
-            status: 'active',
-            createdAt: nowIso,
-            approvedAt: nowIso
-          });
-          list = await db
-            .collection('connections')
-            .find({ creatorId: creator._id, status: 'active' })
-            .sort({ createdAt: -1 })
-            .toArray();
-        } else if (existingById.status === 'active') {
-          list = [existingById];
-        }
-      }
 
       return json(
         res,
@@ -1707,7 +2043,34 @@ export default async function handler(req, res) {
         : { $or: [{ _id: rawConnId }, { id: rawConnId }, { channelId: rawConnId }] };
 
       let connection = await db.collection('connections').findOne(idQuery);
+
+      // Strict Ownership Verification: NEVER allow Account B to read or write Account A's connection!
+      if (
+        connection &&
+        connection.creatorId &&
+        connection.creatorId.toString() !== creator._id.toString()
+      ) {
+        return json(
+          res,
+          403,
+          {
+            error:
+              '🛡️ Security Shield: Access denied. This private room belongs to a different account.'
+          },
+          req
+        );
+      }
+
       if (connection && !connection.creatorId) {
+        const tokenHint = String(url.searchParams.get('inviteToken') || '').trim();
+        if (!tokenHint || connection.inviteToken !== tokenHint) {
+          return json(
+            res,
+            403,
+            { error: '🛡️ Security Shield: Unverified room ownership.' },
+            req
+          );
+        }
         await db.collection('connections').updateOne(
           { _id: connection._id },
           { $set: { creatorId: creator._id } }
@@ -1716,21 +2079,12 @@ export default async function handler(req, res) {
       }
 
       if (!connection) {
-        const nowIso = new Date().toISOString();
-        const rehydratedId = isHexObjectId ? new ObjectId(rawConnId) : rawConnId;
-        await db.collection('connections').insertOne({
-          _id: rehydratedId,
-          creatorId: creator._id,
-          creatorDisplayName: creator.displayName,
-          guestDisplayName: url.searchParams.get('peer') || 'Meri Jaan',
-          inviteToken: url.searchParams.get('inviteToken') || '',
-          verificationCode: url.searchParams.get('otp') || '',
-          channelId: buildChannelId(url.searchParams.get('inviteToken') || '', rawConnId),
-          status: 'active',
-          createdAt: nowIso,
-          approvedAt: nowIso
-        });
-        connection = await db.collection('connections').findOne({ _id: rehydratedId });
+        return json(
+          res,
+          404,
+          { error: 'Private connection not found or no longer active.' },
+          req
+        );
       }
       const connId = connection._id;
       const subRoute = parts[2];

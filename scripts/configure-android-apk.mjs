@@ -383,6 +383,22 @@ function configureAndroidResources() {
 `;
   fs.writeFileSync(path.join(valuesDir, 'styles.xml'), stylesXml, 'utf8');
 
+  const resolvedPackageId = String(
+    process.env.ANDROID_PACKAGE_ID || 'com.afterdark.universe'
+  ).trim();
+  const resolvedAppName = String(process.env.ANDROID_APP_NAME || 'AFTERDARK').trim();
+
+  // Write canonical strings.xml so APK label (app_name) and package_name strictly match Store Listing
+  const stringsXml = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">${resolvedAppName}</string>
+    <string name="title_activity_main">${resolvedAppName}</string>
+    <string name="package_name">${resolvedPackageId}</string>
+    <string name="custom_url_scheme">${resolvedPackageId}</string>
+</resources>
+`;
+  fs.writeFileSync(path.join(valuesDir, 'strings.xml'), stringsXml, 'utf8');
+
   // Write canonical, store-compliant AndroidManifest.xml (zero regex patching, zero duplicate attributes)
   const manifestPath = path.join(ANDROID_MAIN, 'AndroidManifest.xml');
   if (fs.existsSync(manifestPath)) {
@@ -417,7 +433,7 @@ function configureAndroidResources() {
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
-            android:name=".MainActivity"
+            android:name="com.afterdark.universe.MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
@@ -457,7 +473,7 @@ function configureAndroidResources() {
     fs.writeFileSync(variablesGradlePath, varsGradle, 'utf8');
   }
 
-  // Sync monotonically increasing versionCode & versionName + Release Signing in android/app/build.gradle
+  // Sync monotonically increasing versionCode & versionName + applicationId + Release Signing in android/app/build.gradle
   const runNumber = Math.max(0, Number.parseInt(process.env.GITHUB_RUN_NUMBER || '0', 10) || 0);
   const resolvedVersionCode = 202600 + runNumber;
   const resolvedVersionName = runNumber > 0 ? `2.0.2.${6 + runNumber}` : '2.0.2.6';
@@ -465,6 +481,7 @@ function configureAndroidResources() {
   const gradlePath = path.resolve(ROOT_DIR, 'android/app/build.gradle');
   if (fs.existsSync(gradlePath)) {
     let gradle = fs.readFileSync(gradlePath, 'utf8');
+    gradle = gradle.replace(/applicationId\s+"[^"]+"/, `applicationId "${resolvedPackageId}"`);
     gradle = gradle.replace(/versionCode\s+\d+/, `versionCode ${resolvedVersionCode}`);
     gradle = gradle.replace(/versionName\s+"[^"]+"/, `versionName "${resolvedVersionName}"`);
 
@@ -511,7 +528,7 @@ function configureAndroidResources() {
   }
 
   console.log(
-    `[configure-android-apk] Generated AFTERDARK v${resolvedVersionName} (versionCode ${resolvedVersionCode}) launcher icons, store icons, PhonePe Indus manifest features, and release signing config.`
+    `[configure-android-apk] Configured ${resolvedAppName} (${resolvedPackageId}) v${resolvedVersionName} (versionCode ${resolvedVersionCode}) icons, manifest, strings.xml & release signing.`
   );
 }
 
