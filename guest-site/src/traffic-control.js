@@ -1,19 +1,15 @@
 /**
- * AFTERDARK Adaptive Traffic Control & Surge Protection Engine (v2.0.2.3)
+ * AFTERDARK Adaptive Traffic Control, Bot Detection & Flirty Human Verification Engine
  *
- * Ensures smooth, zero-drop performance across every device, browser, and store app
- * even during sudden viral traffic spikes:
- * 1. Priority Lane Classification: 1-on-1 E2EE chat messages, OTP pairing, and Google Auth
- *    always travel on `CRITICAL_REALTIME` lane and bypass non-essential load shedding.
- * 2. In-Flight GET Coalescing: Identical concurrent GET requests share a single promise
- *    so rapid tab switches or component mounts never multiply server traffic.
- * 3. Token-Bucket Surge Limiter & Queue: Protects the server from sudden request floods
- *    while smoothly queuing and retrying delayed requests with exponential jitter.
- * 4. Adaptive Poll Interval Regulator: Automatically adjusts sync intervals based on
- *    live server load (`X-AfterDark-Traffic-Mode`) and client network quality.
+ * 1. Priority Lane Classification: 1-on-1 E2EE chat messages, OTP pairing, and Auth
+ *    always travel on priority lanes.
+ * 2. In-Flight GET Coalescing & Surge Queue: Prevents duplicate concurrent GET floods.
+ * 3. Passive Human Telemetry + Cloudflare Turnstile / Flirty Human-Only Verification:
+ *    Detects automated bots or sudden traffic surges and triggers a romantic, human-only
+ *    vibe verification (never traffic lights or distorted text captchas).
  */
 
-import { APP_VERSION } from './version-manifest';
+import { APP_VERSION } from './version-manifest.js';
 
 export const TRAFFIC_LANES = {
   CRITICAL_CHAT: 'CRITICAL_CHAT',
@@ -22,7 +18,192 @@ export const TRAFFIC_LANES = {
   BACKGROUND_AI: 'BACKGROUND_AI'
 };
 
+const HUMAN_PASS_STORAGE_KEY = 'afterdark_human_pass_token_v2';
+
+export const FLIRTY_HUMAN_CHALLENGES = [
+  {
+    id: 'midnight_chai',
+    prompt: "It's 1:15 AM and your Jaan texts: 'Neend nahi aa rahi...' — what's the only real human move? ♥",
+    options: [
+      {
+        id: 'human_1',
+        text: '☕ Send a warm voice note & order midnight chai + Maggi for two ♥',
+        isHuman: true
+      },
+      {
+        id: 'bot_1',
+        text: '🤖 EXECUTE CRON_SCRAPER_BATCH --threads=64 --no-sleep',
+        isHuman: false
+      },
+      {
+        id: 'bot_2',
+        text: '⚙️ 01010011 01011001 01001110 ACK_SYN_FLOOD_PORT_443',
+        isHuman: false
+      }
+    ]
+  },
+  {
+    id: 'rainy_drive',
+    prompt: "Sudden evening rain starts in the city! Pick the true romantic vibe to prove you're human:",
+    options: [
+      {
+        id: 'bot_1',
+        text: '🤖 SELECT * FROM COUPLE_ROOMS WHERE BOT_INDEX = 9999;',
+        isHuman: false
+      },
+      {
+        id: 'human_1',
+        text: '🌧️ Long drive, old Bollywood songs & hot samosas together ♥',
+        isHuman: true
+      },
+      {
+        id: 'bot_2',
+        text: '📟 HEADLESS_WEBDRIVER_AUTO_CLICK(x=0, y=0)',
+        isHuman: false
+      }
+    ]
+  },
+  {
+    id: 'rooftop_date',
+    prompt: "Your partner says 'Aaj kuch special plan karein?' — what do you pick? ✨",
+    options: [
+      {
+        id: 'human_1',
+        text: '🕯️ Candlelight rooftop dinner + surprise dessert hamper ♥',
+        isHuman: true
+      },
+      {
+        id: 'bot_1',
+        text: '🕸️ CRAWL_ALL_URLS_USER_AGENT_PYTHON_REQUESTS/2.31',
+        isHuman: false
+      },
+      {
+        id: 'bot_2',
+        text: '🔌 NULL_POINTER_EXCEPTION_AUTOMATED_SCRIPT_V4',
+        isHuman: false
+      }
+    ]
+  },
+  {
+    id: 'naraz_partner',
+    prompt: "Your partner replies with just 'Hmm. K.' — how does a real human save the evening? 😉",
+    options: [
+      {
+        id: 'bot_1',
+        text: '🤖 PARSE_JSON_TOKEN_BRUTEFORCE_LOOP(10000)',
+        isHuman: false
+      },
+      {
+        id: 'bot_2',
+        text: '📡 PING_FLOOD_ICMP_ECHO_REQUEST_TIMEOUT',
+        isHuman: false
+      },
+      {
+        id: 'human_1',
+        text: '🍫 Send their favorite dark chocolate & a cute selfie immediately ♥',
+        isHuman: true
+      }
+    ]
+  }
+];
+
 const inFlightGetRequests = new Map();
+
+const humanTelemetry = {
+  pointerEvents: 0,
+  keyEvents: 0,
+  touchEvents: 0,
+  scrollEvents: 0,
+  firstInteractionAt: 0,
+  lastInteractionAt: 0,
+  mutationTimestamps: [],
+  challengeRequired: false,
+  challengeReason: '',
+  verifiedPassToken: ''
+};
+
+if (typeof window !== 'undefined') {
+  try {
+    humanTelemetry.verifiedPassToken = localStorage.getItem(HUMAN_PASS_STORAGE_KEY) || '';
+  } catch {
+    // ignore storage errors
+  }
+
+  const markHumanInteraction = (type) => {
+    const now = Date.now();
+    if (!humanTelemetry.firstInteractionAt) {
+      humanTelemetry.firstInteractionAt = now;
+    }
+    humanTelemetry.lastInteractionAt = now;
+    if (type === 'pointer') humanTelemetry.pointerEvents = Math.min(500, humanTelemetry.pointerEvents + 1);
+    if (type === 'key') humanTelemetry.keyEvents = Math.min(500, humanTelemetry.keyEvents + 1);
+    if (type === 'touch') humanTelemetry.touchEvents = Math.min(500, humanTelemetry.touchEvents + 1);
+    if (type === 'scroll') humanTelemetry.scrollEvents = Math.min(500, humanTelemetry.scrollEvents + 1);
+  };
+
+  window.addEventListener('pointermove', () => markHumanInteraction('pointer'), { passive: true });
+  window.addEventListener('pointerdown', () => markHumanInteraction('pointer'), { passive: true });
+  window.addEventListener('keydown', () => markHumanInteraction('key'), { passive: true });
+  window.addEventListener('touchstart', () => markHumanInteraction('touch'), { passive: true });
+  window.addEventListener('scroll', () => markHumanInteraction('scroll'), { passive: true });
+}
+
+export function getHumanTrustScore() {
+  if (typeof window === 'undefined') return 85;
+  let score = 50;
+  if (humanTelemetry.verifiedPassToken) score += 45;
+  if (humanTelemetry.pointerEvents >= 3 || humanTelemetry.touchEvents >= 1) score += 20;
+  if (humanTelemetry.keyEvents >= 2) score += 15;
+  if (humanTelemetry.scrollEvents >= 1) score += 10;
+
+  // Check for automated burst (> 12 non-GET mutations in 3 seconds)
+  const now = Date.now();
+  humanTelemetry.mutationTimestamps = humanTelemetry.mutationTimestamps.filter(
+    (t) => now - t < 3000
+  );
+  if (humanTelemetry.mutationTimestamps.length > 12 && !humanTelemetry.verifiedPassToken) {
+    score -= 45;
+  }
+
+  return Math.max(5, Math.min(100, score));
+}
+
+export function getStoredHumanPassToken() {
+  if (humanTelemetry.verifiedPassToken) return humanTelemetry.verifiedPassToken;
+  if (typeof window === 'undefined') return '';
+  try {
+    const token = localStorage.getItem(HUMAN_PASS_STORAGE_KEY) || '';
+    humanTelemetry.verifiedPassToken = token;
+    return token;
+  } catch {
+    return '';
+  }
+}
+
+export function saveVerifiedHumanPassToken(token) {
+  humanTelemetry.verifiedPassToken = String(token || '');
+  humanTelemetry.challengeRequired = false;
+  humanTelemetry.challengeReason = '';
+  if (typeof window !== 'undefined') {
+    try {
+      if (token) {
+        localStorage.setItem(HUMAN_PASS_STORAGE_KEY, String(token));
+      } else {
+        localStorage.removeItem(HUMAN_PASS_STORAGE_KEY);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  notifyTrafficListeners();
+}
+
+export function triggerFlirtyBotChallenge(reason = 'Sudden traffic surge detected — quick human vibe check ♥') {
+  if (getStoredHumanPassToken()) return;
+  humanTelemetry.challengeRequired = true;
+  humanTelemetry.challengeReason = reason;
+  notifyTrafficListeners();
+}
 
 const clientTrafficState = {
   mode: 'NORMAL', // 'NORMAL' | 'ELEVATED' | 'SURGE_SHIELD_ACTIVE'
@@ -53,7 +234,12 @@ export function classifyEndpointPriority(endpoint = '', method = 'GET') {
   const clean = String(endpoint || '').toLowerCase();
   const upperMethod = String(method || 'GET').toUpperCase();
 
-  if (clean.includes('/auth/') || clean.includes('/invites') || clean.includes('/approve')) {
+  if (
+    clean.includes('/auth/') ||
+    clean.includes('/invites') ||
+    clean.includes('/approve') ||
+    clean.includes('/security/verify-human')
+  ) {
     return TRAFFIC_LANES.AUTH_SESSION;
   }
   if (clean.includes('/messages') && upperMethod === 'POST') {
@@ -122,6 +308,7 @@ export function recordServerTrafficHeaders(res, latencyMs = 0) {
     const mode = res.headers.get('x-afterdark-traffic-mode');
     const pollMs = Number(res.headers.get('x-afterdark-poll-ms') || 0);
     const rpm = Number(res.headers.get('x-afterdark-rpm') || 0);
+    const botChallenge = res.headers.get('x-afterdark-bot-challenge');
 
     if (mode) clientTrafficState.mode = mode;
     if (pollMs >= 1500) clientTrafficState.recommendedPollMs = pollMs;
@@ -131,6 +318,16 @@ export function recordServerTrafficHeaders(res, latencyMs = 0) {
         clientTrafficState.avgLatencyMs * 0.7 + latencyMs * 0.3
       );
     }
+
+    if (
+      (botChallenge === 'required' || mode === 'SURGE_SHIELD_ACTIVE') &&
+      !getStoredHumanPassToken()
+    ) {
+      humanTelemetry.challengeRequired = true;
+      humanTelemetry.challengeReason =
+        'High traffic surge detected! Complete a 2-second Flirty Vibe Check so only real humans enter ♥';
+    }
+
     clientTrafficState.lastUpdatedAt = Date.now();
     notifyTrafficListeners();
   } catch {
@@ -138,15 +335,23 @@ export function recordServerTrafficHeaders(res, latencyMs = 0) {
   }
 }
 
-/**
- * Wraps an async request execution with:
- * - In-flight GET coalescing (prevents duplicate concurrent GET floods)
- * - Automatic exponential backoff + jitter retry on HTTP 429 / 503
- */
 export async function executeWithTrafficControl(key, method, priorityLane, requestFn) {
   const upperMethod = String(method || 'GET').toUpperCase();
   const isGet = upperMethod === 'GET';
   const coalesceKey = isGet ? `${upperMethod}:${key}` : null;
+
+  if (!isGet && !String(key).includes('/security/verify-human')) {
+    const now = Date.now();
+    humanTelemetry.mutationTimestamps.push(now);
+    humanTelemetry.mutationTimestamps = humanTelemetry.mutationTimestamps.filter(
+      (t) => now - t < 3000
+    );
+    if (humanTelemetry.mutationTimestamps.length > 14 && !getStoredHumanPassToken()) {
+      triggerFlirtyBotChallenge(
+        'Rapid activity spike detected! Verify your human vibe in 1 tap ♥'
+      );
+    }
+  }
 
   if (coalesceKey && inFlightGetRequests.has(coalesceKey)) {
     clientTrafficState.coalescedSaves += 1;
@@ -170,6 +375,9 @@ export async function executeWithTrafficControl(key, method, priorityLane, reque
       } catch (err) {
         lastError = err;
         const status = Number(err?.status || 0);
+        if (err?.requiresFlirtyChallenge && !getStoredHumanPassToken()) {
+          triggerFlirtyBotChallenge(err.message || 'Quick Flirty Human Verification required ♥');
+        }
         const isTransient = status === 429 || status === 502 || status === 503 || status === 504 || !status;
         if (!isTransient || attempt === maxAttempts) {
           throw err;
@@ -204,7 +412,13 @@ export function getClientTrafficSnapshot() {
     ...clientTrafficState,
     adaptivePollMs: getAdaptivePollIntervalMs(),
     inFlightCount: inFlightGetRequests.size,
-    deviceProfile: profile
+    deviceProfile: profile,
+    humanTrustScore: getHumanTrustScore(),
+    humanVerified: Boolean(getStoredHumanPassToken()),
+    challengeRequired: Boolean(
+      humanTelemetry.challengeRequired && !getStoredHumanPassToken()
+    ),
+    challengeReason: humanTelemetry.challengeReason
   };
 }
 

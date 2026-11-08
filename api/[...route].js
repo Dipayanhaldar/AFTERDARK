@@ -146,13 +146,35 @@ function issueSignedGuestToken({
   });
 }
 
+function issueSignedHumanPassToken({ deviceId = '', clientIp = '' } = {}) {
+  return signTokenPayload('ad_hp2', {
+    dev: String(deviceId || '').slice(0, 64),
+    ipHash: hashValue(String(clientIp || '')).slice(0, 16),
+    verified: true,
+    iat: Date.now(),
+    exp: Date.now() + 2 * 60 * 60 * 1000
+  });
+}
+
+function verifyHumanPassToken(req) {
+  const rawPass = String(req?.headers?.['x-afterdark-human-pass'] || '').trim();
+  if (!rawPass) return false;
+  const parsed = verifyTokenPayload(rawPass, 'ad_hp2');
+  if (!parsed || !parsed.verified) return false;
+  if (parsed.exp && Number(parsed.exp) < Date.now()) return false;
+  return true;
+}
+
 // =========================================================================
-// ADAPTIVE TRAFFIC CONTROL & SURGE PROTECTION ENGINE (SERVER-SIDE v2.0.2.6)
+// ADAPTIVE TRAFFIC CONTROL & BOT DETECTION ENGINE (SERVER-SIDE v2.0.2.6)
 // =========================================================================
 const trafficTimestamps = [];
 const clientTokenBuckets = new Map();
 let peakRequestsPerMinute = 14;
 let totalRequestsServed = 0;
+
+const AUTOMATED_BOT_UA_REGEX =
+  /\b(curl|wget|python-requests|scrapy|httpclient|go-http-client|libwww-perl|sqlmap|nikto|masscan|zgrab|phantomjs|slurp)\b/i;
 
 function evaluateServerTraffic(req, action = '') {
   const now = Date.now();
@@ -182,16 +204,37 @@ function evaluateServerTraffic(req, action = '') {
     action.includes('messages') ||
     action.includes('auth/') ||
     action.includes('invites') ||
-    action.includes('approve');
+    action.includes('approve') ||
+    action.includes('security/verify-human');
 
   let bucket = clientTokenBuckets.get(clientKey);
   if (!bucket || now - bucket.lastRefill > 10000) {
-    bucket = { tokens: 120, lastRefill: now };
+    bucket = { tokens: 120, mutationCount: 0, lastRefill: now };
     clientTokenBuckets.set(clientKey, bucket);
   }
   if (!isPriorityLane) {
     bucket.tokens = Math.max(0, bucket.tokens - 1);
   }
+  if (req?.method && req.method !== 'GET' && req.method !== 'OPTIONS') {
+    bucket.mutationCount = (bucket.mutationCount || 0) + 1;
+  }
+
+  const ua = String(req?.headers?.['user-agent'] || '');
+  const hasVerifiedPass = verifyHumanPassToken(req);
+  const humanScoreHeader = req?.headers?.['x-afterdark-human-score'];
+  const parsedHumanScore =
+    humanScoreHeader !== undefined && humanScoreHeader !== ''
+      ? Number(humanScoreHeader)
+      : 80;
+
+  const isAutomatedScraperUa = Boolean(ua && AUTOMATED_BOT_UA_REGEX.test(ua));
+  const isMutationFlood = (bucket.mutationCount || 0) > 28;
+  const isSurgeLowHumanScore = mode === 'SURGE_SHIELD_ACTIVE' && parsedHumanScore < 20;
+
+  const botChallengeRequired =
+    !hasVerifiedPass &&
+    action !== 'security/verify-human' &&
+    (isAutomatedScraperUa || isMutationFlood || isSurgeLowHumanScore);
 
   return {
     rpm,
@@ -200,6 +243,8 @@ function evaluateServerTraffic(req, action = '') {
     mode,
     recommendedPollMs,
     isPriorityLane,
+    hasVerifiedPass,
+    botChallengeRequired,
     throttled: !isPriorityLane && bucket.tokens <= 0
   };
 }
@@ -211,11 +256,11 @@ function setCorsHeaders(req, res, trafficInfo = null) {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, X-Requested-With, Accept, X-Device-Id, X-Client-Ip, X-User-Email, X-User-Name, X-AfterDark-Version, X-AfterDark-Priority'
+    'Content-Type, Authorization, X-Requested-With, Accept, X-Device-Id, X-Client-Ip, X-User-Email, X-User-Name, X-AfterDark-Version, X-AfterDark-Priority, X-AfterDark-Human-Pass, X-AfterDark-Human-Score, CF-Turnstile-Response'
   );
   res.setHeader(
     'Access-Control-Expose-Headers',
-    'X-AfterDark-Version, X-AfterDark-Traffic-Mode, X-AfterDark-Poll-Ms, X-AfterDark-Rpm'
+    'X-AfterDark-Version, X-AfterDark-Traffic-Mode, X-AfterDark-Poll-Ms, X-AfterDark-Rpm, X-AfterDark-Bot-Challenge'
   );
   // Anti-Sniffing, Anti-Clickjacking & Zero Referrer Leakage for Private Invite Tokens
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -227,6 +272,9 @@ function setCorsHeaders(req, res, trafficInfo = null) {
     res.setHeader('X-AfterDark-Traffic-Mode', trafficInfo.mode);
     res.setHeader('X-AfterDark-Poll-Ms', String(trafficInfo.recommendedPollMs));
     res.setHeader('X-AfterDark-Rpm', String(trafficInfo.rpm));
+    if (trafficInfo.botChallengeRequired) {
+      res.setHeader('X-AfterDark-Bot-Challenge', 'required');
+    }
   }
 }
 
@@ -613,6 +661,95 @@ export default async function handler(req, res) {
     const body = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
       ? await readBody(req)
       : {};
+
+    // -------------------------------------------------------------------------
+    // 0A. FLIRTY HUMAN VERIFICATION & CLOUDFLARE TURNSTILE BOT SHIELD
+    // -------------------------------------------------------------------------
+    if (action === 'security/verify-human' && req.method === 'POST') {
+      const selectedOptionId = String(body.selectedOptionId || '').trim();
+      const holdDurationMs = Number(body.holdDurationMs || 0);
+      const cfTurnstileToken = String(
+        body.cfTurnstileToken || req?.headers?.['cf-turnstile-response'] || ''
+      ).trim();
+
+      let turnstileVerified = false;
+      if (cfTurnstileToken && process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY) {
+        try {
+          const cfRes = await fetch(
+            'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                secret: process.env.CLOUDFLARE_TURNSTILE_SECRET_KEY,
+                response: cfTurnstileToken
+              })
+            }
+          );
+          const cfJson = await cfRes.json();
+          turnstileVerified = Boolean(cfJson?.success);
+        } catch {
+          turnstileVerified = false;
+        }
+      }
+
+      const flirtyVibePassed =
+        selectedOptionId === 'human_1' && holdDurationMs >= 800;
+
+      if (!flirtyVibePassed && !turnstileVerified) {
+        return json(
+          res,
+          403,
+          {
+            ok: false,
+            requiresFlirtyChallenge: true,
+            error:
+              'Arre! Woh robotic option tha 😂 Asli romantic human option choose karke ♥ hold karo!'
+          },
+          req
+        );
+      }
+
+      const deviceId = getRequestDeviceId(req, body);
+      const clientIp = getClientIp(req, body);
+      const humanPassToken = issueSignedHumanPassToken({ deviceId, clientIp });
+
+      // Reset client mutation bucket upon passing human verification
+      const clientKey = String(
+        req?.headers?.['x-device-id'] || req?.headers?.['x-forwarded-for'] || 'anon'
+      ).slice(0, 64);
+      clientTokenBuckets.set(clientKey, {
+        tokens: 120,
+        mutationCount: 0,
+        lastRefill: Date.now()
+      });
+
+      return json(
+        res,
+        200,
+        {
+          ok: true,
+          verified: true,
+          humanPassToken,
+          message: 'Romantic Human Vibe Verified ♥ Welcome back to the private lounge!'
+        },
+        req
+      );
+    }
+
+    if (trafficInfo.botChallengeRequired) {
+      res.setHeader('X-AfterDark-Bot-Challenge', 'required');
+      return json(
+        res,
+        429,
+        {
+          requiresFlirtyChallenge: true,
+          error:
+            'Hold up, Handsome / Gorgeous! 😘 Sudden traffic rush or bot pattern detected — complete the 1-second Romantic Vibe Check to continue ♥'
+        },
+        req
+      );
+    }
 
     // -------------------------------------------------------------------------
     // 0. PRIVATE LOCAL IN-CHAT BRAND & FLIRT LINE ANALYZER (Zero External AI API)
@@ -1574,6 +1711,8 @@ export default async function handler(req, res) {
 
         await db.collection('messages').insertOne({
           connectionId: createdConn.insertedId,
+          ownerCreatorId: creatorId ? String(creatorId) : '',
+          inviteToken: String(effectiveInviteToken || ''),
           channelId,
           senderRole: 'guest',
           senderName: guestDisplayName,
@@ -1754,6 +1893,8 @@ export default async function handler(req, res) {
               : '');
           const inserted = await db.collection('messages').insertOne({
             connectionId: connId,
+            ownerCreatorId: connection.creatorId ? String(connection.creatorId) : '',
+            inviteToken: String(connection.inviteToken || ''),
             senderRole: 'guest',
             senderName: connection.guestDisplayName || 'Meri Jaan',
             body: text,
@@ -1972,52 +2113,23 @@ export default async function handler(req, res) {
         .replace(/\D/g, '')
         .slice(0, 6);
 
-      // Only allow cold-start invite/connection binding if the inviteToken does NOT belong to another user!
+      // Only allow cold-start invite rehydration if the inviteToken does NOT exist yet in DB.
+      // NEVER adopt unowned connections or invites across accounts!
       if (tokenHint && otpHint.length === 6) {
         const existingInvite = await db.collection('invites').findOne({ inviteToken: tokenHint });
-        const ownedByAnotherUser = Boolean(
-          existingInvite?.creatorId &&
-            existingInvite.creatorId.toString() !== creator._id.toString()
-        );
-
-        if (!ownedByAnotherUser) {
-          if (!existingInvite) {
-            await db.collection('invites').insertOne({
-              inviteToken: tokenHint,
-              tokenHash: hashValue(tokenHint),
-              verificationCode: otpHint,
-              codeHash: hashValue(otpHint),
-              creatorId: creator._id,
-              creatorDisplayName: creator.displayName,
-              recipientHint: url.searchParams.get('hint') || 'Meri Jaan',
-              status: 'pending',
-              createdAt: new Date().toISOString(),
-              expiresAt: new Date(Date.now() + 7 * 86400000).toISOString()
-            });
-          } else if (!existingInvite.creatorId) {
-            await db.collection('invites').updateOne(
-              { _id: existingInvite._id },
-              { $set: { creatorId: creator._id, creatorDisplayName: creator.displayName } }
-            );
-          }
-
-          // Only bind an unowned cold-start connection if BOTH exact inviteToken AND 6-digit OTP match!
-          const matchedConn = await db.collection('connections').findOne({
-            status: 'active',
+        if (!existingInvite) {
+          await db.collection('invites').insertOne({
             inviteToken: tokenHint,
-            verificationCode: otpHint
+            tokenHash: hashValue(tokenHint),
+            verificationCode: otpHint,
+            codeHash: hashValue(otpHint),
+            creatorId: creator._id,
+            creatorDisplayName: creator.displayName,
+            recipientHint: url.searchParams.get('hint') || 'Meri Jaan',
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            expiresAt: new Date(Date.now() + 7 * 86400000).toISOString()
           });
-          if (matchedConn && !matchedConn.creatorId) {
-            await db.collection('connections').updateOne(
-              { _id: matchedConn._id },
-              {
-                $set: {
-                  creatorId: creator._id,
-                  creatorDisplayName: matchedConn.creatorDisplayName || creator.displayName
-                }
-              }
-            );
-          }
         }
       }
 
@@ -2027,10 +2139,15 @@ export default async function handler(req, res) {
         .sort({ createdAt: -1 })
         .toArray();
 
+      // Secondary defense-in-depth filter: verify every returned connection strictly matches creator._id
+      const strictlyOwnedList = list.filter(
+        (c) => c.creatorId && c.creatorId.toString() === creator._id.toString()
+      );
+
       return json(
         res,
         200,
-        { connections: list.map(formatConnectionForCreator) },
+        { connections: strictlyOwnedList.map(formatConnectionForCreator) },
         req
       );
     }
@@ -2042,13 +2159,13 @@ export default async function handler(req, res) {
         ? { $or: [{ _id: new ObjectId(rawConnId) }, { _id: rawConnId }] }
         : { $or: [{ _id: rawConnId }, { id: rawConnId }, { channelId: rawConnId }] };
 
-      let connection = await db.collection('connections').findOne(idQuery);
+      const connection = await db.collection('connections').findOne(idQuery);
 
-      // Strict Ownership Verification: NEVER allow Account B to read or write Account A's connection!
+      // Strict Ownership Verification: NEVER allow Account B to read, adopt, or write Account A's or unowned connections!
       if (
         connection &&
-        connection.creatorId &&
-        connection.creatorId.toString() !== creator._id.toString()
+        (!connection.creatorId ||
+          connection.creatorId.toString() !== creator._id.toString())
       ) {
         return json(
           res,
@@ -2061,23 +2178,6 @@ export default async function handler(req, res) {
         );
       }
 
-      if (connection && !connection.creatorId) {
-        const tokenHint = String(url.searchParams.get('inviteToken') || '').trim();
-        if (!tokenHint || connection.inviteToken !== tokenHint) {
-          return json(
-            res,
-            403,
-            { error: '🛡️ Security Shield: Unverified room ownership.' },
-            req
-          );
-        }
-        await db.collection('connections').updateOne(
-          { _id: connection._id },
-          { $set: { creatorId: creator._id } }
-        );
-        connection.creatorId = creator._id;
-      }
-
       if (!connection) {
         return json(
           res,
@@ -2087,6 +2187,7 @@ export default async function handler(req, res) {
         );
       }
       const connId = connection._id;
+      const ownerIdStr = String(creator._id);
       const subRoute = parts[2];
 
       if ((subRoute === 'close' || subRoute === 'end') && req.method === 'POST') {
@@ -2110,11 +2211,14 @@ export default async function handler(req, res) {
             { connectionId: connId, senderRole: 'guest', seenAt: null },
             { $set: { seenAt: seenNow } }
           );
-          const list = await db
+          const rawList = await db
             .collection('messages')
             .find({ connectionId: connId })
             .sort({ createdAt: 1 })
             .toArray();
+          const list = rawList.filter(
+            (m) => !m.ownerCreatorId || String(m.ownerCreatorId) === ownerIdStr
+          );
           const formattedMessages = await Promise.all(
             list.map((m) => formatMessageDocAsync(m, 'creator', connection.verificationCode || ''))
           );
@@ -2166,6 +2270,8 @@ export default async function handler(req, res) {
               : '');
           const inserted = await db.collection('messages').insertOne({
             connectionId: connId,
+            ownerCreatorId: ownerIdStr,
+            inviteToken: String(connection.inviteToken || ''),
             senderRole: 'creator',
             senderName: creator.displayName,
             body: text,

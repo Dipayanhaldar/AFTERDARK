@@ -1,6 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import handler from '../api/[...route].js';
+import {
+  recordUserAdInteraction,
+  getBehaviorRankedBrands,
+  getUserAdBehaviorProfile,
+  analyzeChatContextLocally
+} from './commerce-data.js';
 
 function invokeApi(method, urlPath, { body = null, headers = {}, query = {} } = {}) {
   return new Promise((resolve, reject) => {
@@ -343,4 +349,87 @@ describe('Account Isolation & Anti-Hijack Security Suite', () => {
     assert.equal(lockedRes.status, 429);
     assert.match(lockedRes.body.error, /Too many incorrect 6-digit OTP attempts/i);
   });
+
+  it('7. Bot Detection blocks automated scraper traffic with Flirty Human Challenge and unlocks with signed ad_hp2 pass token', async () => {
+    // Automated scraper UA attempting to hit API without human pass token gets 429 with requiresFlirtyChallenge: true
+    const botRes = await invokeApi('POST', '/api/ai/analyze-chat', {
+      body: { messages: [], draftText: 'hello' },
+      headers: {
+        'user-agent': 'python-requests/2.31.0',
+        'x-device-id': `bot_scraper_${suffix}`
+      }
+    });
+    assert.equal(botRes.status, 429);
+    assert.equal(botRes.body.requiresFlirtyChallenge, true);
+    assert.equal(botRes.headers['x-afterdark-bot-challenge'], 'required');
+
+    // Selecting a robotic answer on /api/security/verify-human is rejected with 403
+    const failChallenge = await invokeApi('POST', '/api/security/verify-human', {
+      body: {
+        challengeId: 'flirt_chai_1',
+        selectedOptionId: 'bot_1',
+        holdDurationMs: 1200
+      },
+      headers: { 'x-device-id': `bot_scraper_${suffix}` }
+    });
+    assert.equal(failChallenge.status, 403);
+    assert.equal(failChallenge.body.requiresFlirtyChallenge, true);
+
+    // Selecting the genuine romantic human option + holding heart >= 800ms issues a signed ad_hp2 token
+    const passChallenge = await invokeApi('POST', '/api/security/verify-human', {
+      body: {
+        challengeId: 'flirt_chai_1',
+        selectedOptionId: 'human_1',
+        holdDurationMs: 1250
+      },
+      headers: { 'x-device-id': `bot_scraper_${suffix}` }
+    });
+    assert.equal(passChallenge.status, 200);
+    assert.equal(passChallenge.body.verified, true);
+    assert.ok(passChallenge.body.humanPassToken.startsWith('ad_hp2.'));
+
+    // Subsequent request with X-AfterDark-Human-Pass succeeds with 200
+    const unlockedRes = await invokeApi('POST', '/api/ai/analyze-chat', {
+      body: { messages: [], draftText: 'coffee date' },
+      headers: {
+        'user-agent': 'python-requests/2.31.0',
+        'x-device-id': `bot_scraper_${suffix}`,
+        'x-afterdark-human-pass': passChallenge.body.humanPassToken
+      }
+    });
+    assert.equal(unlockedRes.status, 200);
+    assert.ok(unlockedRes.body.insight?.primaryBrand);
+  });
+
+  it('8. In-Built Invisible Free Behavioral & Ad-History AI Engine ranks brands from user activity with zero external keys', () => {
+    // Record user interactions with Nykaa & Tira (beauty category + coupon copy + checkout click)
+    recordUserAdInteraction({
+      brandId: 'nykaa',
+      category: 'beauty',
+      action: 'coupon_copy'
+    });
+    recordUserAdInteraction({
+      brandId: 'nykaa',
+      category: 'beauty',
+      action: 'checkout_click',
+      query: 'luxury perfume gift set'
+    });
+    recordUserAdInteraction({
+      brandId: 'zomato',
+      category: 'food',
+      action: 'dismiss'
+    });
+
+    const profile = getUserAdBehaviorProfile();
+    assert.ok(profile.brandScores.nykaa >= 14);
+    assert.ok(profile.dismissedBrandIds.includes('zomato'));
+
+    const topBrands = getBehaviorRankedBrands(5);
+    assert.equal(topBrands[0].id, 'nykaa');
+
+    // Local chat context analyzer uses behavioral affinity when chat has no explicit brand keyword
+    const localInsight = analyzeChatContextLocally([], '', 'creator');
+    assert.equal(localInsight.primaryBrand.id, 'nykaa');
+  });
 });
+

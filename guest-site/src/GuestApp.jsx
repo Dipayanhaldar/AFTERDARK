@@ -14,7 +14,8 @@ import {
   IncomingMessageToast,
   ChatMediaInputActions,
   FlipkartBrandQuickStrip,
-  GoogleSignInButton
+  GoogleSignInButton,
+  FlirtyHumanVerificationModal
 } from './commerce-catalog';
 import {
   playIncomingMessageSound,
@@ -825,6 +826,7 @@ export function GuestApp() {
 
   return (
     <div className="guest-shell">
+      <FlirtyHumanVerificationModal />
       <header className="guest-topbar">
         <div className="guest-brand">
           <span className="guest-moon-icon ad-animated-logo" aria-hidden="true">

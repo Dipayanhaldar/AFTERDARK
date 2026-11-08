@@ -17,7 +17,8 @@ import {
   IncomingMessageToast,
   ChatMediaInputActions,
   FlipkartBrandQuickStrip,
-  GoogleSignInButton
+  GoogleSignInButton,
+  FlirtyHumanVerificationModal
 } from './commerce-catalog';
 import {
   playIncomingMessageSound,
@@ -1260,6 +1261,7 @@ function App() {
 
   return (
     <div className="ad-shell">
+      <FlirtyHumanVerificationModal />
       <div className="ad-ambient ad-ambient-one" />
       <div className="ad-ambient ad-ambient-two" />
 

@@ -3,7 +3,11 @@ import { APP_VERSION } from './version-manifest.js';
 import {
   classifyEndpointPriority,
   executeWithTrafficControl,
-  recordServerTrafficHeaders
+  getHumanTrustScore,
+  getStoredHumanPassToken,
+  recordServerTrafficHeaders,
+  saveVerifiedHumanPassToken,
+  triggerFlirtyBotChallenge
 } from './traffic-control.js';
 import {
   encodeOtpSignature,
@@ -540,6 +544,12 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
   const state = readSharedState();
   const cleanPath = path.split('?')[0].replace(/^\/+/, '');
   const parts = cleanPath.split('/').filter(Boolean);
+
+  if (cleanPath === 'security/verify-human' && method === 'POST') {
+    const fallbackPass = 'ad_hp2.local_' + Date.now().toString(36);
+    saveVerifiedHumanPassToken(fallbackPass);
+    return { ok: true, humanPassToken: fallbackPass };
+  }
 
   if (cleanPath === 'ai/analyze-chat' && method === 'POST') {
     const messages = Array.isArray(body.messages) ? body.messages : state.messages;
@@ -1244,6 +1254,11 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
   headers['X-Device-Id'] = getClientDeviceId();
   headers['X-AfterDark-Version'] = APP_VERSION;
   headers['X-AfterDark-Priority'] = priorityLane;
+  headers['X-AfterDark-Human-Score'] = String(getHumanTrustScore());
+  const storedHumanPass = getStoredHumanPassToken();
+  if (storedHumanPass) {
+    headers['X-AfterDark-Human-Pass'] = storedHumanPass;
+  }
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -1296,6 +1311,9 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
       if (contentType.includes('application/json')) {
         const data = await response.json();
         if (response.ok) {
+          if (data?.humanPassToken) {
+            saveVerifiedHumanPassToken(data.humanPassToken);
+          }
           if (data?.user && (data?.sessionToken || token)) {
             mirrorUserLocally(data.user, data.sessionToken || token);
           }
@@ -1322,6 +1340,10 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
         }
         lastStatus = response.status;
         lastHttpError = new Error(data.error || 'Request failed');
+        if (data?.requiresFlirtyChallenge) {
+          lastHttpError.requiresFlirtyChallenge = true;
+          triggerFlirtyBotChallenge(data.error || 'Quick Flirty Human Verification required ♥');
+        }
       }
     } catch {
       // Network error on candidate base
@@ -1334,8 +1356,8 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
     cleanPath === 'invites/current' ||
     cleanPath === 'connections';
 
-  // If the server explicitly returned a 400, 401, 403, 409, or 410 validation/security error on a write/action route, throw it!
-  if (lastHttpError && [400, 401, 403, 409, 410].includes(lastStatus) && !isReadOrSessionCheck) {
+  // If the server explicitly returned a 400, 401, 403, 409, 410, or 429 validation/security error on a write/action route, throw it!
+  if (lastHttpError && [400, 401, 403, 409, 410, 429].includes(lastStatus) && !isReadOrSessionCheck) {
     throw lastHttpError;
   }
 

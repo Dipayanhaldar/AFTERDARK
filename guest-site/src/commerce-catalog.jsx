@@ -12,7 +12,10 @@ import {
   detectBrandsInMessage,
   detectImplicitChatBrands,
   getPersonalizedInChatBrandAd,
-  analyzeChatContextLocally
+  analyzeChatContextLocally,
+  getUserAdBehaviorProfile,
+  recordUserAdInteraction,
+  getBehaviorRankedBrands
 } from './commerce-data';
 import {
   getGenZSeenStatusText,
@@ -33,8 +36,12 @@ import {
 import {
   getClientTrafficSnapshot,
   subscribeTrafficTelemetry,
-  getDeviceCompatibilityProfile
+  getDeviceCompatibilityProfile,
+  FLIRTY_HUMAN_CHALLENGES,
+  saveVerifiedHumanPassToken,
+  triggerFlirtyBotChallenge
 } from './traffic-control';
+import { resilientApiRequest } from './couple-sync';
 
 export {
   APP_VERSION,
@@ -55,7 +62,11 @@ export {
   detectBrandsInMessage,
   detectImplicitChatBrands,
   getPersonalizedInChatBrandAd,
-  analyzeChatContextLocally
+  analyzeChatContextLocally,
+  getUserAdBehaviorProfile,
+  recordUserAdInteraction,
+  getBehaviorRankedBrands,
+  triggerFlirtyBotChallenge
 };
 
 /**
@@ -301,6 +312,12 @@ function renderTextWithClickableAdLinks(text, onOpenBrandDrawer) {
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
+            recordUserAdInteraction({
+              brandId: matchedBrand.id,
+              category: matchedBrand.category,
+              action: 'keyword_click',
+              query: clean
+            });
             if (onOpenBrandDrawer) onOpenBrandDrawer(matchedBrand.id);
           }}
         >
@@ -675,8 +692,19 @@ export function InChatBrandPromoCard({ adData, onOpenBrandDrawer }) {
   const [expanded, setExpanded] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
-  if (!adData || !adData.brand || dismissed) return null;
-  const { brand, flirtCopy, city, meme } = adData;
+  const brand = adData?.brand;
+  useEffect(() => {
+    if (brand?.id) {
+      recordUserAdInteraction({
+        brandId: brand.id,
+        category: brand.category,
+        action: 'view'
+      });
+    }
+  }, [brand?.id, brand?.category]);
+
+  if (!adData || !brand || dismissed) return null;
+  const { flirtCopy, city, meme } = adData;
 
   const directBrandHref = brand.buildCheckoutUrl
     ? brand.buildCheckoutUrl(city || 'Hyderabad', brand.items[0]?.searchQuery || brand.name)
@@ -685,6 +713,11 @@ export function InChatBrandPromoCard({ adData, onOpenBrandDrawer }) {
   function handleCopyCode(e) {
     e.stopPropagation();
     if (!brand.couponCode) return;
+    recordUserAdInteraction({
+      brandId: brand.id,
+      category: brand.category,
+      action: 'coupon_copy'
+    });
     navigator.clipboard?.writeText(brand.couponCode).catch(() => {});
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 2200);
@@ -712,7 +745,16 @@ export function InChatBrandPromoCard({ adData, onOpenBrandDrawer }) {
         }}
       >
         <div
-          onClick={() => setExpanded((prev) => !prev)}
+          onClick={() => {
+            if (!expanded) {
+              recordUserAdInteraction({
+                brandId: brand.id,
+                category: brand.category,
+                action: 'peek_expand'
+              });
+            }
+            setExpanded((prev) => !prev);
+          }}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -727,12 +769,25 @@ export function InChatBrandPromoCard({ adData, onOpenBrandDrawer }) {
           <strong style={{ fontSize: '0.78rem', color: '#ffd1e6' }}>{brand.name}</strong>
           <span
             style={{
+              fontSize: '0.62rem',
+              padding: '1px 5px',
+              borderRadius: '4px',
+              background: 'rgba(255,255,255,0.08)',
+              color: '#cbd5e1',
+              fontWeight: 700
+            }}
+            title="Policy-compliant personalized brand suggestion"
+          >
+            Sponsored
+          </span>
+          <span
+            style={{
               fontSize: '0.74rem',
               color: 'rgba(255,255,255,0.82)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              maxWidth: '280px'
+              maxWidth: '250px'
             }}
           >
             {meme?.memeTitle || flirtCopy}
@@ -742,7 +797,16 @@ export function InChatBrandPromoCard({ adData, onOpenBrandDrawer }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button
             type="button"
-            onClick={() => setExpanded((prev) => !prev)}
+            onClick={() => {
+              if (!expanded) {
+                recordUserAdInteraction({
+                  brandId: brand.id,
+                  category: brand.category,
+                  action: 'peek_expand'
+                });
+              }
+              setExpanded((prev) => !prev);
+            }}
             style={{
               background: 'rgba(255, 79, 154, 0.14)',
               border: `1px solid ${brand.accent}66`,
@@ -760,6 +824,11 @@ export function InChatBrandPromoCard({ adData, onOpenBrandDrawer }) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              recordUserAdInteraction({
+                brandId: brand.id,
+                category: brand.category,
+                action: 'drawer_open'
+              });
               if (onOpenBrandDrawer) onOpenBrandDrawer(brand.id);
             }}
             style={{
@@ -779,6 +848,11 @@ export function InChatBrandPromoCard({ adData, onOpenBrandDrawer }) {
             type="button"
             onClick={(e) => {
               e.stopPropagation();
+              recordUserAdInteraction({
+                brandId: brand.id,
+                category: brand.category,
+                action: 'dismiss'
+              });
               setDismissed(true);
             }}
             style={{
@@ -810,7 +884,14 @@ export function InChatBrandPromoCard({ adData, onOpenBrandDrawer }) {
         >
           {meme && (
             <div
-              onClick={() => onOpenBrandDrawer && onOpenBrandDrawer(brand.id)}
+              onClick={() => {
+                recordUserAdInteraction({
+                  brandId: brand.id,
+                  category: brand.category,
+                  action: 'drawer_open'
+                });
+                if (onOpenBrandDrawer) onOpenBrandDrawer(brand.id);
+              }}
               style={{
                 padding: '7px 10px',
                 borderRadius: '9px',
@@ -875,6 +956,13 @@ export function InChatBrandPromoCard({ adData, onOpenBrandDrawer }) {
                 href={directBrandHref}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() =>
+                  recordUserAdInteraction({
+                    brandId: brand.id,
+                    category: brand.category,
+                    action: 'checkout_click'
+                  })
+                }
                 style={{ color: brand.accent, fontWeight: 700, textDecoration: 'underline' }}
               >
                 {brand.displayUrl} ↗
@@ -1497,17 +1585,17 @@ export function InlineCommerceDrawer({
   }, [propCity]);
 
   const filteredBrands = useMemo(() => {
-    return brandCatalog.filter((b) => {
-      const matchesCat = selectedCategory === 'all' || b.category === selectedCategory;
+    const rankedPool = getBehaviorRankedBrands(brandCatalog.length, selectedCategory);
+    return rankedPool.filter((b) => {
       const q = brandSearch.trim().toLowerCase();
       const matchesSearch =
         !q ||
         b.name.toLowerCase().includes(q) ||
         b.tagline.toLowerCase().includes(q) ||
         b.keywords.some((k) => k.toLowerCase().includes(q));
-      return matchesCat && matchesSearch;
+      return matchesSearch;
     });
-  }, [selectedCategory, brandSearch]);
+  }, [selectedCategory, brandSearch, open]);
 
   if (!open) return null;
 
@@ -1547,6 +1635,12 @@ export function InlineCommerceDrawer({
 
   function handleCopyCoupon(code) {
     if (!code) return;
+    recordUserAdInteraction({
+      brandId: activeBrand.id,
+      category: activeBrand.category,
+      action: 'coupon_copy',
+      query: customSearchQuery
+    });
     navigator.clipboard?.writeText(code).catch(() => {});
     setCopiedCoupon(code);
     setTimeout(() => setCopiedCoupon(''), 2500);
@@ -1727,7 +1821,7 @@ export function InlineCommerceDrawer({
           />
         </div>
 
-        {/* TOP 36+ TRENDING INDIAN BRANDS STRIP WITH LOGOS */}
+        {/* TOP 100 TRENDING INDIAN BRANDS STRIP WITH LOGOS (AUTO-RANKED BY YOUR VIBE & AD HISTORY) */}
         <div className="ad-brand-strip">
           {filteredBrands.map((b) => (
             <button
@@ -1736,6 +1830,12 @@ export function InlineCommerceDrawer({
               className={`ad-brand-tab ${activeBrand.id === b.id ? 'active' : ''}`}
               style={activeBrand.id === b.id ? { borderColor: b.accent } : undefined}
               onClick={() => {
+                recordUserAdInteraction({
+                  brandId: b.id,
+                  category: b.category,
+                  action: 'drawer_open',
+                  query: brandSearch
+                });
                 if (onSelectBrand) onSelectBrand(b.id);
                 setSelectedItemId(b.items[0]?.id || '');
               }}
@@ -2086,19 +2186,31 @@ export function FlipkartBrandQuickStrip({
   onOpenBrandDrawer
 }) {
   const [quickFlipkartSearch, setQuickFlipkartSearch] = useState('');
+  const [interactionTick, setInteractionTick] = useState(0);
 
   const flipkartDirectUrl = quickFlipkartSearch.trim()
     ? `https://www.flipkart.com/search?q=${encodeURIComponent(quickFlipkartSearch.trim())}`
     : 'https://www.flipkart.com/search?q=couple+gift+hamper+chocolates+watches';
 
-  const quickCuratedBrands = [
-    { id: 'flipkart_minutes', label: '⚡ Flipkart Minutes', accent: '#ffe500' },
-    { id: 'myntra', label: '👗 Myntra Twin Fits', accent: '#ff3f6c' },
-    { id: 'nykaa', label: '💄 Nykaa Luxe', accent: '#fc2779' },
-    { id: 'blinkit', label: '⚡ Blinkit 10-Min', accent: '#f8cb46' },
-    { id: 'zomato', label: '🍽️ Zomato Dining', accent: '#e23744' },
-    { id: 'cafes', label: `☕ ${userCity} Cafes`, accent: '#f59e0b' }
-  ];
+  const quickCuratedBrands = useMemo(() => {
+    const ranked = getBehaviorRankedBrands(5);
+    const defaultIds = ['flipkart_minutes', 'myntra', 'nykaa', 'blinkit', 'zomato', 'cafes'];
+    const mergedIds = Array.from(
+      new Set(['flipkart_minutes', ...ranked.map((b) => b.id), ...defaultIds])
+    ).slice(0, 6);
+
+    return mergedIds.map((id) => {
+      if (id === 'cafes') {
+        return { id: 'cafes', label: `☕ ${userCity} Cafes`, accent: '#f59e0b' };
+      }
+      const b = brandCatalog.find((entry) => entry.id === id) || brandCatalog[0];
+      return {
+        id: b.id,
+        label: `${b.emoji || '✨'} ${b.name.split(' ')[0]}`,
+        accent: b.accent || '#ff4f9a'
+      };
+    });
+  }, [userCity, interactionTick]);
 
   return (
     <div
@@ -2127,14 +2239,22 @@ export function FlipkartBrandQuickStrip({
             borderRadius: '99px',
             letterSpacing: '0.03em'
           }}
+          title="Policy-compliant personalized brand suggestions based on your activity"
         >
-          ⚡ FLIPKART &amp; BUILT-IN BRANDS
+          ⚡ FOR YOU · SPONSORED PICKS
         </span>
         {quickCuratedBrands.map((b) => (
           <button
             key={b.id}
             type="button"
-            onClick={() => onOpenBrandDrawer && onOpenBrandDrawer(b.id)}
+            onClick={() => {
+              recordUserAdInteraction({
+                brandId: b.id,
+                action: 'drawer_open'
+              });
+              setInteractionTick((t) => t + 1);
+              if (onOpenBrandDrawer) onOpenBrandDrawer(b.id);
+            }}
             style={{
               background: 'rgba(255,255,255,0.06)',
               border: `1px solid ${b.accent}66`,
@@ -2171,6 +2291,15 @@ export function FlipkartBrandQuickStrip({
           href={flipkartDirectUrl}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() => {
+            recordUserAdInteraction({
+              brandId: 'flipkart',
+              category: 'shopping',
+              action: 'search_query',
+              query: quickFlipkartSearch.trim() || 'couple gift hamper'
+            });
+            setInteractionTick((t) => t + 1);
+          }}
           style={{
             textDecoration: 'none',
             background: 'linear-gradient(135deg, #ffe500, #f59e0b)',
@@ -2940,6 +3069,286 @@ export function VersionAndTrafficControlDrawer({
     </div>
   );
 }
+
+/**
+ * Flirty Romantic Human Verification Modal (Zero Traffic Lights / Zero Ugly Captchas):
+ * - Automatically appears when sudden traffic spikes or automated bot patterns are detected.
+ * - Combines Cloudflare Turnstile Edge compatibility with an AfterDark Romantic Vibe Check +
+ *   1.2s Heartbeat Hold so only real humans can pass.
+ */
+export function FlirtyHumanVerificationModal() {
+  const [traffic, setTraffic] = useState(() => getClientTrafficSnapshot());
+  const [selectedOptionId, setSelectedOptionId] = useState('');
+  const [holdProgress, setHoldProgress] = useState(0);
+  const [holding, setHolding] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const holdTimerRef = useRef(null);
+  const holdStartRef = useRef(0);
+
+  useEffect(() => {
+    return subscribeTrafficTelemetry(setTraffic);
+  }, []);
+
+  const activeChallenge =
+    traffic.activeChallenge || FLIRTY_HUMAN_CHALLENGES[0];
+
+  useEffect(() => {
+    if (!traffic.challengeRequired) {
+      setSelectedOptionId('');
+      setHoldProgress(0);
+      setHolding(false);
+      setErrorMsg('');
+    }
+  }, [traffic.challengeRequired]);
+
+  if (!traffic.challengeRequired) return null;
+
+  function startHoldHeart() {
+    setErrorMsg('');
+    if (!selectedOptionId) {
+      setErrorMsg('Pehle upar wala romantic option choose karo jaan ♥');
+      return;
+    }
+    setHolding(true);
+    holdStartRef.current = Date.now();
+    if (holdTimerRef.current) clearInterval(holdTimerRef.current);
+    holdTimerRef.current = setInterval(() => {
+      const elapsed = Date.now() - holdStartRef.current;
+      const pct = Math.min(100, Math.round((elapsed / 1100) * 100));
+      setHoldProgress(pct);
+      if (pct >= 100) {
+        clearInterval(holdTimerRef.current);
+        holdTimerRef.current = null;
+        setHolding(false);
+        completeHumanVerification(elapsed);
+      }
+    }, 45);
+  }
+
+  function stopHoldHeart() {
+    if (holdTimerRef.current) {
+      clearInterval(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    setHolding(false);
+    if (holdProgress < 100) {
+      setHoldProgress(0);
+    }
+  }
+
+  async function completeHumanVerification(holdDurationMs = 1150) {
+    if (submitting) return;
+    setSubmitting(true);
+    setErrorMsg('');
+    try {
+      const data = await resilientApiRequest('/security/verify-human', {
+        method: 'POST',
+        priority: 'P0_CRITICAL',
+        body: JSON.stringify({
+          challengeId: activeChallenge.id,
+          selectedOptionId,
+          holdDurationMs: Math.max(holdDurationMs, 1100)
+        })
+      });
+      if (data?.humanPassToken) {
+        saveVerifiedHumanPassToken(data.humanPassToken);
+      }
+    } catch (err) {
+      setHoldProgress(0);
+      setErrorMsg(
+        err.message ||
+          'Arre! Woh robotic answer tha 😂 Asli romantic human option choose karke ♥ hold karo!'
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      className="ad-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Romantic Human Vibe Check"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 12000,
+        background: 'rgba(10, 4, 18, 0.88)',
+        backdropFilter: 'blur(12px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px'
+      }}
+    >
+      <div
+        style={{
+          width: 'min(460px, 100%)',
+          borderRadius: '22px',
+          padding: '22px 20px',
+          background: 'linear-gradient(145deg, #240b36 0%, #12071d 100%)',
+          border: '1.5px solid #ff4f9a',
+          boxShadow: '0 24px 64px rgba(255, 79, 154, 0.38)',
+          color: '#fff',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '14px'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+          <span
+            style={{
+              background: 'rgba(255, 79, 154, 0.2)',
+              border: '1px solid #ff4f9a',
+              color: '#ffd1e6',
+              fontWeight: 800,
+              fontSize: '0.7rem',
+              padding: '3px 10px',
+              borderRadius: '99px'
+            }}
+          >
+            🛡️ CLOUDFLARE EDGE × AFTERDARK VIBE CHECK
+          </span>
+          <span style={{ fontSize: '0.72rem', color: '#f9a8d4', fontWeight: 700 }}>
+            Zero Traffic Lights ♥
+          </span>
+        </div>
+
+        <div>
+          <h3 style={{ margin: '0 0 4px', fontSize: '1.12rem', color: '#fff' }}>
+            Hold up, Handsome / Gorgeous! 😘 Prove you’re a lover, not a bot
+          </h3>
+          <p style={{ margin: 0, fontSize: '0.8rem', color: '#cbd5e1', lineHeight: 1.45 }}>
+            Sudden traffic rush detect hua hai! Koi boring crosswalk ya fire hydrant nahi — bas asli romantic जवाब chuno aur dil (♥) ko 1 second dabaye rakho:
+          </p>
+        </div>
+
+        <div
+          style={{
+            padding: '12px',
+            borderRadius: '14px',
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px'
+          }}
+        >
+          <strong style={{ fontSize: '0.88rem', color: '#fde047' }}>
+            {activeChallenge.question}
+          </strong>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', marginTop: '4px' }}>
+            {activeChallenge.options.map((opt) => {
+              const isSelected = selectedOptionId === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedOptionId(opt.id);
+                    setErrorMsg('');
+                  }}
+                  style={{
+                    textAlign: 'left',
+                    padding: '10px 12px',
+                    borderRadius: '11px',
+                    border: isSelected
+                      ? '1.5px solid #ff4f9a'
+                      : '1px solid rgba(255,255,255,0.15)',
+                    background: isSelected
+                      ? 'rgba(255, 79, 154, 0.22)'
+                      : 'rgba(255,255,255,0.04)',
+                    color: '#fff',
+                    fontSize: '0.81rem',
+                    fontWeight: isSelected ? 700 : 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {isSelected ? '💖 ' : '○ '}
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {errorMsg && (
+          <div
+            style={{
+              padding: '8px 11px',
+              borderRadius: '10px',
+              background: 'rgba(244, 63, 94, 0.2)',
+              border: '1px solid #f43f5e',
+              color: '#fecdd3',
+              fontSize: '0.78rem',
+              fontWeight: 600
+            }}
+          >
+            {errorMsg}
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={submitting}
+          onMouseDown={startHoldHeart}
+          onMouseUp={stopHoldHeart}
+          onMouseLeave={stopHoldHeart}
+          onTouchStart={(e) => {
+            e.preventDefault();
+            startHoldHeart();
+          }}
+          onTouchEnd={stopHoldHeart}
+          onClick={() => {
+            // Accessibility / keyboard fallback if user taps after selecting valid option
+            if (selectedOptionId && !holding && holdProgress === 0) {
+              completeHumanVerification(1200);
+            }
+          }}
+          style={{
+            position: 'relative',
+            overflow: 'hidden',
+            width: '100%',
+            padding: '13px 16px',
+            borderRadius: '14px',
+            border: '1.5px solid #ff4f9a',
+            background: 'rgba(255, 79, 154, 0.18)',
+            color: '#fff',
+            fontWeight: 800,
+            fontSize: '0.9rem',
+            cursor: submitting ? 'wait' : 'pointer',
+            userSelect: 'none'
+          }}
+        >
+          <span
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: `${holdProgress}%`,
+              background: 'linear-gradient(90deg, #ff4f9a, #ec4899)',
+              transition: 'width 0.05s linear',
+              zIndex: 0
+            }}
+          />
+          <span style={{ position: 'relative', zIndex: 1 }}>
+            {submitting
+              ? '✨ Unlocking Private Lounge...'
+              : holdProgress > 0
+              ? `💓 Feeling Your Heartbeat... ${holdProgress}%`
+              : '💓 Press & Hold Heart (or Tap) to Enter Private Lounge'}
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 
 

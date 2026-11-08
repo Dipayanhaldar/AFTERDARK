@@ -2767,6 +2767,190 @@ const GENERAL_CHAT_BRAND_PAIRS = [
   ['uber', 'rapido']
 ];
 
+const AD_BEHAVIOR_STORAGE_KEY = 'afterdark_ad_behavior_profile_v2';
+
+const ACTION_WEIGHTS = {
+  view: 1,
+  peek_expand: 2,
+  keyword_click: 4,
+  drawer_open: 4,
+  coupon_copy: 6,
+  checkout_click: 8,
+  search_query: 5,
+  dismiss: -5
+};
+
+let memoryBehaviorFallback = {
+  brandScores: {},
+  categoryScores: {},
+  recentBrandIds: [],
+  recentQueries: [],
+  dismissedBrandIds: [],
+  updatedAt: 0
+};
+
+export function getUserAdBehaviorProfile() {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = window.localStorage.getItem(AD_BEHAVIOR_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            brandScores: parsed.brandScores || {},
+            categoryScores: parsed.categoryScores || {},
+            recentBrandIds: Array.isArray(parsed.recentBrandIds) ? parsed.recentBrandIds : [],
+            recentQueries: Array.isArray(parsed.recentQueries) ? parsed.recentQueries : [],
+            dismissedBrandIds: Array.isArray(parsed.dismissedBrandIds) ? parsed.dismissedBrandIds : [],
+            updatedAt: Number(parsed.updatedAt || 0)
+          };
+        }
+      }
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return memoryBehaviorFallback;
+}
+
+function saveUserAdBehaviorProfile(profile) {
+  memoryBehaviorFallback = profile;
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.setItem(AD_BEHAVIOR_STORAGE_KEY, JSON.stringify(profile));
+    }
+  } catch {
+    // ignore storage quota errors
+  }
+}
+
+/**
+ * In-Built Invisible Free Behavioral & Ad-History AI Tracker:
+ * - Passively learns from user clicks, searches, coupon copies, checkout visits, and dismissals
+ *   entirely on-device with zero external paid API keys or third-party tracking leaks.
+ */
+export function recordUserAdInteraction({
+  brandId = '',
+  category = '',
+  action = 'view',
+  query = ''
+} = {}) {
+  const profile = getUserAdBehaviorProfile();
+  const weight = ACTION_WEIGHTS[action] ?? 2;
+  const cleanBrandId = String(brandId || '').trim().toLowerCase();
+  const matchedBrand = cleanBrandId
+    ? brandCatalog.find((b) => b.id === cleanBrandId)
+    : null;
+  const effectiveCategory =
+    category || matchedBrand?.category || '';
+
+  if (cleanBrandId) {
+    const prevBrandScore = Number(profile.brandScores[cleanBrandId] || 0);
+    profile.brandScores[cleanBrandId] = Math.max(-15, Math.min(120, prevBrandScore + weight));
+
+    if (action === 'dismiss') {
+      if (!profile.dismissedBrandIds.includes(cleanBrandId)) {
+        profile.dismissedBrandIds = [cleanBrandId, ...profile.dismissedBrandIds].slice(0, 8);
+      }
+    } else if (weight >= 2) {
+      profile.dismissedBrandIds = profile.dismissedBrandIds.filter((id) => id !== cleanBrandId);
+      profile.recentBrandIds = [
+        cleanBrandId,
+        ...profile.recentBrandIds.filter((id) => id !== cleanBrandId)
+      ].slice(0, 12);
+    }
+  }
+
+  if (effectiveCategory) {
+    const prevCatScore = Number(profile.categoryScores[effectiveCategory] || 0);
+    profile.categoryScores[effectiveCategory] = Math.max(
+      -10,
+      Math.min(100, prevCatScore + Math.round(weight * 0.75))
+    );
+  }
+
+  const cleanQuery = String(query || '').trim().toLowerCase();
+  if (cleanQuery.length >= 2) {
+    profile.recentQueries = [
+      cleanQuery,
+      ...profile.recentQueries.filter((q) => q !== cleanQuery)
+    ].slice(0, 10);
+
+    // Boost brands matching the user's browser/in-app search query
+    const queryMatches = detectBrandsInMessage(cleanQuery);
+    for (const b of queryMatches.slice(0, 3)) {
+      profile.brandScores[b.id] = Math.min(120, Number(profile.brandScores[b.id] || 0) + 4);
+      profile.categoryScores[b.category] = Math.min(
+        100,
+        Number(profile.categoryScores[b.category] || 0) + 3
+      );
+    }
+  }
+
+  profile.updatedAt = Date.now();
+  saveUserAdBehaviorProfile(profile);
+  return profile;
+}
+
+/**
+ * Computes a contextual + behavioral affinity score for a brand based on:
+ * 1. User's past ad clicks, coupon copies, checkout visits, and search queries
+ * 2. Category affinity
+ * 3. Browser time-of-day context (e.g., late-night quick-commerce/cravings vs daytime cafes/shopping)
+ */
+function scoreBrandByUserBehavior(brand, profile = getUserAdBehaviorProfile()) {
+  if (!brand) return -999;
+  let score = 0;
+
+  score += Number(profile.brandScores?.[brand.id] || 0) * 3;
+  score += Number(profile.categoryScores?.[brand.category] || 0) * 1.5;
+
+  const recentIdx = profile.recentBrandIds ? profile.recentBrandIds.indexOf(brand.id) : -1;
+  if (recentIdx === 0) score += 14;
+  else if (recentIdx > 0 && recentIdx <= 3) score += 8;
+
+  if (profile.dismissedBrandIds?.includes(brand.id)) {
+    score -= 25;
+  }
+
+  // Time-of-day browser context (100% local, zero external API)
+  const hour = new Date().getHours();
+  if (hour >= 22 || hour < 4) {
+    // AfterDark late-night hours: boost quick delivery, late-night snacks, wellness & streaming
+    if (brand.category === 'quick' || ['swiggy', 'zomato', 'baskin_robbins', 'durex_india', 'bold_care', 'netflix', 'spotify', 'oyo'].includes(brand.id)) {
+      score += 5;
+    }
+  } else if (hour >= 16 && hour < 22) {
+    // Evening date hours: boost dining, cafes, movies, fashion & rides
+    if (['zomato', 'eazydiner', 'cafes', 'starbucks', 'myntra', 'nykaa', 'bookmyshow', 'uber'].includes(brand.id)) {
+      score += 4;
+    }
+  }
+
+  return score;
+}
+
+export function getBehaviorRankedBrands(limit = 6, categoryFilter = 'all') {
+  const profile = getUserAdBehaviorProfile();
+  const pool =
+    categoryFilter && categoryFilter !== 'all'
+      ? brandCatalog.filter((b) => b.category === categoryFilter)
+      : [...brandCatalog];
+
+  const scored = pool.map((b, idx) => ({
+    brand: b,
+    score: scoreBrandByUserBehavior(b, profile),
+    idx
+  }));
+
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.idx - b.idx;
+  });
+
+  return scored.slice(0, limit).map((entry) => entry.brand);
+}
+
 export function detectImplicitChatBrands(text = '', messages = [], msgIndex = 0) {
   const raw = String(text || '').trim();
   if (!raw || raw.length < 4) return null;
@@ -2783,15 +2967,31 @@ export function detectImplicitChatBrands(text = '', messages = [], msgIndex = 0)
     hash = ((hash ^ raw.charCodeAt(i)) * 16777619) >>> 0;
   }
 
+  const behaviorProfile = getUserAdBehaviorProfile();
+
   for (const bucket of IMPLICIT_VIBE_BUCKETS) {
     if (bucket.regex.test(raw)) {
-      const pair = bucket.pairs[hash % bucket.pairs.length];
-      const creatorBrand = brandCatalog.find((b) => b.id === pair[0]) || brandCatalog[0];
-      const guestBrand = brandCatalog.find((b) => b.id === pair[1]) || brandCatalog[1];
+      // Rank candidate pairs in this vibe bucket by the user's ad & browser behavior profile
+      let bestPair = bucket.pairs[hash % bucket.pairs.length];
+      let bestPairScore = -999;
+      for (const candidatePair of bucket.pairs) {
+        const b1 = brandCatalog.find((b) => b.id === candidatePair[0]);
+        const b2 = brandCatalog.find((b) => b.id === candidatePair[1]);
+        const pairScore =
+          scoreBrandByUserBehavior(b1, behaviorProfile) +
+          scoreBrandByUserBehavior(b2, behaviorProfile);
+        if (pairScore > bestPairScore && pairScore > 4) {
+          bestPairScore = pairScore;
+          bestPair = candidatePair;
+        }
+      }
+
+      const creatorBrand = brandCatalog.find((b) => b.id === bestPair[0]) || brandCatalog[0];
+      const guestBrand = brandCatalog.find((b) => b.id === bestPair[1]) || brandCatalog[1];
       return {
         creatorBrand,
         guestBrand,
-        vibeLabel: bucket.label,
+        vibeLabel: bestPairScore > 4 ? `${bucket.label} · Personalized` : bucket.label,
         isImplicit: true,
         hash
       };
@@ -2801,6 +3001,27 @@ export function detectImplicitChatBrands(text = '', messages = [], msgIndex = 0)
   // Mystery surprise drop ONLY when the conversation has real substance (at least 14 chars)
   // and passes the surprise lottery (roughly 1 in 3 messages), so it never feels robotic!
   if (raw.length >= 14 && hash % 3 === 0) {
+    const topBehaviorBrands = getBehaviorRankedBrands(4);
+    const hasHistoryAffinity =
+      topBehaviorBrands.length >= 2 &&
+      scoreBrandByUserBehavior(topBehaviorBrands[0], behaviorProfile) >= 6;
+
+    if (hasHistoryAffinity) {
+      const creatorBrand = topBehaviorBrands[0];
+      const guestBrand =
+        (creatorBrand.companionBrandId &&
+          brandCatalog.find((b) => b.id === creatorBrand.companionBrandId)) ||
+        topBehaviorBrands[1] ||
+        brandCatalog[1];
+      return {
+        creatorBrand,
+        guestBrand,
+        vibeLabel: '✨ Smart Pick from Your Vibe',
+        isImplicit: true,
+        hash
+      };
+    }
+
     const fallbackPair = GENERAL_CHAT_BRAND_PAIRS[hash % GENERAL_CHAT_BRAND_PAIRS.length];
     const creatorBrand = brandCatalog.find((b) => b.id === fallbackPair[0]) || brandCatalog[0];
     const guestBrand = brandCatalog.find((b) => b.id === fallbackPair[1]) || brandCatalog[1];
@@ -2987,13 +3208,17 @@ export function analyzeChatContextLocally(messages = [], draftText = '', viewerR
       ? detectImplicitChatBrands(recentText, messages, Math.max(0, messages.length - 1))
       : null;
 
+  const behaviorTop = getBehaviorRankedBrands(3);
+
   const primary =
     matched[0] ||
     (viewerRole === 'creator' ? implicit?.creatorBrand : implicit?.guestBrand) ||
+    behaviorTop[0] ||
     brandCatalog[0];
   const secondary =
     matched[1] ||
     (primary.companionBrandId && brandCatalog.find((b) => b.id === primary.companionBrandId)) ||
+    behaviorTop.find((b) => b.id !== primary.id) ||
     brandCatalog[1];
 
   return {
