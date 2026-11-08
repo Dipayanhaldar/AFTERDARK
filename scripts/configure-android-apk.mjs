@@ -397,7 +397,7 @@ function configureAndroidResources() {
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
-    <!-- Optional hardware features so Galaxy Store, PhonePe Indus Appstore & tablets/foldables never filter out the app -->
+    <!-- Optional hardware features so PhonePe Indus Appstore & tablets/foldables never filter out the app -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
@@ -443,9 +443,6 @@ function configureAndroidResources() {
         <meta-data
             android:name="android.allow_multiple_resumed_activities"
             android:value="true" />
-        <meta-data
-            android:name="samsung.dex.support"
-            android:value="true" />
     </application>
 </manifest>
 `;
@@ -480,23 +477,12 @@ function configureAndroidResources() {
         : null;
 
     if (keystoreFileName && !gradle.includes('signingConfigs')) {
-      const escapeGroovySingleQuote = (val) => String(val).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      const storePassword = escapeGroovySingleQuote(
-        process.env.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026'
-      );
-      const keyAlias = escapeGroovySingleQuote(
-        process.env.ANDROID_KEY_ALIAS || 'afterdark_key'
-      );
-      const keyPassword = escapeGroovySingleQuote(
-        process.env.ANDROID_KEY_PASSWORD || process.env.ANDROID_KEYSTORE_PASSWORD || 'AfterDarkStore2026'
-      );
-
       const signingBlock = `    signingConfigs {
         release {
             storeFile file('${keystoreFileName}')
-            storePassword '${storePassword}'
-            keyAlias '${keyAlias}'
-            keyPassword '${keyPassword}'
+            storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+            keyAlias System.getenv('ANDROID_KEY_ALIAS')
+            keyPassword System.getenv('ANDROID_KEY_PASSWORD')
             v1SigningEnabled true
             v2SigningEnabled true
         }
@@ -518,7 +504,7 @@ function configureAndroidResources() {
   }
 
   console.log(
-    `[configure-android-apk] Generated AFTERDARK v${resolvedVersionName} (versionCode ${resolvedVersionCode}) launcher icons, store icons, Galaxy/Indus manifest features, and release signing config.`
+    `[configure-android-apk] Generated AFTERDARK v${resolvedVersionName} (versionCode ${resolvedVersionCode}) launcher icons, store icons, PhonePe Indus manifest features, and release signing config.`
   );
 }
 

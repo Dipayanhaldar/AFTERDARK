@@ -22,16 +22,8 @@
       "id": "com.afterdark.universe"
     },
     {
-      "platform": "galaxy",
-      "id": "com.afterdark.universe"
-    },
-    {
-      "platform": "amazon",
-      "id": "com.afterdark.universe"
-    },
-    {
-      "platform": "play",
-      "id": "com.afterdark.universe"
+      "platform": "windows",
+      "url": "https://afterdark-social-universe.vercel.app/manifest.webmanifest"
     }
   ],
   "icons": [

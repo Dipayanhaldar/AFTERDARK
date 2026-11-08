@@ -12,14 +12,23 @@ android/
 *.aab
 *.apks
 
+# Local runtime data & build outputs — never commit these
+.data/
+store-output/
+
 # Signing material and service credentials — never commit these
 *.jks
 *.keystore
 *.p12
 *.pfx
+*.b64
+*.pem
+*.key
+*.crt
 *.mobileprovision
 key.properties
 google-services.json
+firebase-applet-config.json
 service-account*.json
 firebase-adminsdk*.json
 .secrets/

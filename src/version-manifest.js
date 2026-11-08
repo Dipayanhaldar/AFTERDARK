@@ -31,9 +31,9 @@ export const VERSION_SEGMENTS = [
     index: 2,
     digit: '0',
     code: 'STORE_CHANNEL',
-    title: 'Universal Multi-Store & Cross-Runtime Build',
+    title: 'PhonePe Indus Appstore & Microsoft Store PWA Build',
     meaning:
-      'Unified compatibility across Desktop/Mobile Web, PWA, Android APK, Amazon Appstore, PhonePe Indus Appstore, Samsung Galaxy Store & GitHub Releases.',
+      'Unified compatibility across Desktop/Mobile Web, PWA, Android APK, PhonePe Indus Appstore, Microsoft Store (PWA) & GitHub Releases.',
     hintLocation: 'manifest.webmanifest · capacitor.config.json · scripts/configure-android-apk.mjs'
   },
   {
@@ -49,9 +49,9 @@ export const VERSION_SEGMENTS = [
     index: 4,
     digit: '6',
     code: 'UPDATE_PATCH_LOC',
-    title: 'Auto-Incrementing Multi-Store AAB/APK VersionCode & JKS Signing',
+    title: 'PhonePe Indus Appstore AAB/APK Auto-VersionCode & Secret Hardening',
     meaning:
-      'Bumped release version to 2.0.2.6+ with CI-driven monotonically increasing versionCode (202600 + run_number) and JKS keystore packaging so Indus Appstore & Galaxy Store uploads never collide with previous versions.',
+      'Bumped release version to 2.0.2.6+ with CI-driven monotonically increasing versionCode (202600 + run_number) and strict GitHub Secrets signing with zero repository key exposure.',
     hintLocation: 'scripts/configure-android-apk.mjs · .github/workflows/galaxy-store-aab.yml · .github/workflows/android-apk.yml'
   }
 ];
@@ -59,15 +59,15 @@ export const VERSION_SEGMENTS = [
 export const VERSION_UPDATE_LOCATIONS = [
   {
     id: 'loc-version-core',
-    version: '2.0.2.5',
+    version: '2.0.2.6',
     area: 'Version & Telemetry Engine',
     file: 'src/version-manifest.js',
     status: 'UPDATED',
-    summary: '4-segment semantic version decoder (2.0.2.5), update-location map, and multi-store readiness matrix.'
+    summary: '4-segment semantic version decoder (2.0.2.6), update-location map, and PhonePe Indus + Microsoft Store readiness matrix.'
   },
   {
     id: 'loc-apk-notif-audio',
-    version: '2.0.2.5',
+    version: '2.0.2.6',
     area: 'Android APK Notification & 3-Way Sound Synthesizer',
     file: 'src/notification-sound.js · scripts/configure-android-apk.mjs',
     status: 'UPDATED',
@@ -76,7 +76,7 @@ export const VERSION_UPDATE_LOCATIONS = [
   },
   {
     id: 'loc-100-indian-brands',
-    version: '2.0.2.5',
+    version: '2.0.2.6',
     area: '100 Top Indian Brands In-Chat Ad Engine',
     file: 'src/indian-brands-100.js · src/commerce-data.js',
     status: 'UPDATED',
@@ -85,7 +85,7 @@ export const VERSION_UPDATE_LOCATIONS = [
   },
   {
     id: 'loc-traffic-control',
-    version: '2.0.2.5',
+    version: '2.0.2.6',
     area: 'Adaptive Traffic Control & Surge Protection',
     file: 'src/traffic-control.js · api/[...route].js',
     status: 'UPDATED',
@@ -94,7 +94,7 @@ export const VERSION_UPDATE_LOCATIONS = [
   },
   {
     id: 'loc-google-auth',
-    version: '2.0.2.5',
+    version: '2.0.2.6',
     area: 'Google Account Authentication (Web & APK)',
     file: 'src/google-auth.js · api/[...route].js',
     status: 'UPDATED',
@@ -114,32 +114,25 @@ export const VERSION_UPDATE_LOCATIONS = [
 
 export const STORE_COMPATIBILITY_MATRIX = [
   {
-    storeId: 'amazon-appstore',
-    name: 'Amazon Appstore',
-    packageId: 'com.afterdark.universe',
-    status: 'READY',
-    features: 'Fire OS / Android 9–15 compatible · Adaptive Icon · Hardware Accelerated WebView'
-  },
-  {
     storeId: 'phonepe-indus',
     name: 'PhonePe Developer (Indus Appstore)',
     packageId: 'com.afterdark.universe',
     status: 'READY',
-    features: '100 Indian Brands · Hinglish/Regional UI · UPI & Indian Commerce Deep-Links'
+    features: 'Signed AAB & APK · 100 Indian Brands · Hinglish/Regional UI · UPI & Indian Commerce Deep-Links'
   },
   {
-    storeId: 'samsung-galaxy-store',
-    name: 'Samsung Galaxy Store',
+    storeId: 'microsoft-store-pwa',
+    name: 'Microsoft Store (Windows 10/11 Free PWA)',
     packageId: 'com.afterdark.universe',
     status: 'READY',
-    features: 'One UI DeX & Foldable Multi-Window (`resizeableActivity="true"`) · Infinity-O Punch-Hole Safe-Area'
+    features: '100% Free Individual Account · Auto-Updating Hosted Web/PWA via PWABuilder'
   },
   {
     storeId: 'github-releases-pwa',
     name: 'GitHub Releases APK & Universal PWA',
     packageId: 'com.afterdark.universe',
     status: 'READY',
-    features: 'Automated CI/CD signed debug/release APK + standalone installable Web App Manifest'
+    features: 'Automated CI/CD signed release APK + standalone installable Web App Manifest'
   }
 ];
 

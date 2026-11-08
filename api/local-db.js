@@ -6,24 +6,15 @@ import { MongoClient, ObjectId } from 'mongodb';
 export { ObjectId };
 
 function resolveWritableDbFile() {
-  const localDir = path.resolve(process.cwd(), '.data');
+  const tmpDir = path.join(os.tmpdir(), 'afterdark-data');
   try {
-    if (!fs.existsSync(localDir)) {
-      fs.mkdirSync(localDir, { recursive: true });
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true });
     }
-    fs.accessSync(localDir, fs.constants.W_OK);
-    return { dir: localDir, file: path.join(localDir, 'afterdark-db.json') };
   } catch {
-    const tmpDir = path.join(os.tmpdir(), 'afterdark-data');
-    try {
-      if (!fs.existsSync(tmpDir)) {
-        fs.mkdirSync(tmpDir, { recursive: true });
-      }
-    } catch {
-      // ignore
-    }
-    return { dir: tmpDir, file: path.join(tmpDir, 'afterdark-db.json') };
+    // ignore
   }
+  return { dir: tmpDir, file: path.join(tmpDir, 'afterdark-db.json') };
 }
 
 const { dir: DATA_DIR, file: DB_FILE } = resolveWritableDbFile();

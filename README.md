@@ -67,14 +67,14 @@ Before inviting real users, configure the runtime variables, test registration a
 
 > **Note:** Version numbers and update location metadata are maintained strictly in GitHub (`README.md`, `package.json`, `src/version-manifest.js`) for developer tracking and are hidden from the user-facing website UI.
 
-### Current Version: `2.0.2.5` (Previous: `2.0.2.4`)
+### Current Version: `2.0.2.6` (Previous: `2.0.2.5`)
 **Format:** `MAJOR_GEN . STORE_CHANNEL . FEATURE_MILESTONE . UPDATE_PATCH_LOC`
 
 | Segment | Value | Meaning | Update Locations |
 | :--- | :--- | :--- | :--- |
 | **1. `MAJOR_GEN`** | `2` | Generation 2 Dual-Site Host + Guest 1-on-1 Architecture | `src/main.jsx`, `src/GuestApp.jsx`, `src/couple-sync.js` |
-| **2. `STORE_CHANNEL`** | `0` | Universal Cross-Device & Multi-Store Production Channel (Web, PWA, Android APK, Amazon Appstore, PhonePe Indus, Samsung Galaxy Store) | `manifest.webmanifest`, `capacitor.config.json`, `scripts/configure-android-apk.mjs` |
+| **2. `STORE_CHANNEL`** | `0` | Universal Cross-Device & Store Channel (Web, PWA, Android APK, PhonePe Indus Appstore, Microsoft Store PWA) | `manifest.webmanifest`, `capacitor.config.json`, `scripts/configure-android-apk.mjs` |
 | **3. `FEATURE_MILESTONE`** | `2` | 100 Top Indian Brands In-Chat Catalog + Google Account Auth + Adaptive Surge Traffic Control | `src/indian-brands-100.js`, `src/google-auth.js`, `src/traffic-control.js` |
-| **4. `UPDATE_PATCH_LOC`** | `5` | Zero-Blink Chat Typing (Fixed BroadcastChannel self-echo loop & referential state stability during background polls) + Public Privacy Hardening (Removed exposed Cloud Run/Firebase/Device IDs from public links & bundles) | `src/couple-sync.js`, `src/main.jsx`, `src/GuestApp.jsx`, `src/commerce-data.js`, `src/google-auth.js`, `api/[...route].js` |
+| **4. `UPDATE_PATCH_LOC`** | `6` | PhonePe Indus Appstore Auto-Incrementing VersionCode (`202600 + run_number`), Strict GitHub Secrets Signing (zero repo key/password exposure), and Isolated Temp DB Storage | `scripts/configure-android-apk.mjs`, `.github/workflows/galaxy-store-aab.yml`, `.github/workflows/android-apk.yml`, `api/local-db.js`, `.gitignore` |
 
 
