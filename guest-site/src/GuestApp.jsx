@@ -824,27 +824,57 @@ export function GuestApp() {
     document.body.removeChild(anchor);
   }
 
+  const otpInputRef = useRef(null);
+
+  async function handlePasteOtpFromClipboard() {
+    clearFeedback();
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const text = await navigator.clipboard.readText();
+        const digits = String(text || '').replace(/\D/g, '').slice(0, 6);
+        if (digits.length > 0) {
+          setVerificationCode(digits);
+          setBanner(`📋 Pasted ${digits.length}-digit code! Tap Verify below ♥`);
+          otpInputRef.current?.focus();
+          return;
+        }
+      }
+      otpInputRef.current?.focus();
+    } catch {
+      otpInputRef.current?.focus();
+    }
+  }
+
   return (
-    <div className="guest-shell">
+    <div className="ad-shell guest-shell">
       <FlirtyHumanVerificationModal />
-      <header className="guest-topbar">
-        <div className="guest-brand">
-          <span className="guest-moon-icon ad-animated-logo" aria-hidden="true">
+      <div className="ad-ambient ad-ambient-one" />
+      <div className="ad-ambient ad-ambient-two" />
+
+      <header className="ad-header guest-topbar">
+        <div className="ad-brand guest-brand">
+          <span className="ad-brand-mark guest-moon-icon ad-animated-logo" aria-hidden="true">
             <span className="ad-logo-moon-glyph">☾</span>
           </span>
           <div className="guest-brand-text">
-            <span className="guest-brand-name">
-              AFTERDARK · Private 1-on-1 Room
-            </span>
-            <span className="guest-brand-sub">
-              Private Couple &amp; Bestie Space · Instant Passcode Pairing ♥
-            </span>
+            <p className="ad-brand-title guest-brand-name">AFTERDARK</p>
+            <p className="ad-brand-subtitle guest-brand-sub">
+              Private 1-on-1 Couple &amp; Bestie Room · Instant QR &amp; Passcode ♥
+            </p>
           </div>
         </div>
-        <div className="guest-topbar-actions">
+
+        <nav className="ad-nav guest-topbar-actions" aria-label="Guest Room Actions">
+          {stage === 'chat' && connection && (
+            <div className="ad-user-chip">
+              <span>
+                ● Live with {connection.creatorDisplayName} ♥
+              </span>
+            </div>
+          )}
           <button
             type="button"
-            className={`guest-tool-btn ${activeDrawer === 'store' ? 'active' : ''}`}
+            className={`ad-tool-btn guest-tool-btn ${activeDrawer === 'store' ? 'active' : ''}`}
             onClick={() => {
               setActiveBrandId('flipkart_minutes');
               setActiveDrawer((prev) => (prev === 'store' ? 'none' : 'store'));
@@ -861,7 +891,7 @@ export function GuestApp() {
             href="https://www.flipkart.com/search?q=couple+gift+hamper+chocolates"
             target="_blank"
             rel="noopener noreferrer"
-            className="guest-tool-btn"
+            className="ad-tool-btn guest-tool-btn"
             style={{
               textDecoration: 'none',
               background: 'rgba(40, 116, 240, 0.22)',
@@ -871,7 +901,7 @@ export function GuestApp() {
           >
             🛒 Flipkart Official ↗
           </a>
-        </div>
+        </nav>
       </header>
 
       <IncomingMessageToast
@@ -883,17 +913,17 @@ export function GuestApp() {
       />
 
       {(banner || error) && (
-        <div className="guest-banner-wrap">
+        <div className="ad-banner-stack guest-banner-wrap">
           {banner && (
-            <div className="guest-banner ok" onClick={() => setBanner('')}>
+            <div className="ad-banner success guest-banner ok" onClick={() => setBanner('')}>
               <span>{banner}</span>
-              <small>✕</small>
+              <small style={{ marginLeft: 12, cursor: 'pointer' }}>✕</small>
             </div>
           )}
           {error && (
-            <div className="guest-banner err" onClick={() => setError('')}>
+            <div className="ad-banner error guest-banner err" onClick={() => setError('')}>
               <span>{error}</span>
-              <small>✕</small>
+              <small style={{ marginLeft: 12, cursor: 'pointer' }}>✕</small>
             </div>
           )}
         </div>
@@ -915,74 +945,108 @@ export function GuestApp() {
         </div>
       )}
 
-      <main className="guest-main">
-        {/* CASE 0: Same-Device or Same-IP Security Block (Generator cannot open or chat with their own Guest link!) */}
+      <main className="ad-main guest-main">
+        {/* CASE 0: Same-Device Security Block (Generator cannot open or chat with their own Guest link!) */}
         {sameDeviceOrIpBlock ? (
-          <section className="guest-otp-card">
-            <div className="guest-pill-row">
-              <span className="guest-pill">🚫 SAME DEVICE / SAME IP BLOCKED</span>
-              <span className="guest-pill">🔐 TWO SEPARATE DEVICES REQUIRED</span>
-            </div>
-            <h1 className="guest-hero-title">One Device Cannot Chat With Itself</h1>
-            <p className="guest-hero-lead">{sameDeviceOrIpBlock}</p>
-            <div style={{ marginTop: '16px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                className="guest-btn guest-btn-primary"
-                onClick={() => {
-                  window.location.href = 'https://afterdark-social-universe.vercel.app';
-                }}
-              >
-                ← Return to My Host Dashboard
-              </button>
+          <section className="ad-section">
+            <div className="ad-card ad-narrow guest-otp-card">
+              <div className="ad-pill-row guest-pill-row">
+                <span className="ad-pill guest-pill">🚫 SAME DEVICE BLOCKED</span>
+                <span className="ad-pill guest-pill">🔐 TWO SEPARATE DEVICES REQUIRED</span>
+              </div>
+              <h1 className="guest-hero-title">One Device Cannot Chat With Itself</h1>
+              <p className="ad-lead guest-hero-lead">{sameDeviceOrIpBlock}</p>
+              <div className="ad-cta-row" style={{ marginTop: '16px' }}>
+                <button
+                  type="button"
+                  className="ad-btn ad-btn-primary guest-btn guest-btn-primary"
+                  onClick={() => {
+                    window.location.href = '/';
+                  }}
+                >
+                  ← Return to My Host Dashboard
+                </button>
+              </div>
             </div>
           </section>
         ) : revokedError ? (
           /* CASE 1: Invite was explicitly Revoked by Host */
-          <section className="guest-otp-card">
-            <div className="guest-pill-row">
-              <span className="guest-pill">🔒 INVITE REVOKED</span>
+          <section className="ad-section">
+            <div className="ad-card ad-narrow guest-otp-card">
+              <div className="ad-pill-row guest-pill-row">
+                <span className="ad-pill guest-pill">🔒 INVITE REVOKED</span>
+              </div>
+              <h1 className="guest-hero-title">QR Code &amp; Link Revoked</h1>
+              <p className="ad-lead guest-hero-lead">{revokedError}</p>
             </div>
-            <h1 className="guest-hero-title">QR Code &amp; Link Revoked</h1>
-            <p className="guest-hero-lead">{revokedError}</p>
           </section>
         ) : stage !== 'chat' || !connection ? (
-          /* CASE 2: Consent + 6-Digit OTP Gate (Validates against Host's Generated Session) */
-          <section className="guest-otp-card">
-            <div className="guest-pill-row">
-              <span className="guest-pill">
-                💌 PRIVATE INVITE FROM {(invitePreview?.creatorDisplayName || 'YOUR PARTNER').toUpperCase()}
-              </span>
-              <span className="guest-pill">🔐 NO LOGIN REQUIRED</span>
-              <span className="guest-pill">⚡ FLIPKART &amp; BRAND STORE BUILT-IN</span>
-              {inviteToken && (
-                <span className="guest-pill">
-                  ● HOST SESSION READY
+          /* CASE 2: APK-Crafted 2-Column Hero + 6-Digit OTP Gate */
+          <section className="ad-hero guest-apk-hero">
+            <div className="ad-hero-copy">
+              <div className="ad-pill-row guest-pill-row">
+                <span className="ad-pill guest-pill">
+                  💌 PRIVATE INVITE FROM {(invitePreview?.creatorDisplayName || 'YOUR PARTNER').toUpperCase()}
                 </span>
-              )}
+                <span className="ad-pill guest-pill">🔐 NO LOGIN REQUIRED</span>
+                <span className="ad-pill guest-pill">🛡️ E2EE LOCKED 1-ON-1 ROOM</span>
+              </div>
+
+              <h1 className="guest-hero-title">
+                Hey {invitePreview?.recipientHint || 'Meri Jaan'}! <br />
+                <span>
+                  {invitePreview?.creatorDisplayName || 'Your Partner'} invited you to a private 1-on-1 room ♥
+                </span>
+              </h1>
+
+              <p className="ad-lead guest-hero-lead">
+                Crafted for both <strong>romantic couples &amp; best friends (boy–girl duos)</strong>. Confirm your consent and enter the{' '}
+                <strong>6-digit passcode</strong> shown on{' '}
+                {invitePreview?.creatorDisplayName || 'your partner'}&apos;s screen to unlock instant encrypted chat, voice notes, live snaps, and date planning.
+              </p>
+
+              <div className="ad-stat-grid">
+                <div>
+                  <small>Private Couple &amp; Bestie Pass</small>
+                  <strong>
+                    {invitePreview?.creatorDisplayName || 'Your Partner'} ♥{' '}
+                    {guestName || invitePreview?.recipientHint || 'You'}
+                  </strong>
+                </div>
+                <div>
+                  <small>Instant Passcode Pairing</small>
+                  <strong>Enter 6-Digit OTP → Live Voice, Snaps &amp; Chat</strong>
+                </div>
+              </div>
             </div>
 
-            <h1 className="guest-hero-title">
-              Hey {invitePreview?.recipientHint || 'Friend'}!{' '}
-              {invitePreview?.creatorDisplayName || 'Your Partner'} invited you to a private 1-on-1 room ♥
-            </h1>
+            <div className="ad-card guest-otp-card">
+              <div className="ad-pill-row" style={{ marginBottom: '10px' }}>
+                <span className="ad-tag" style={{ marginBottom: 0 }}>
+                  STEP 1 · INSTANT PASSCODE VERIFICATION
+                </span>
+                {inviteToken ? (
+                  <span className="ad-pill guest-pill">● HOST SESSION READY</span>
+                ) : (
+                  <span className="ad-pill guest-pill">● DIRECT 6-DIGIT OTP ENTRY</span>
+                )}
+              </div>
 
-            <p className="guest-hero-lead">
-              No account or login needed — built for both <strong>couples &amp; best friends (boy–girl duos)</strong>. Confirm your consent and enter the{' '}
-              <strong>6-digit passcode</strong> shared by{' '}
-              {invitePreview?.creatorDisplayName || 'your friend'} to open your private chat, or optionally autofill your profile with Google.
-            </p>
+              <h2>Enter Your 6-Digit Couple OTP</h2>
+              <p className="ad-muted">
+                Enter your nickname and the 6-digit code shared by{' '}
+                {invitePreview?.creatorDisplayName || 'your partner'}, or quick-fill with Google.
+              </p>
 
-            <div style={{ maxWidth: '420px', marginBottom: '12px' }}>
-              <GoogleSignInButton
-                onClick={handleGoogleQuickFill}
-                busy={googleBusy || busy}
-                label="Quick-Fill Identity with Google (Optional)"
-              />
-            </div>
+              <div style={{ margin: '10px 0 14px' }}>
+                <GoogleSignInButton
+                  onClick={handleGoogleQuickFill}
+                  busy={googleBusy || busy}
+                  label="Quick-Fill Identity with Google (Optional)"
+                />
+              </div>
 
-            <form className="guest-otp-form" onSubmit={acceptInvite}>
-              <div className="guest-form-grid">
+              <form className="ad-form guest-otp-form" onSubmit={acceptInvite}>
                 <label className="guest-field">
                   <span>Your Nickname</span>
                   <input
@@ -994,538 +1058,585 @@ export function GuestApp() {
                   />
                 </label>
 
-                <label className="guest-field">
-                  <span>
-                    6-Digit Couple OTP ({verificationCode.length}/6 digits)
-                  </span>
+                <div className="guest-field">
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      marginBottom: '6px'
+                    }}
+                  >
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#f3d9e8' }}>
+                      6-Digit Couple OTP ({verificationCode.length}/6 digits)
+                    </span>
+                    <button
+                      type="button"
+                      className="ad-tool-btn"
+                      onClick={handlePasteOtpFromClipboard}
+                      style={{ padding: '4px 10px', fontSize: '11.5px' }}
+                    >
+                      📋 Paste OTP
+                    </button>
+                  </div>
+
+                  {/* Interactive 6-Slot Visual OTP Display */}
+                  <div
+                    className="ad-otp-slot-row"
+                    onClick={() => otpInputRef.current?.focus()}
+                    role="presentation"
+                  >
+                    {[0, 1, 2, 3, 4, 5].map((slotIdx) => {
+                      const digit = verificationCode[slotIdx] || '';
+                      const isActive =
+                        verificationCode.length === slotIdx ||
+                        (verificationCode.length === 6 && slotIdx === 5);
+                      return (
+                        <div
+                          key={slotIdx}
+                          className={`ad-otp-slot-box ${digit ? 'filled' : ''} ${
+                            isActive ? 'active' : ''
+                          }`}
+                        >
+                          {digit || '•'}
+                        </div>
+                      );
+                    })}
+                  </div>
+
                   <input
+                    ref={otpInputRef}
                     type="text"
                     inputMode="numeric"
                     autoComplete="one-time-code"
                     maxLength={6}
                     required
+                    aria-label="6-Digit Couple OTP"
                     className="guest-otp-input"
-                    placeholder="• • • • • •"
+                    placeholder="Type or paste 6-digit OTP here"
                     value={verificationCode}
                     onChange={(e) =>
                       setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))
                     }
                   />
+                </div>
+
+                <label className="ad-checkbox guest-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={consentConfirmed}
+                    onChange={(e) => setConsentConfirmed(e.target.checked)}
+                  />
+                  <span>
+                    I am 18+ and enter this private 1-on-1 chat with my full consent ♥
+                  </span>
                 </label>
-              </div>
 
-              <label className="guest-checkbox">
-                <input
-                  type="checkbox"
-                  checked={consentConfirmed}
-                  onChange={(e) => setConsentConfirmed(e.target.checked)}
-                />
-                <span>
-                  I am 18+ and enter this private 1-on-1 chat with my full consent ♥
-                </span>
-              </label>
-
-              <button
-                type="submit"
-                className="guest-btn guest-btn-primary guest-submit-btn"
-                disabled={busy}
-              >
-                {busy
-                  ? 'Validating OTP & Pairing Channel...'
-                  : '✨ Verify 6-Digit OTP & Pair Secure Chat →'}
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  className="ad-btn ad-btn-primary guest-btn guest-btn-primary guest-submit-btn"
+                  disabled={busy}
+                >
+                  {busy
+                    ? 'Validating OTP & Pairing Channel...'
+                    : '✨ Verify 6-Digit OTP & Pair Secure Chat →'}
+                </button>
+              </form>
+            </div>
           </section>
         ) : (
-          /* CASE 3: Verified -> Clean, Focused Private Chat (No Channel ID or OTP exposed on User End) */
-          <section className="guest-card guest-focused-chat">
-            <div className="guest-chat-head">
-              <div>
-                <span className="guest-tag">
-                  ● PRIVATE 1-ON-1 ROOM · LIVE CONNECTION
-                </span>
-                <h2>
-                  {connection.guestDisplayName || 'You'} &amp; {connection.creatorDisplayName} ♥
-                </h2>
-              </div>
-
-              <div className="guest-chat-toolbar">
-                <button
-                  type="button"
-                  className={`guest-tool-btn ${activeDrawer === 'treasure' ? 'active' : ''}`}
-                  onClick={() =>
-                    setActiveDrawer((prev) => (prev === 'treasure' ? 'none' : 'treasure'))
-                  }
-                  style={{
-                    borderColor:
-                      elapsedChatMinutes >= 10
-                        ? 'rgba(251, 191, 36, 0.75)'
-                        : 'rgba(167, 139, 250, 0.45)',
-                    background:
-                      elapsedChatMinutes >= 10 ? 'rgba(251, 191, 36, 0.16)' : undefined
-                  }}
-                >
-                  🗺️ {elapsedChatMinutes >= 10 ? 'Treasure Hunt Unlocked!' : 'Treasure Hunt & Tasks'}
-                </button>
-                <button
-                  type="button"
-                  className={`guest-tool-btn ${activeDrawer === 'store' ? 'active' : ''}`}
-                  onClick={() => {
-                    setActiveBrandId('flipkart_minutes');
-                    setActiveDrawer((prev) => (prev === 'store' ? 'none' : 'store'));
-                  }}
-                >
-                  ⚡ Flipkart &amp; Brand Store ({userCity === 'Patna' ? 'Patna/Bihar' : userCity})
-                </button>
-                <a
-                  href="https://www.flipkart.com/search?q=couple+gift+hamper+chocolates"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="guest-tool-btn"
-                  style={{
-                    textDecoration: 'none',
-                    borderColor: 'rgba(255, 214, 0, 0.55)',
-                    color: '#fef08a'
-                  }}
-                >
-                  🛒 Flipkart Redirect ↗
-                </a>
-                <button
-                  type="button"
-                  className={`guest-tool-btn ${activeDrawer === 'photos' ? 'active' : ''}`}
-                  onClick={() =>
-                    setActiveDrawer((prev) => (prev === 'photos' ? 'none' : 'photos'))
-                  }
-                >
-                  📸 Photos ({photos.length})
-                </button>
-                <button
-                  type="button"
-                  className={`guest-tool-btn ${activeDrawer === 'calendar' ? 'active' : ''}`}
-                  onClick={() =>
-                    setActiveDrawer((prev) => (prev === 'calendar' ? 'none' : 'calendar'))
-                  }
-                >
-                  🕯️ Plan Outing / Date
-                </button>
-                <button
-                  type="button"
-                  className={`guest-tool-btn ${activeDrawer === 'rooftop3d' ? 'active' : ''}`}
-                  onClick={() =>
-                    setActiveDrawer((prev) => (prev === 'rooftop3d' ? 'none' : 'rooftop3d'))
-                  }
-                >
-                  🌙 3D Rooftop
-                </button>
-                <button
-                  type="button"
-                  className={`guest-tool-btn ${activeDrawer === 'flirt' ? 'active' : ''}`}
-                  onClick={() =>
-                    setActiveDrawer((prev) => (prev === 'flirt' ? 'none' : 'flirt'))
-                  }
-                >
-                  💬 Fun &amp; Flirt Lines
-                </button>
-                <button
-                  type="button"
-                  className={`guest-tool-btn ${soundEnabled ? 'active' : ''}`}
-                  onClick={() => {
-                    const next = !soundEnabled;
-                    setSoundEnabled(next);
-                    if (next) playIncomingMessageSound(true, 'guest');
-                  }}
-                  title="Toggle incoming message chime sound"
-                >
-                  {soundEnabled ? '🔔 Sound: ON' : '🔇 Sound: OFF'}
-                </button>
-              </div>
-            </div>
-
-            {/* SAME-THEME FLIPKART OFFICIAL REDIRECT & BUILT-IN BRAND QUICK BAR */}
-            <FlipkartBrandQuickStrip
-              userCity={userCity}
-              onOpenBrandDrawer={handleOpenBrandDrawer}
-            />
-
-            {/* COLLAPSIBLE DRAWER 1: SEND & SAVE PHOTOS */}
-            {activeDrawer === 'photos' && (
-              <div className="guest-collapsible-drawer">
-                <div className="guest-drawer-head">
-                  <strong>📸 Send or Save Private Couple Photos</strong>
-                  <button
-                    type="button"
-                    className="ad-btn-close"
-                    onClick={() => setActiveDrawer('none')}
-                  >
-                    ✕ Close
-                  </button>
-                </div>
-                <div className="guest-photo-controls">
-                  <input
-                    type="text"
-                    placeholder="Caption (optional)..."
-                    value={photoCaption}
-                    onChange={(e) => setPhotoCaption(e.target.value)}
-                  />
-                  <label className="guest-upload-label">
-                    <span>+ Choose Photo to Send</span>
-                    <input type="file" accept="image/*" multiple onChange={uploadPhoto} />
-                  </label>
-                </div>
-                {photos.length > 0 && (
-                  <div className="guest-photos-grid">
-                    {photos.map((photo) => (
-                      <figure key={photo.id} className="guest-photo-item">
-                        <img src={photo.dataUrl} alt={photo.caption || 'Shared photo'} />
-                        <figcaption>
-                          <span>{photo.caption || 'Photo'}</span>
-                          <button
-                            type="button"
-                            className="ad-save-photo-btn"
-                            onClick={() =>
-                              downloadDataUrl(photo.dataUrl, `couple-photo-${photo.id}.jpg`)
-                            }
-                          >
-                            ⬇ Save
-                          </button>
-                        </figcaption>
-                      </figure>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* COLLAPSIBLE DRAWER 2: CANDLELIGHT DINNER / GOOGLE CALENDAR */}
-            {activeDrawer === 'calendar' && (
-              <div className="guest-collapsible-drawer">
-                <div className="guest-drawer-head">
-                  <strong>🕯️ Plan an Upcoming Candlelight Dinner (Google Calendar)</strong>
-                  <button
-                    type="button"
-                    className="ad-btn-close"
-                    onClick={() => setActiveDrawer('none')}
-                  >
-                    ✕ Close
-                  </button>
-                </div>
-                <form className="guest-otp-form" onSubmit={handleScheduleCandlelightDate}>
-                  <div className="guest-form-grid">
-                    <label className="guest-field">
-                      <span>Date Title</span>
-                      <input
-                        type="text"
-                        required
-                        value={dateForm.title}
-                        onChange={(e) =>
-                          setDateForm({ ...dateForm, title: e.target.value })
-                        }
-                      />
-                    </label>
-                    <label className="guest-field">
-                      <span>Date &amp; Time</span>
-                      <input
-                        type="datetime-local"
-                        required
-                        value={dateForm.dateTime}
-                        onChange={(e) =>
-                          setDateForm({ ...dateForm, dateTime: e.target.value })
-                        }
-                      />
-                    </label>
-                  </div>
-                  <div className="guest-form-grid">
-                    <label className="guest-field">
-                      <span>Venue / Location</span>
-                      <input
-                        type="text"
-                        required
-                        list="guest-venues"
-                        value={dateForm.location}
-                        onChange={(e) =>
-                          setDateForm({ ...dateForm, location: e.target.value })
-                        }
-                      />
-                      <datalist id="guest-venues">
-                        {hyderabadCandlelightVenues.map((v) => (
-                          <option key={v} value={v} />
-                        ))}
-                      </datalist>
-                    </label>
-                    <label className="guest-field">
-                      <span>Romantic Description</span>
-                      <input
-                        type="text"
-                        value={dateForm.description}
-                        onChange={(e) =>
-                          setDateForm({ ...dateForm, description: e.target.value })
-                        }
-                      />
-                    </label>
-                  </div>
-                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button type="submit" className="guest-btn guest-btn-primary" disabled={busy}>
-                      📅 Share Date Invite &amp; Google Calendar Link →
-                    </button>
-                    <button
-                      type="button"
-                      className="guest-tool-btn"
-                      onClick={handleDiscoverGroundedSpots}
-                      disabled={loadingSpots}
-                    >
-                      {loadingSpots
-                        ? 'Searching Google Maps...'
-                        : `📍 Discover Live ${userCity} Cafes & Couple Spots`}
-                    </button>
-                  </div>
-                </form>
-                {groundedSpots.length > 0 && (
-                  <div className="ad-grounded-spots-list" style={{ marginTop: 10 }}>
-                    {groundedSpots.map((spot, i) => (
-                      <div key={i} className="ad-grounded-spot-item">
-                        <div>
-                          <strong>{spot.name}</strong>
-                          <small>{spot.vibe} — {spot.highlight}</small>
-                        </div>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          {spot.mapsUrl && (
-                            <a
-                              href={spot.mapsUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="guest-tool-btn"
-                              style={{ textDecoration: 'none' }}
-                            >
-                              📍 Maps ↗
-                            </a>
-                          )}
-                          <button
-                            type="button"
-                            className="guest-tool-btn"
-                            onClick={() => setDateForm((prev) => ({ ...prev, location: spot.name }))}
-                          >
-                            Select Venue
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* COLLAPSIBLE DRAWER 3: INTERACTIVE 3D ROOFTOP */}
-            {activeDrawer === 'rooftop3d' && (
-              <div className="guest-collapsible-drawer">
-                <div className="guest-drawer-head">
-                  <strong>🌙 3D Moonlit Candlelight Rooftop Preview</strong>
-                  <button
-                    type="button"
-                    className="ad-btn-close"
-                    onClick={() => setActiveDrawer('none')}
-                  >
-                    ✕ Close
-                  </button>
-                </div>
-                <ThreeRomanticScene
-                  creatorName={connection.creatorDisplayName}
-                  partnerName={connection.guestDisplayName || 'You'}
-                  onSelectMoodVenue={(venue) => {
-                    setDateForm((prev) => ({ ...prev, location: venue }));
-                    setActiveDrawer('calendar');
-                  }}
-                />
-              </div>
-            )}
-
-            {/* COLLAPSIBLE DRAWER 4: FUN BESTIE & FLIRT LINES */}
-            {activeDrawer === 'flirt' && (
-              <div className="guest-collapsible-drawer">
-                <div className="guest-drawer-head">
-                  <strong>💬 Tap to Send a Fun Bestie Banter or Flirty Line</strong>
-                  <button
-                    type="button"
-                    className="ad-btn-close"
-                    onClick={() => setActiveDrawer('none')}
-                  >
-                    ✕ Close
-                  </button>
-                </div>
-                <QuickDropChipBar
-                  drops={flirtyHindiDrops}
-                  onSendQuickFlirt={handleSendQuickFlirt}
-                />
-              </div>
-            )}
-
-            {/* COLLAPSIBLE DRAWER 5: 10-MINUTE LOCATION TREASURE HUNT & DUO TASK GAME */}
-            <LocationTreasureHuntDrawer
-              open={activeDrawer === 'treasure'}
-              userCity={userCity}
-              elapsedMinutes={elapsedChatMinutes}
-              onClose={() => setActiveDrawer('none')}
-              onSendChallengeToChat={(challengeText) => {
-                handleSendQuickFlirt(challengeText);
-                setActiveDrawer('none');
-              }}
-            />
-
-            {/* 10-Minute Milestone Auto-Suggestion Banner */}
-            {(elapsedChatMinutes >= 10 || messages.length >= 12) &&
-              !treasurePromptDismissed &&
-              activeDrawer !== 'treasure' && (
-                <div
-                  style={{
-                    margin: '6px 0 10px',
-                    padding: '10px 14px',
-                    borderRadius: '14px',
-                    background:
-                      'linear-gradient(135deg, rgba(251, 191, 36, 0.16), rgba(244, 63, 94, 0.16))',
-                    border: '1px solid rgba(251, 191, 36, 0.45)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
-                    flexWrap: 'wrap'
-                  }}
-                >
-                  <span style={{ fontSize: '0.82rem', color: '#fef3c7' }}>
-                    🗺️ <strong>10+ Min Vibe Milestone!</strong> Unlock your live{' '}
-                    <strong>{userCity} Treasure Hunt &amp; Secret Duo Task</strong> (for couples &amp; best friends).
+          /* CASE 3: Verified -> APK-Crafted Focused Private Chat */
+          <section className="ad-section">
+            <div className="ad-card ad-focused-chat-shell guest-card guest-focused-chat">
+              <div className="ad-chat-header guest-chat-head">
+                <div>
+                  <span className="ad-tag guest-tag">
+                    ● PRIVATE 1-ON-1 ROOM · LIVE CONNECTION
                   </span>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button
-                      type="button"
-                      className="guest-tool-btn"
-                      style={{
-                        background: 'linear-gradient(135deg, #f59e0b, #ec4899)',
-                        color: '#fff',
-                        border: 'none',
-                        fontWeight: 700
-                      }}
-                      onClick={() => setActiveDrawer('treasure')}
-                    >
-                      🎯 Play {userCity} Treasure Hunt
-                    </button>
+                  <h2>
+                    {connection.guestDisplayName || 'You'} &amp; {connection.creatorDisplayName} ♥
+                  </h2>
+                </div>
+
+                <div className="ad-chat-toolbar guest-chat-toolbar">
+                  <button
+                    type="button"
+                    className={`ad-tool-btn guest-tool-btn ${activeDrawer === 'treasure' ? 'active' : ''}`}
+                    onClick={() =>
+                      setActiveDrawer((prev) => (prev === 'treasure' ? 'none' : 'treasure'))
+                    }
+                    style={{
+                      borderColor:
+                        elapsedChatMinutes >= 10
+                          ? 'rgba(251, 191, 36, 0.75)'
+                          : 'rgba(167, 139, 250, 0.45)',
+                      background:
+                        elapsedChatMinutes >= 10 ? 'rgba(251, 191, 36, 0.16)' : undefined
+                    }}
+                  >
+                    🗺️ {elapsedChatMinutes >= 10 ? 'Treasure Hunt Unlocked!' : 'Treasure Hunt & Tasks'}
+                  </button>
+                  <button
+                    type="button"
+                    className={`ad-tool-btn guest-tool-btn ${activeDrawer === 'store' ? 'active' : ''}`}
+                    onClick={() => {
+                      setActiveBrandId('flipkart_minutes');
+                      setActiveDrawer((prev) => (prev === 'store' ? 'none' : 'store'));
+                    }}
+                  >
+                    ⚡ Flipkart &amp; Brand Store ({userCity === 'Patna' ? 'Patna/Bihar' : userCity})
+                  </button>
+                  <a
+                    href="https://www.flipkart.com/search?q=couple+gift+hamper+chocolates"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="ad-tool-btn guest-tool-btn"
+                    style={{
+                      textDecoration: 'none',
+                      borderColor: 'rgba(255, 214, 0, 0.55)',
+                      color: '#fef08a'
+                    }}
+                  >
+                    🛒 Flipkart Redirect ↗
+                  </a>
+                  <button
+                    type="button"
+                    className={`ad-tool-btn guest-tool-btn ${activeDrawer === 'photos' ? 'active' : ''}`}
+                    onClick={() =>
+                      setActiveDrawer((prev) => (prev === 'photos' ? 'none' : 'photos'))
+                    }
+                  >
+                    📸 Photos ({photos.length})
+                  </button>
+                  <button
+                    type="button"
+                    className={`ad-tool-btn guest-tool-btn ${activeDrawer === 'calendar' ? 'active' : ''}`}
+                    onClick={() =>
+                      setActiveDrawer((prev) => (prev === 'calendar' ? 'none' : 'calendar'))
+                    }
+                  >
+                    🕯️ Plan Outing / Date
+                  </button>
+                  <button
+                    type="button"
+                    className={`ad-tool-btn guest-tool-btn ${activeDrawer === 'rooftop3d' ? 'active' : ''}`}
+                    onClick={() =>
+                      setActiveDrawer((prev) => (prev === 'rooftop3d' ? 'none' : 'rooftop3d'))
+                    }
+                  >
+                    🌙 3D Rooftop
+                  </button>
+                  <button
+                    type="button"
+                    className={`ad-tool-btn guest-tool-btn ${activeDrawer === 'flirt' ? 'active' : ''}`}
+                    onClick={() =>
+                      setActiveDrawer((prev) => (prev === 'flirt' ? 'none' : 'flirt'))
+                    }
+                  >
+                    💬 Fun &amp; Flirt Lines
+                  </button>
+                  <button
+                    type="button"
+                    className={`ad-tool-btn guest-tool-btn ${soundEnabled ? 'active' : ''}`}
+                    onClick={() => {
+                      const next = !soundEnabled;
+                      setSoundEnabled(next);
+                      if (next) playIncomingMessageSound(true, 'guest');
+                    }}
+                    title="Toggle incoming message chime sound"
+                  >
+                    {soundEnabled ? '🔔 Sound: ON' : '🔇 Sound: OFF'}
+                  </button>
+                </div>
+              </div>
+
+              {/* SAME-THEME FLIPKART OFFICIAL REDIRECT & BUILT-IN BRAND QUICK BAR */}
+              <FlipkartBrandQuickStrip
+                userCity={userCity}
+                onOpenBrandDrawer={handleOpenBrandDrawer}
+              />
+
+              {/* COLLAPSIBLE DRAWER 1: SEND & SAVE PHOTOS */}
+              {activeDrawer === 'photos' && (
+                <div className="ad-collapsible-drawer guest-collapsible-drawer">
+                  <div className="ad-drawer-head guest-drawer-head">
+                    <strong>📸 Send or Save Private Couple Photos</strong>
                     <button
                       type="button"
                       className="ad-btn-close"
-                      onClick={() => setTreasurePromptDismissed(true)}
+                      onClick={() => setActiveDrawer('none')}
                     >
-                      ✕
+                      ✕ Close
                     </button>
                   </div>
+                  <div className="ad-photo-upload-bar guest-photo-controls">
+                    <input
+                      type="text"
+                      placeholder="Caption (optional)..."
+                      value={photoCaption}
+                      onChange={(e) => setPhotoCaption(e.target.value)}
+                    />
+                    <label className="ad-upload-btn guest-upload-label">
+                      <span>+ Choose Photo to Send</span>
+                      <input type="file" accept="image/*" multiple onChange={uploadPhoto} />
+                    </label>
+                  </div>
+                  {photos.length > 0 && (
+                    <div className="ad-photo-grid guest-photos-grid">
+                      {photos.map((photo) => (
+                        <figure key={photo.id} className="ad-photo-item guest-photo-item">
+                          <img src={photo.dataUrl} alt={photo.caption || 'Shared photo'} />
+                          <figcaption>
+                            <span>{photo.caption || 'Photo'}</span>
+                            <button
+                              type="button"
+                              className="ad-save-photo-btn"
+                              onClick={() =>
+                                downloadDataUrl(photo.dataUrl, `couple-photo-${photo.id}.jpg`)
+                              }
+                            >
+                              ⬇ Save
+                            </button>
+                          </figcaption>
+                        </figure>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
-            {/* CENTERED PRIVATE MODAL: ONE-SIDED PARTNER CHECKOUT & LOCAL CAFE DISCOVERY */}
-            <InlineCommerceDrawer
-              open={activeDrawer === 'store'}
-              activeBrandId={activeBrandId}
-              onSelectBrand={setActiveBrandId}
-              onClose={() => setActiveDrawer('none')}
-              onBookFreeItem={handleBookAffiliateOrder}
-              onShareDateInChat={handleShareCafeDateInChat}
-              userCity={userCity}
-              onChangeCity={setUserCity}
-            />
-
-            {/* PRIVATE CHAT MESSAGES + RATE-LIMITED, STRICTLY CONTEXTUAL ONE-SIDED BRAND PROMOTIONS */}
-            <div className="guest-messages">
-              {messages.length === 0 ? (
-                <p className="guest-empty">
-                  You are connected with {connection.creatorDisplayName} ♥ Send a message, voice note (🎤), live camera snap (📷), or plan a candlelight date!
-                </p>
-              ) : (
-                messages.map((msg, idx) => {
-                  const inStreamAd = getPersonalizedInChatBrandAd(
-                    messages,
-                    idx,
-                    'guest',
-                    userCity,
-                    aiInsight
-                  );
-                  return (
-                    <React.Fragment key={msg.id}>
-                      <div
-                        className={`guest-bubble ${
-                          msg.senderRole === 'guest' ? 'mine' : 'theirs'
-                        }`}
+              {/* COLLAPSIBLE DRAWER 2: CANDLELIGHT DINNER / GOOGLE CALENDAR */}
+              {activeDrawer === 'calendar' && (
+                <div className="ad-collapsible-drawer guest-collapsible-drawer">
+                  <div className="ad-drawer-head guest-drawer-head">
+                    <strong>🕯️ Plan an Upcoming Candlelight Dinner (Google Calendar)</strong>
+                    <button
+                      type="button"
+                      className="ad-btn-close"
+                      onClick={() => setActiveDrawer('none')}
+                    >
+                      ✕ Close
+                    </button>
+                  </div>
+                  <form className="ad-form guest-otp-form" onSubmit={handleScheduleCandlelightDate}>
+                    <div className="ad-two-col-inputs guest-form-grid">
+                      <label className="guest-field">
+                        <span>Date Title</span>
+                        <input
+                          type="text"
+                          required
+                          value={dateForm.title}
+                          onChange={(e) =>
+                            setDateForm({ ...dateForm, title: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label className="guest-field">
+                        <span>Date &amp; Time</span>
+                        <input
+                          type="datetime-local"
+                          required
+                          value={dateForm.dateTime}
+                          onChange={(e) =>
+                            setDateForm({ ...dateForm, dateTime: e.target.value })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="ad-two-col-inputs guest-form-grid">
+                      <label className="guest-field">
+                        <span>Venue / Location</span>
+                        <input
+                          type="text"
+                          required
+                          list="guest-venues"
+                          value={dateForm.location}
+                          onChange={(e) =>
+                            setDateForm({ ...dateForm, location: e.target.value })
+                          }
+                        />
+                        <datalist id="guest-venues">
+                          {hyderabadCandlelightVenues.map((v) => (
+                            <option key={v} value={v} />
+                          ))}
+                        </datalist>
+                      </label>
+                      <label className="guest-field">
+                        <span>Romantic Description</span>
+                        <input
+                          type="text"
+                          value={dateForm.description}
+                          onChange={(e) =>
+                            setDateForm({ ...dateForm, description: e.target.value })
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button type="submit" className="ad-btn ad-btn-primary guest-btn guest-btn-primary" disabled={busy}>
+                        📅 Share Date Invite &amp; Google Calendar Link →
+                      </button>
+                      <button
+                        type="button"
+                        className="ad-btn ad-btn-secondary guest-tool-btn"
+                        onClick={handleDiscoverGroundedSpots}
+                        disabled={loadingSpots}
                       >
-                        <MessageWithBrandCards
-                          messageId={msg.id}
-                          body={msg.body || msg.text}
-                          dateMeta={msg.dateMeta}
-                          photoMeta={msg.photoMeta}
-                          voiceMeta={msg.voiceMeta}
-                          isMine={msg.senderRole === 'guest'}
-                          seenAt={msg.seenAt}
-                          onOpenBrandDrawer={handleOpenBrandDrawer}
-                          onSavePhoto={downloadDataUrl}
-                        />
-                        <small>
-                          {msg.senderRole === 'guest'
-                            ? connection.guestDisplayName || 'You'
-                            : connection.creatorDisplayName}{' '}
-                          ·{' '}
-                          {new Date(msg.createdAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </small>
-                      </div>
-
-                      {/* Guest-Personalized In-Between Chat Brand Promotion Card (Different from Creator's view!) */}
-                      {inStreamAd && (
-                        <InChatBrandPromoCard
-                          adData={inStreamAd}
-                          onOpenBrandDrawer={handleOpenBrandDrawer}
-                        />
-                      )}
-                    </React.Fragment>
-                  );
-                })
+                        {loadingSpots
+                          ? 'Searching Google Maps...'
+                          : `📍 Discover Live ${userCity} Cafes & Couple Spots`}
+                      </button>
+                    </div>
+                  </form>
+                  {groundedSpots.length > 0 && (
+                    <div className="ad-grounded-spots-list" style={{ marginTop: 10 }}>
+                      {groundedSpots.map((spot, i) => (
+                        <div key={i} className="ad-grounded-spot-item">
+                          <div>
+                            <strong>{spot.name}</strong>
+                            <small>{spot.vibe} — {spot.highlight}</small>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            {spot.mapsUrl && (
+                              <a
+                                href={spot.mapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="ad-tool-btn guest-tool-btn"
+                                style={{ textDecoration: 'none' }}
+                              >
+                                📍 Maps ↗
+                              </a>
+                            )}
+                            <button
+                              type="button"
+                              className="ad-tool-btn guest-tool-btn"
+                              onClick={() => setDateForm((prev) => ({ ...prev, location: spot.name }))}
+                            >
+                              Select Venue
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
-              <div ref={chatEndRef} />
-            </div>
 
-            {aiInsight?.suggestedFlirtReply && (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '4px 10px',
-                  fontSize: '0.75rem'
+              {/* COLLAPSIBLE DRAWER 3: INTERACTIVE 3D ROOFTOP */}
+              {activeDrawer === 'rooftop3d' && (
+                <div className="ad-collapsible-drawer guest-collapsible-drawer">
+                  <div className="ad-drawer-head guest-drawer-head">
+                    <strong>🌙 3D Moonlit Candlelight Rooftop Preview</strong>
+                    <button
+                      type="button"
+                      className="ad-btn-close"
+                      onClick={() => setActiveDrawer('none')}
+                    >
+                      ✕ Close
+                    </button>
+                  </div>
+                  <ThreeRomanticScene
+                    creatorName={connection.creatorDisplayName}
+                    partnerName={connection.guestDisplayName || 'You'}
+                    onSelectMoodVenue={(venue) => {
+                      setDateForm((prev) => ({ ...prev, location: venue }));
+                      setActiveDrawer('calendar');
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* COLLAPSIBLE DRAWER 4: FUN BESTIE & FLIRT LINES */}
+              {activeDrawer === 'flirt' && (
+                <div className="ad-collapsible-drawer guest-collapsible-drawer">
+                  <div className="ad-drawer-head guest-drawer-head">
+                    <strong>💬 Tap to Send a Fun Bestie Banter or Flirty Line</strong>
+                    <button
+                      type="button"
+                      className="ad-btn-close"
+                      onClick={() => setActiveDrawer('none')}
+                    >
+                      ✕ Close
+                    </button>
+                  </div>
+                  <QuickDropChipBar
+                    drops={flirtyHindiDrops}
+                    onSendQuickFlirt={handleSendQuickFlirt}
+                  />
+                </div>
+              )}
+
+              {/* COLLAPSIBLE DRAWER 5: 10-MINUTE LOCATION TREASURE HUNT & DUO TASK GAME */}
+              <LocationTreasureHuntDrawer
+                open={activeDrawer === 'treasure'}
+                userCity={userCity}
+                elapsedMinutes={elapsedChatMinutes}
+                onClose={() => setActiveDrawer('none')}
+                onSendChallengeToChat={(challengeText) => {
+                  handleSendQuickFlirt(challengeText);
+                  setActiveDrawer('none');
                 }}
-              >
-                <button
-                  type="button"
-                  className="ad-flirt-chip"
-                  onClick={() => handleSendQuickFlirt(aiInsight.suggestedFlirtReply)}
-                  title="Tap to send AI-crafted Hinglish flirt reply"
-                >
-                  ✨ {aiInsight.suggestedFlirtReply}
-                </button>
-              </div>
-            )}
+              />
 
-            <form className="guest-chat-form" onSubmit={sendMessage}>
-              <ChatMediaInputActions
-                onSendVoiceNote={handleSendVoiceNote}
-                onSendLiveCameraSnap={handleSendLiveCameraSnap}
-                disabled={busy}
+              {/* 10-Minute Milestone Auto-Suggestion Banner */}
+              {(elapsedChatMinutes >= 10 || messages.length >= 12) &&
+                !treasurePromptDismissed &&
+                activeDrawer !== 'treasure' && (
+                  <div
+                    style={{
+                      margin: '6px 0 10px',
+                      padding: '10px 14px',
+                      borderRadius: '14px',
+                      background:
+                        'linear-gradient(135deg, rgba(251, 191, 36, 0.16), rgba(244, 63, 94, 0.16))',
+                      border: '1px solid rgba(251, 191, 36, 0.45)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                      flexWrap: 'wrap'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.82rem', color: '#fef3c7' }}>
+                      🗺️ <strong>10+ Min Vibe Milestone!</strong> Unlock your live{' '}
+                      <strong>{userCity} Treasure Hunt &amp; Secret Duo Task</strong> (for couples &amp; best friends).
+                    </span>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        className="ad-tool-btn guest-tool-btn"
+                        style={{
+                          background: 'linear-gradient(135deg, #f59e0b, #ec4899)',
+                          color: '#fff',
+                          border: 'none',
+                          fontWeight: 700
+                        }}
+                        onClick={() => setActiveDrawer('treasure')}
+                      >
+                        🎯 Play {userCity} Treasure Hunt
+                      </button>
+                      <button
+                        type="button"
+                        className="ad-btn-close"
+                        onClick={() => setTreasurePromptDismissed(true)}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+              {/* CENTERED PRIVATE MODAL: ONE-SIDED PARTNER CHECKOUT & LOCAL CAFE DISCOVERY */}
+              <InlineCommerceDrawer
+                open={activeDrawer === 'store'}
+                activeBrandId={activeBrandId}
+                onSelectBrand={setActiveBrandId}
+                onClose={() => setActiveDrawer('none')}
+                onBookFreeItem={handleBookAffiliateOrder}
+                onShareDateInChat={handleShareCafeDateInChat}
+                userCity={userCity}
+                onChangeCity={setUserCity}
               />
-              <input
-                type="text"
-                placeholder={`Message ${connection.creatorDisplayName}...`}
-                value={messageBody}
-                onChange={(e) => setMessageBody(e.target.value)}
-              />
-              <button type="submit" className="guest-btn guest-btn-primary">
-                Send ♥
-              </button>
-            </form>
+
+              {/* PRIVATE CHAT MESSAGES + RATE-LIMITED, STRICTLY CONTEXTUAL ONE-SIDED BRAND PROMOTIONS */}
+              <div className="ad-messages guest-messages">
+                {messages.length === 0 ? (
+                  <p className="ad-empty guest-empty">
+                    You are connected with {connection.creatorDisplayName} ♥ Send a message, voice note (🎤), live camera snap (📷), or plan a candlelight date!
+                  </p>
+                ) : (
+                  messages.map((msg, idx) => {
+                    const inStreamAd = getPersonalizedInChatBrandAd(
+                      messages,
+                      idx,
+                      'guest',
+                      userCity,
+                      aiInsight
+                    );
+                    return (
+                      <React.Fragment key={msg.id}>
+                        <div
+                          className={`ad-bubble guest-bubble ${
+                            msg.senderRole === 'guest' ? 'mine' : 'theirs'
+                          }`}
+                        >
+                          <MessageWithBrandCards
+                            messageId={msg.id}
+                            body={msg.body || msg.text}
+                            dateMeta={msg.dateMeta}
+                            photoMeta={msg.photoMeta}
+                            voiceMeta={msg.voiceMeta}
+                            isMine={msg.senderRole === 'guest'}
+                            seenAt={msg.seenAt}
+                            onOpenBrandDrawer={handleOpenBrandDrawer}
+                            onSavePhoto={downloadDataUrl}
+                          />
+                          <small>
+                            {msg.senderRole === 'guest'
+                              ? connection.guestDisplayName || 'You'
+                              : connection.creatorDisplayName}{' '}
+                            ·{' '}
+                            {new Date(msg.createdAt).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </small>
+                        </div>
+
+                        {/* Guest-Personalized In-Between Chat Brand Promotion Card */}
+                        {inStreamAd && (
+                          <InChatBrandPromoCard
+                            adData={inStreamAd}
+                            onOpenBrandDrawer={handleOpenBrandDrawer}
+                          />
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+                <div ref={chatEndRef} />
+              </div>
+
+              {aiInsight?.suggestedFlirtReply && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '4px 10px',
+                    fontSize: '0.75rem'
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="ad-flirt-chip"
+                    onClick={() => handleSendQuickFlirt(aiInsight.suggestedFlirtReply)}
+                    title="Tap to send Hinglish flirt reply"
+                  >
+                    ✨ {aiInsight.suggestedFlirtReply}
+                  </button>
+                </div>
+              )}
+
+              <form className="ad-chat-input guest-chat-form" onSubmit={sendMessage}>
+                <ChatMediaInputActions
+                  onSendVoiceNote={handleSendVoiceNote}
+                  onSendLiveCameraSnap={handleSendLiveCameraSnap}
+                  disabled={busy}
+                />
+                <input
+                  type="text"
+                  placeholder={`Message ${connection.creatorDisplayName}...`}
+                  value={messageBody}
+                  onChange={(e) => setMessageBody(e.target.value)}
+                />
+                <button type="submit" className="ad-btn ad-btn-primary guest-btn guest-btn-primary">
+                  Send ♥
+                </button>
+              </form>
+            </div>
           </section>
         )}
       </main>

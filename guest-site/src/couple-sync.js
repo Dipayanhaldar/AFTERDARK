@@ -136,21 +136,49 @@ export function isInternalPreviewOrigin(origin = '') {
 const STABLE_PUBLIC_ORIGIN = 'https://afterdark-social-universe.vercel.app';
 const STABLE_GUEST_ORIGIN = 'https://afterdark-guest-connector.onrender.com';
 
+export function isCapacitorNativeOrigin() {
+  if (typeof window === 'undefined') return false;
+  if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function') {
+    try {
+      if (window.Capacitor.isNativePlatform()) return true;
+    } catch {
+      // ignore
+    }
+  }
+  const proto = String(window.location?.protocol || '').toLowerCase();
+  if (proto === 'capacitor:' || proto === 'file:') return true;
+  const host = String(window.location?.hostname || '').toLowerCase();
+  const port = String(window.location?.port || '');
+  // Capacitor Android WebView runs on https://localhost with no port
+  if (host === 'localhost' && !port && proto === 'https:') {
+    return true;
+  }
+  return false;
+}
+
 export function getPublicOrigin() {
   if (typeof window === 'undefined' || !window.location?.origin) {
     return STABLE_PUBLIC_ORIGIN;
   }
+  if (isCapacitorNativeOrigin()) {
+    return STABLE_PUBLIC_ORIGIN;
+  }
   const rawOrigin = window.location.origin;
-  // AI Studio development containers are private and cannot be opened by invitees.
+  // AI Studio development containers are private; rewrite to the public shared container origin
   if (rawOrigin.includes('://ais-dev-')) {
     return rawOrigin.replace('://ais-dev-', '://ais-pre-');
   }
-  // Vercel deployment URLs are immutable per build. Always use the verified
-  // project domain for shareable invitations so new deployments do not stale links.
-  if (/\.vercel\.app$/i.test(new URL(rawOrigin).hostname)) {
-    return STABLE_PUBLIC_ORIGIN;
+  try {
+    const host = new URL(rawOrigin).hostname;
+    if (/afterdark-guest-connector\.onrender\.com$/i.test(host)) {
+      return STABLE_PUBLIC_ORIGIN;
+    }
+    if (/\.vercel\.app$/i.test(host)) {
+      return STABLE_PUBLIC_ORIGIN;
+    }
+  } catch {
+    // ignore URL parse error
   }
-  // Keep user-configured custom domains and local development origins intact.
   return rawOrigin;
 }
 
@@ -189,6 +217,7 @@ export function isGuestInviteLocation() {
 
 export function buildPublicInviteLinks({
   inviteToken,
+  verificationCode = '',
   creatorDisplayName,
   recipientHint,
   customGuestOrigin
@@ -201,29 +230,38 @@ export function buildPublicInviteLinks({
       sameOriginUrl: ''
     };
   }
+  const hostPublicOrigin = getPublicOrigin();
   const cleanedCustom =
     customGuestOrigin && /^https?:\/\//i.test(String(customGuestOrigin).trim())
       ? String(customGuestOrigin).trim().replace(/\/+$/, '')
       : '';
-  // Keep the guest experience on its dedicated Render static site; its API is
-  // served by the stable AFTERDARK Social Universe Vercel project.
-  const targetOrigin = cleanedCustom || STABLE_GUEST_ORIGIN;
+  const targetOrigin = cleanedCustom || hostPublicOrigin || STABLE_PUBLIC_ORIGIN;
 
   const params = new URLSearchParams();
   params.set('invite', inviteToken);
   if (creatorDisplayName) params.set('creator', String(creatorDisplayName).slice(0, 20));
   if (recipientHint) params.set('hint', String(recipientHint).slice(0, 20));
+  const cleanOtp = String(verificationCode || '').replace(/\D/g, '').slice(0, 6);
+  if (cleanOtp.length === 6) {
+    params.set('k', encodeOtpSignature(cleanOtp, inviteToken));
+  }
+  if (hostPublicOrigin && /^https?:\/\//i.test(hostPublicOrigin)) {
+    params.set('api', hostPublicOrigin);
+  }
   const query = params.toString();
 
-  // Clean public URL without exposing internal API origins, device IDs, IPs, or key hashes
-  const rootDirectUrl = `${targetOrigin}/?${query}`;
-  const guestAppUrl = rootDirectUrl;
+  const isRenderStaticOrigin = /afterdark-guest-connector\.onrender\.com$/i.test(targetOrigin);
+  const primaryUrl = isRenderStaticOrigin
+    ? `${targetOrigin}/?${query}`
+    : `${targetOrigin}/guest?${query}`;
+  const sameOriginUrl = `${hostPublicOrigin}/guest?${query}`;
+  const guestAppUrl = `${STABLE_GUEST_ORIGIN}/?${query}`;
 
   return {
-    primaryUrl: rootDirectUrl,
+    primaryUrl,
     guestAppUrl,
-    rootDirectUrl,
-    sameOriginUrl: rootDirectUrl
+    rootDirectUrl: primaryUrl,
+    sameOriginUrl
   };
 }
 
@@ -767,12 +805,19 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
     if (rawToken && rawToken !== 'otp-direct') {
       invite = state.invites.find((i) => i.inviteToken === rawToken);
     }
-    if (!invite) {
-      invite = state.invites.find(
+    if (
+      !invite ||
+      invite.status === 'revoked' ||
+      (invite.verificationCode && invite.verificationCode !== suppliedOtp)
+    ) {
+      const activeOtpMatch = state.invites.find(
         (i) =>
           i.verificationCode === suppliedOtp &&
           (i.status === 'pending' || i.status === 'active')
       );
+      if (activeOtpMatch) {
+        invite = activeOtpMatch;
+      }
     }
 
     if (invite && invite.status === 'revoked') {
@@ -1275,20 +1320,45 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
   }
 
   const candidateBases = [];
+  const addCandidateBase = (baseStr) => {
+    if (baseStr && !candidateBases.includes(baseStr)) {
+      candidateBases.push(baseStr);
+    }
+  };
+
   if (urlContext?.apiOrigin) {
-    const cleanOrigin = String(urlContext.apiOrigin).replace(/\/+$/, '');
+    let cleanOrigin = String(urlContext.apiOrigin).trim().replace(/\/+$/, '');
+    if (cleanOrigin.includes('://ais-dev-')) {
+      cleanOrigin = cleanOrigin.replace('://ais-dev-', '://ais-pre-');
+    }
     if (
       typeof window !== 'undefined' &&
       cleanOrigin &&
       cleanOrigin !== window.location.origin
     ) {
-      candidateBases.push(`${cleanOrigin}/api`);
+      addCandidateBase(`${cleanOrigin}/api`);
     }
   }
-  if (typeof window !== 'undefined' && /(^|\.)afterdark-guest-connector\.onrender\.com$/i.test(window.location.hostname)) {
-    candidateBases.push(`${STABLE_PUBLIC_ORIGIN}/api`);
+
+  const isRenderStaticHost =
+    typeof window !== 'undefined' &&
+    /(^|\.)afterdark-guest-connector\.onrender\.com$/i.test(window.location.hostname);
+  const isCapacitorNative = isCapacitorNativeOrigin();
+
+  if (isRenderStaticHost || isCapacitorNative) {
+    addCandidateBase(`${STABLE_PUBLIC_ORIGIN}/api`);
   }
-  candidateBases.push('/api');
+  if (!isRenderStaticHost && !isCapacitorNative) {
+    addCandidateBase('/api');
+  }
+  if (
+    typeof window !== 'undefined' &&
+    window.location.origin !== STABLE_PUBLIC_ORIGIN &&
+    !isRenderStaticHost &&
+    !isCapacitorNative
+  ) {
+    addCandidateBase(`${STABLE_PUBLIC_ORIGIN}/api`);
+  }
 
   let lastHttpError = null;
   let lastStatus = 0;
@@ -1319,6 +1389,24 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
           }
           if (data?.inviteToken && data?.verificationCode) {
             mirrorInviteLocally(data);
+            // If invite was created on a non-Vercel origin, also mirror to STABLE_PUBLIC_ORIGIN in background
+            if (base === '/api' && getPublicOrigin() !== STABLE_PUBLIC_ORIGIN) {
+              fetch(`${STABLE_PUBLIC_ORIGIN}/api/invites/sync`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                  inviteToken: data.inviteToken,
+                  verificationCode: data.verificationCode,
+                  creatorDisplayName: data.creatorDisplayName,
+                  recipientHint: data.recipientHint,
+                  creatorCustomName: data.creatorCustomName,
+                  partnerCustomName: data.partnerCustomName,
+                  themeId: data.themeId,
+                  emblemStyle: data.emblemStyle,
+                  expiresAt: data.expiresAt
+                })
+              }).catch(() => {});
+            }
           }
           if (data?.connection && (data?.guestSessionToken || data?.paired)) {
             mirrorConnectionLocally(data.connection, data.guestSessionToken || '');
@@ -1343,6 +1431,13 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
         if (data?.requiresFlirtyChallenge) {
           lastHttpError.requiresFlirtyChallenge = true;
           triggerFlirtyBotChallenge(data.error || 'Quick Flirty Human Verification required ♥');
+        }
+        // If the primary /api server authoritatively returned a non-404 error (and didn't say "No active host session"),
+        // stop here rather than querying an unrelated secondary origin.
+        const errMsg = String(data?.error || '');
+        const isMissingHostSession = errMsg.includes('No active host session');
+        if (base === '/api' && !isMissingHostSession && [400, 401, 403, 409, 410, 429].includes(response.status)) {
+          break;
         }
       }
     } catch {

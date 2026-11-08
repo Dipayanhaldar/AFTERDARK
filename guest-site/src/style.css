@@ -2307,4 +2307,66 @@ a {
   }
 }
 
+/* Interactive 6-Digit OTP Visual Slot Boxes for Chrome & APK Guest Gate */
+.ad-otp-slot-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+  cursor: text;
+  user-select: none;
+}
 
+.ad-otp-slot-box {
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 22px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.32);
+  background: rgba(12, 6, 18, 0.86);
+  border: 1px solid rgba(255, 130, 190, 0.25);
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.45);
+  transition: all 0.16s ease;
+}
+
+.ad-otp-slot-box.filled {
+  color: #fff;
+  background: linear-gradient(145deg, rgba(255, 79, 154, 0.22), rgba(255, 179, 107, 0.18));
+  border-color: rgba(255, 179, 107, 0.72);
+  box-shadow: 0 6px 18px rgba(255, 79, 154, 0.22);
+}
+
+.ad-otp-slot-box.active {
+  border-color: var(--ad-accent);
+  box-shadow: 0 0 0 3px rgba(255, 79, 154, 0.24);
+  transform: translateY(-1px);
+}
+
+.guest-apk-hero h1 {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(28px, 4vw, 44px);
+  line-height: 1.14;
+  margin: 0 0 14px;
+}
+
+.guest-apk-hero h1 span {
+  background: linear-gradient(135deg, var(--ad-accent), var(--ad-accent-gold));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@media (max-width: 640px) {
+  .ad-otp-slot-row {
+    gap: 6px;
+  }
+
+  .ad-otp-slot-box {
+    height: 46px;
+    font-size: 19px;
+    border-radius: 12px;
+  }
+}

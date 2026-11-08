@@ -1130,10 +1130,44 @@ export default async function handler(req, res) {
       const creator = await getCreatorFromRequest(req, db);
       if (!creator) return json(res, 401, { error: 'Please sign in first.' }, req);
 
-      const existing = await db.collection('invites').findOne({
+      const tokenHint = String(url.searchParams.get('inviteToken') || '').trim();
+      const otpHint = String(url.searchParams.get('otp') || '')
+        .replace(/\D/g, '')
+        .slice(0, 6);
+
+      let existing = await db.collection('invites').findOne({
         creatorId: creator._id,
         status: { $in: ['pending', 'active'] }
       });
+
+      if (!existing && tokenHint && otpHint.length === 6) {
+        const byToken = await db.collection('invites').findOne({ inviteToken: tokenHint });
+        if (!byToken) {
+          const nowIso = new Date().toISOString();
+          await db.collection('invites').insertOne({
+            inviteToken: tokenHint,
+            tokenHash: hashValue(tokenHint),
+            verificationCode: otpHint,
+            codeHash: hashValue(otpHint),
+            creatorId: creator._id,
+            creatorDisplayName: creator.displayName,
+            recipientHint: url.searchParams.get('hint') || 'Meri Jaan',
+            status: 'pending',
+            createdAt: nowIso,
+            expiresAt: new Date(Date.now() + 7 * 86400000).toISOString()
+          });
+          existing = await db.collection('invites').findOne({
+            creatorId: creator._id,
+            status: { $in: ['pending', 'active'] }
+          });
+        } else if (!byToken.creatorId && verifyOtpMatchesInvite(byToken, otpHint)) {
+          await db.collection('invites').updateOne(
+            { _id: byToken._id, creatorId: null },
+            { $set: { creatorId: creator._id } }
+          );
+          existing = await db.collection('invites').findOne({ _id: byToken._id });
+        }
+      }
 
       return json(
         res,
@@ -1481,9 +1515,15 @@ export default async function handler(req, res) {
         });
       }
 
-      // Step 2: If invite was not found by token (or guest used direct 6-digit OTP entry),
+      // Step 2: If invite was not found by token (or guest used direct 6-digit OTP entry,
+      // or guest had a stale URL tab open and typed a newly generated 6-digit OTP),
       // look up the Host's active/pending session by the 6-digit verificationCode!
-      if (!invite) {
+      if (
+        !invite ||
+        invite.status === 'revoked' ||
+        (invite.expiresAt && new Date(invite.expiresAt).getTime() < Date.now()) ||
+        !verifyOtpMatchesInvite(invite, suppliedOtp)
+      ) {
         const otpMatches = await db
           .collection('invites')
           .find({
@@ -1494,10 +1534,14 @@ export default async function handler(req, res) {
           })
           .sort({ createdAt: -1 })
           .toArray();
-        invite =
-          otpMatches.find((i) => i.status === 'pending' || i.status === 'active') ||
-          otpMatches[0] ||
-          null;
+        const activeOtpMatch = otpMatches.find(
+          (i) => i.status === 'pending' || i.status === 'active'
+        );
+        if (activeOtpMatch) {
+          invite = activeOtpMatch;
+        } else if (!invite && otpMatches[0]) {
+          invite = otpMatches[0];
+        }
       }
 
       if (invite && invite.status === 'revoked') {
@@ -2113,10 +2157,12 @@ export default async function handler(req, res) {
         .replace(/\D/g, '')
         .slice(0, 6);
 
-      // Only allow cold-start invite rehydration if the inviteToken does NOT exist yet in DB.
-      // NEVER adopt unowned connections or invites across accounts!
+      // Only allow cold-start invite/connection rehydration when tokenHint + otpHint belong to this creator
+      // or were created with creatorId: null during a serverless cold-start.
+      // NEVER adopt connections or invites owned by another creatorId!
       if (tokenHint && otpHint.length === 6) {
         const existingInvite = await db.collection('invites').findOne({ inviteToken: tokenHint });
+        let belongsToCreator = false;
         if (!existingInvite) {
           await db.collection('invites').insertOne({
             inviteToken: tokenHint,
@@ -2130,6 +2176,31 @@ export default async function handler(req, res) {
             createdAt: new Date().toISOString(),
             expiresAt: new Date(Date.now() + 7 * 86400000).toISOString()
           });
+          belongsToCreator = true;
+        } else if (!existingInvite.creatorId && verifyOtpMatchesInvite(existingInvite, otpHint)) {
+          await db.collection('invites').updateOne(
+            { _id: existingInvite._id, creatorId: null },
+            { $set: { creatorId: creator._id } }
+          );
+          belongsToCreator = true;
+        } else if (
+          existingInvite.creatorId &&
+          String(existingInvite.creatorId) === String(creator._id) &&
+          verifyOtpMatchesInvite(existingInvite, otpHint)
+        ) {
+          belongsToCreator = true;
+        }
+
+        if (belongsToCreator) {
+          await db.collection('connections').updateMany(
+            {
+              creatorId: null,
+              inviteToken: tokenHint,
+              verificationCode: otpHint,
+              status: 'active'
+            },
+            { $set: { creatorId: creator._id } }
+          );
         }
       }
 

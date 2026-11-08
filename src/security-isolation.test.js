@@ -431,5 +431,59 @@ describe('Account Isolation & Anti-Hijack Security Suite', () => {
     const localInsight = analyzeChatContextLocally([], '', 'creator');
     assert.equal(localInsight.primaryBrand.id, 'nykaa');
   });
+
+  it('9. Validates Cross-Device 6-Digit OTP reliably across direct OTP entry and stale URL tabs without merging chats', async () => {
+    // First revoke User B's previous invite from Test 6 (Strict Single-Partner Rule)
+    const revokeResB = await invokeApi('POST', '/api/invites/revoke', {
+      headers: { authorization: `Bearer ${userBToken}` }
+    });
+    assert.equal(revokeResB.status, 200);
+
+    // User B generates their own Couple Invite & 6-Digit OTP on Device 1
+    const inviteResB = await invokeApi('POST', '/api/invites', {
+      body: {
+        recipientHint: 'Meera',
+        creatorCustomName: 'DummyUserB',
+        partnerCustomName: 'Meera',
+        deviceId: `creator_dev_b_${suffix}`
+      },
+      headers: {
+        authorization: `Bearer ${userBToken}`,
+        'x-device-id': `creator_dev_b_${suffix}`
+      }
+    });
+    assert.equal(inviteResB.status, 201);
+    const otpB = inviteResB.body.verificationCode;
+    const tokenB = inviteResB.body.inviteToken;
+    assert.equal(otpB.length, 6);
+
+    // Partner on Device 2 enters User B's 6-digit OTP even when their browser tab had an older/stale URL token
+    const approveResB = await invokeApi('POST', '/api/guest/invites/stale_old_token_from_yesterday/approve', {
+      body: {
+        verificationCode: otpB,
+        guestDisplayName: 'Meera',
+        deviceId: `guest_dev_b_${suffix}`
+      },
+      headers: {
+        'x-device-id': `guest_dev_b_${suffix}`,
+        'x-forwarded-for': '203.0.113.88'
+      }
+    });
+    assert.equal(approveResB.status, 200);
+    assert.equal(approveResB.body.paired, true);
+    assert.equal(approveResB.body.connection.inviteToken, tokenB);
+
+    // User B polls /api/connections and sees ONLY their own connection with Meera (never User A's chat)
+    const connListB = await invokeApi(
+      'GET',
+      `/api/connections?inviteToken=${encodeURIComponent(tokenB)}&otp=${encodeURIComponent(otpB)}`,
+      {
+        headers: { authorization: `Bearer ${userBToken}` }
+      }
+    );
+    assert.equal(connListB.status, 200);
+    assert.equal(connListB.body.connections.length, 1);
+    assert.equal(connListB.body.connections[0].peerDisplayName, 'Meera');
+  });
 });
 

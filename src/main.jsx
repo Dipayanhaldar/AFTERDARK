@@ -50,7 +50,7 @@ purgeStaleServiceWorkers();
 const SESSION_KEY = 'afterdark_session_token';
 const USER_CACHE_KEY = 'afterdark_user_profile_v1';
 const INVITE_CACHE_KEY = 'afterdark_latest_invite_v3';
-const CUSTOM_GUEST_ORIGIN_KEY = 'afterdark_custom_guest_origin';
+const CUSTOM_GUEST_ORIGIN_KEY = 'afterdark_custom_guest_origin_v2';
 
 const hyderabadCandlelightVenues = [
   'Olive Bistro, Durgam Cheruvu (Lakeview Candlelight)',
@@ -308,15 +308,17 @@ function App() {
   );
 
   const [customGuestOrigin, setCustomGuestOrigin] = useState(() => {
-    const saved = localStorage.getItem(CUSTOM_GUEST_ORIGIN_KEY) || '';
-    if (
-      isInternalPreviewOrigin(saved) ||
-      saved.includes('afterdark-social-universe.vercel.app')
-    ) {
-      localStorage.removeItem(CUSTOM_GUEST_ORIGIN_KEY);
-      return 'https://afterdark-guest-connector.onrender.com';
+    try {
+      localStorage.removeItem('afterdark_custom_guest_origin');
+    } catch {
+      // ignore
     }
-    return saved || 'https://afterdark-guest-connector.onrender.com';
+    const saved = localStorage.getItem(CUSTOM_GUEST_ORIGIN_KEY) || '';
+    if (isInternalPreviewOrigin(saved)) {
+      localStorage.removeItem(CUSTOM_GUEST_ORIGIN_KEY);
+      return '';
+    }
+    return saved;
   });
   const [showCustomDomainConfig, setShowCustomDomainConfig] = useState(false);
 
@@ -404,6 +406,7 @@ function App() {
     }
     return buildPublicInviteLinks({
       inviteToken: activeInvite.inviteToken,
+      verificationCode: activeInvite.verificationCode || '',
       creatorDisplayName:
         activeInvite.creatorCustomName ||
         user?.displayName ||
@@ -415,6 +418,7 @@ function App() {
     });
   }, [
     activeInvite?.inviteToken,
+    activeInvite?.verificationCode,
     activeInvite?.creatorCustomName,
     activeInvite?.creatorDisplayName,
     activeInvite?.partnerCustomName,
@@ -546,7 +550,9 @@ function App() {
 
       const [meData, currentInviteData, connectionData] = await Promise.all([
         resilientApiRequest('/me', {}, currentToken).catch(() => null),
-        resilientApiRequest('/invites/current', {}, currentToken).catch(() => ({ invite: null })),
+        resilientApiRequest(`/invites/current${qs ? `?${qs}` : ''}`, {}, currentToken).catch(() => ({
+          invite: null
+        })),
         resilientApiRequest(`/connections${qs ? `?${qs}` : ''}`, {}, currentToken).catch(() => ({
           connections: []
         }))
@@ -575,12 +581,28 @@ function App() {
         }
       }
 
-      if (currentInviteData?.invite) {
+      if (currentInviteData?.invite && currentInviteData.invite.status !== 'revoked') {
         const nextInvite =
           resolvedUser?.id && !currentInviteData.invite.creatorId
             ? { ...currentInviteData.invite, creatorId: resolvedUser.id }
             : currentInviteData.invite;
         setActiveInvite((prev) => stabilizeInviteState(prev, nextInvite));
+      } else if (
+        inviteBelongsToUser &&
+        activeInvite?.inviteToken &&
+        activeInvite?.verificationCode &&
+        activeInvite?.status !== 'revoked' &&
+        currentInviteData?.invite?.status !== 'revoked'
+      ) {
+        // Server cold-started; re-sync the creator's active invite so Guest OTP validation succeeds
+        resilientApiRequest(
+          '/invites/sync',
+          {
+            method: 'POST',
+            body: JSON.stringify(activeInvite)
+          },
+          currentToken
+        ).catch(() => {});
       } else {
         setActiveInvite(null);
         try {
@@ -1623,44 +1645,6 @@ function App() {
                       <code>{guestInviteLink}</code>
                     </div>
 
-                    {isInternalPreviewOrigin() && !customGuestOrigin && (
-                      <div
-                        style={{
-                          margin: '8px 0 12px',
-                          padding: '10px 12px',
-                          borderRadius: '12px',
-                          background: 'rgba(251, 191, 36, 0.12)',
-                          border: '1px solid rgba(251, 191, 36, 0.4)',
-                          fontSize: '0.8rem',
-                          color: '#fef3c7'
-                        }}
-                      >
-                        <div>
-                          ⚠️ <strong>Guest Connector Domain:</strong> Set to your Render Guest Connector site so scanning the QR code opens the dedicated Guest App directly:
-                        </div>
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
-                          <button
-                            type="button"
-                            className="ad-tool-btn"
-                            onClick={() => {
-                              const url = 'https://afterdark-guest-connector.onrender.com';
-                              setCustomGuestOrigin(url);
-                              localStorage.setItem(CUSTOM_GUEST_ORIGIN_KEY, url);
-                            }}
-                          >
-                            ⚡ Use Render Guest Connector (afterdark-guest-connector.onrender.com)
-                          </button>
-                          <button
-                            type="button"
-                            className="ad-tool-btn"
-                            onClick={() => setShowCustomDomainConfig(true)}
-                          >
-                            🌐 Custom Guest URL
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
                     <div className="ad-cta-row">
                       <button
                         type="button"
@@ -1719,7 +1703,7 @@ function App() {
                     {showCustomDomainConfig && (
                       <div className="ad-collapsible-drawer" style={{ marginTop: 12 }}>
                         <div className="ad-drawer-head">
-                          <strong>🌐 Guest Connector Base URL (Render)</strong>
+                          <strong>🌐 Guest Connector Base URL</strong>
                           <button
                             type="button"
                             className="ad-btn-close"
@@ -1729,30 +1713,29 @@ function App() {
                           </button>
                         </div>
                         <p className="ad-muted" style={{ fontSize: '0.84rem', margin: '4px 0 8px' }}>
-                          Defaults to <code>https://afterdark-guest-connector.onrender.com</code> so scanning the QR code opens your dedicated Render Guest Connector site:
+                          Leave blank (recommended) to use the live APK-crafted Guest interface on the same server for instant cross-device OTP verification:
                         </p>
-                        <div style={{ display: 'flex', gap: '8px' }}>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                           <input
                             type="url"
-                            placeholder="https://afterdark-guest-connector.onrender.com"
+                            placeholder="Auto (Same Server /guest — Recommended)"
                             value={customGuestOrigin}
                             onChange={(e) => {
                               const val = e.target.value;
                               setCustomGuestOrigin(val);
                               localStorage.setItem(CUSTOM_GUEST_ORIGIN_KEY, val);
                             }}
-                            style={{ flex: 1 }}
+                            style={{ flex: 1, minWidth: '220px' }}
                           />
                           <button
                             type="button"
                             className="ad-btn ad-btn-secondary"
                             onClick={() => {
-                              const defaultRenderUrl = 'https://afterdark-guest-connector.onrender.com';
-                              setCustomGuestOrigin(defaultRenderUrl);
-                              localStorage.setItem(CUSTOM_GUEST_ORIGIN_KEY, defaultRenderUrl);
+                              setCustomGuestOrigin('');
+                              localStorage.removeItem(CUSTOM_GUEST_ORIGIN_KEY);
                             }}
                           >
-                            Reset to Render Default
+                            Reset to Auto (Recommended)
                           </button>
                         </div>
                       </div>
