@@ -376,16 +376,6 @@ function configureAndroidResources() {
 `;
   fs.writeFileSync(path.join(valuesDir, 'ic_launcher_background.xml'), icBgXml, 'utf8');
 
-  // Remove any default Capacitor vector launcher drawables that could override our dot-free PNG mipmaps
-  for (const dFolder of ['drawable', 'drawable-v24']) {
-    for (const fName of ['ic_launcher_foreground.xml', 'ic_launcher_background.xml']) {
-      const legacyDrawable = path.join(RES_DIR, dFolder, fName);
-      if (fs.existsSync(legacyDrawable)) {
-        fs.rmSync(legacyDrawable, { force: true });
-      }
-    }
-  }
-
   // Write canonical adaptive icon XMLs in mipmap-anydpi-v26 pointing strictly to our dot-free mipmaps
   const anyDpiDir = path.join(RES_DIR, 'mipmap-anydpi-v26');
   fs.mkdirSync(anyDpiDir, { recursive: true });
@@ -659,7 +649,6 @@ function configureAndroidResources() {
             keyPassword '${keyPassword}'
             v1SigningEnabled true
             v2SigningEnabled true
-            v3SigningEnabled true
         }
     }`;
 

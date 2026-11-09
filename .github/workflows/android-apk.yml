@@ -73,19 +73,16 @@ jobs:
                   CANDIDATE_ALIAS="$DETECTED_ALIAS"
                 fi
                 CANDIDATE_KEY_PASS="${KEY_PASS:-$KEYSTORE_PASS}"
-                if [ -n "$CANDIDATE_ALIAS" ]; then
-                  if ! keytool -importkeystore -noprompt \
-                    -srckeystore /tmp/candidate.jks \
-                    -srcstorepass "$KEYSTORE_PASS" \
-                    -srcalias "$CANDIDATE_ALIAS" \
-                    -srckeypass "$CANDIDATE_KEY_PASS" \
-                    -destkeystore android/app/afterdark-upload.jks \
-                    -deststoretype JKS \
-                    -deststorepass "$KEYSTORE_PASS" \
-                    -destalias "$CANDIDATE_ALIAS" \
-                    -destkeypass "$CANDIDATE_KEY_PASS" >/dev/null 2>&1; then
-                    cp /tmp/candidate.jks android/app/afterdark-upload.jks
-                  fi
+                if [ -n "$CANDIDATE_ALIAS" ] && keytool -importkeystore -noprompt \
+                  -srckeystore /tmp/candidate.jks \
+                  -srcstorepass "$KEYSTORE_PASS" \
+                  -srcalias "$CANDIDATE_ALIAS" \
+                  -srckeypass "$CANDIDATE_KEY_PASS" \
+                  -destkeystore android/app/afterdark-upload.jks \
+                  -deststoretype JKS \
+                  -deststorepass "$KEYSTORE_PASS" \
+                  -destalias "$CANDIDATE_ALIAS" \
+                  -destkeypass "$CANDIDATE_KEY_PASS" >/dev/null 2>&1; then
                   STORE_PASS="$KEYSTORE_PASS"
                   ALIAS_NAME="$CANDIDATE_ALIAS"
                   ALIAS_PASS="$CANDIDATE_KEY_PASS"
@@ -97,19 +94,31 @@ jobs:
           fi
           rm -f /tmp/candidate.jks /tmp/keystore-list.txt
 
-          # If no secret keystore is configured, automatically reuse afterdark-upload.jks from the latest GitHub Release so the certificate NEVER changes between runs
+          # If no valid secret keystore is configured, reuse afterdark-upload.jks from the latest GitHub Release (verified with keytool -importkeystore)
           if [ "$VALID_SECRET_KEYSTORE" -eq 0 ]; then
-            STORE_PASS="${KEYSTORE_PASS:-AfterDarkIndus2026}"
-            ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
-            ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
+            rm -f android/app/afterdark-upload.jks
+            STORE_PASS="AfterDarkIndus2026"
+            ALIAS_NAME="afterdark_key"
+            ALIAS_PASS="AfterDarkIndus2026"
             rm -rf /tmp/prev-jks && mkdir -p /tmp/prev-jks
             if gh release download --pattern "afterdark-upload.jks" -D /tmp/prev-jks >/dev/null 2>&1 && [ -s /tmp/prev-jks/afterdark-upload.jks ]; then
               if keytool -list -v -keystore /tmp/prev-jks/afterdark-upload.jks -storepass "$STORE_PASS" > /tmp/prev-list.txt 2>/dev/null; then
                 DETECTED_PREV_ALIAS=$(awk -F': ' '/Alias name:/ {print $2; exit}' /tmp/prev-list.txt | tr -d '\r[:space:]')
-                cp /tmp/prev-jks/afterdark-upload.jks android/app/afterdark-upload.jks
-                ALIAS_NAME="${DETECTED_PREV_ALIAS:-$ALIAS_NAME}"
-                VALID_SECRET_KEYSTORE=1
-                echo "Reused persistent afterdark-upload.jks from previous release (Alias: $ALIAS_NAME) to prevent signature mismatch."
+                PREV_ALIAS="${DETECTED_PREV_ALIAS:-$ALIAS_NAME}"
+                if keytool -importkeystore -noprompt \
+                  -srckeystore /tmp/prev-jks/afterdark-upload.jks \
+                  -srcstorepass "$STORE_PASS" \
+                  -srcalias "$PREV_ALIAS" \
+                  -srckeypass "$ALIAS_PASS" \
+                  -destkeystore android/app/afterdark-upload.jks \
+                  -deststoretype JKS \
+                  -deststorepass "$STORE_PASS" \
+                  -destalias "$PREV_ALIAS" \
+                  -destkeypass "$ALIAS_PASS" >/dev/null 2>&1; then
+                  ALIAS_NAME="$PREV_ALIAS"
+                  VALID_SECRET_KEYSTORE=1
+                  echo "Reused persistent afterdark-upload.jks from previous release (Alias: $ALIAS_NAME) to prevent signature mismatch."
+                fi
               fi
             fi
             rm -rf /tmp/prev-jks /tmp/prev-list.txt
@@ -117,9 +126,9 @@ jobs:
 
           if [ "$VALID_SECRET_KEYSTORE" -eq 0 ]; then
             rm -f android/app/afterdark-upload.jks
-            STORE_PASS="${KEYSTORE_PASS:-AfterDarkIndus2026}"
-            ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
-            ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
+            STORE_PASS="AfterDarkIndus2026"
+            ALIAS_NAME="afterdark_key"
+            ALIAS_PASS="AfterDarkIndus2026"
             keytool -genkeypair -noprompt -v \
               -keystore android/app/afterdark-upload.jks \
               -storetype JKS \
