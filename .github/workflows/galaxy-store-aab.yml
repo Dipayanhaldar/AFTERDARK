@@ -56,8 +56,9 @@ jobs:
       - name: Generate Capacitor Android project
         run: npx cap add android
 
-      - name: Prepare Release Signing Keystore (.jks via GitHub Secrets)
+      - name: Prepare Release Signing Keystore (.jks via GitHub Secrets or Persistent Release Keystore)
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -75,16 +76,19 @@ jobs:
                   CANDIDATE_ALIAS="$DETECTED_ALIAS"
                 fi
                 CANDIDATE_KEY_PASS="${KEY_PASS:-$KEYSTORE_PASS}"
-                if [ -n "$CANDIDATE_ALIAS" ] && keytool -importkeystore -noprompt \
-                  -srckeystore /tmp/candidate.jks \
-                  -srcstorepass "$KEYSTORE_PASS" \
-                  -srcalias "$CANDIDATE_ALIAS" \
-                  -srckeypass "$CANDIDATE_KEY_PASS" \
-                  -destkeystore android/app/afterdark-upload.jks \
-                  -deststoretype JKS \
-                  -deststorepass "$KEYSTORE_PASS" \
-                  -destalias "$CANDIDATE_ALIAS" \
-                  -destkeypass "$CANDIDATE_KEY_PASS" >/dev/null 2>&1; then
+                if [ -n "$CANDIDATE_ALIAS" ]; then
+                  if ! keytool -importkeystore -noprompt \
+                    -srckeystore /tmp/candidate.jks \
+                    -srcstorepass "$KEYSTORE_PASS" \
+                    -srcalias "$CANDIDATE_ALIAS" \
+                    -srckeypass "$CANDIDATE_KEY_PASS" \
+                    -destkeystore android/app/afterdark-upload.jks \
+                    -deststoretype JKS \
+                    -deststorepass "$KEYSTORE_PASS" \
+                    -destalias "$CANDIDATE_ALIAS" \
+                    -destkeypass "$CANDIDATE_KEY_PASS" >/dev/null 2>&1; then
+                    cp /tmp/candidate.jks android/app/afterdark-upload.jks
+                  fi
                   STORE_PASS="$KEYSTORE_PASS"
                   ALIAS_NAME="$CANDIDATE_ALIAS"
                   ALIAS_PASS="$CANDIDATE_KEY_PASS"
@@ -97,11 +101,27 @@ jobs:
           rm -f /tmp/candidate.jks /tmp/keystore-list.txt
 
           if [ "$VALID_SECRET_KEYSTORE" -eq 0 ]; then
+            STORE_PASS="${KEYSTORE_PASS:-AfterDarkIndus2026}"
+            ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
+            ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
+            rm -rf /tmp/prev-jks && mkdir -p /tmp/prev-jks
+            if gh release download --pattern "afterdark-upload.jks" -D /tmp/prev-jks >/dev/null 2>&1 && [ -s /tmp/prev-jks/afterdark-upload.jks ]; then
+              if keytool -list -v -keystore /tmp/prev-jks/afterdark-upload.jks -storepass "$STORE_PASS" > /tmp/prev-list.txt 2>/dev/null; then
+                DETECTED_PREV_ALIAS=$(awk -F': ' '/Alias name:/ {print $2; exit}' /tmp/prev-list.txt | tr -d '\r[:space:]')
+                cp /tmp/prev-jks/afterdark-upload.jks android/app/afterdark-upload.jks
+                ALIAS_NAME="${DETECTED_PREV_ALIAS:-$ALIAS_NAME}"
+                VALID_SECRET_KEYSTORE=1
+                echo "Reused persistent afterdark-upload.jks from previous release (Alias: $ALIAS_NAME)."
+              fi
+            fi
+            rm -rf /tmp/prev-jks /tmp/prev-list.txt
+          fi
+
+          if [ "$VALID_SECRET_KEYSTORE" -eq 0 ]; then
             rm -f android/app/afterdark-upload.jks
-            STORE_PASS=$(openssl rand -hex 16)
-            ALIAS_NAME="afterdark_key"
-            ALIAS_PASS="$STORE_PASS"
-            echo "::add-mask::$STORE_PASS"
+            STORE_PASS="${KEYSTORE_PASS:-AfterDarkIndus2026}"
+            ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
+            ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
             keytool -genkeypair -noprompt -v \
               -keystore android/app/afterdark-upload.jks \
               -storetype JKS \
@@ -142,8 +162,23 @@ jobs:
           cp "$AAB_UNIVERSE" store-output/com.afterdark.universe.aab
           cp "$APK_UNIVERSE" store-output/AFTERDARK.apk
           cp "$AAB_UNIVERSE" store-output/AFTERDARK.aab
+          cp "$APK_UNIVERSE" store-output/AFTERDARK-uptodown-universal.apk
           cp "$APK_UNIVERSE" store-output/AFTERDARK-indus-release-signed.apk
           cp "$AAB_UNIVERSE" store-output/AFTERDARK-indus-store.aab
+
+      - name: Build Signed Store Release AAB and APK for Fresh Indus Package (com.afterdark.indus)
+        env:
+          ANDROID_PACKAGE_ID: "com.afterdark.indus"
+          ANDROID_APP_NAME: "AFTERDARK"
+        run: |
+          node scripts/configure-android-apk.mjs
+          (cd android && ./gradlew bundleRelease assembleRelease --no-daemon)
+          AAB_INDUS=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          APK_INDUS=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          test -s "$AAB_INDUS"
+          test -s "$APK_INDUS"
+          cp "$APK_INDUS" store-output/com.afterdark.indus.apk
+          cp "$AAB_INDUS" store-output/com.afterdark.indus.aab
 
       - name: Build Signed Store Release AAB and APK for Legacy Listing (com.afterdark.app)
         env:
@@ -158,16 +193,35 @@ jobs:
           test -s "$APK_LEGACY"
           cp "$APK_LEGACY" store-output/com.afterdark.app.apk
           cp "$AAB_LEGACY" store-output/com.afterdark.app.aab
+          cp android/app/afterdark-upload.jks store-output/afterdark-upload.jks
+          cp public/uptodown-manifest.json store-output/uptodown-manifest.json
           rm -f android/app/afterdark-upload.jks android/app/afterdark-upload.keystore
 
-      - name: Verify and package PhonePe Indus Store bundle (Signed AAB + Signed APK + Store Graphics)
+      - name: Verify and package PhonePe Indus & Uptodown Store bundle (Signed AAB + Signed APK + Matching .jks + Dot-Free Icons)
         run: |
+          cp public/icon-512.png store-output/icon-512.png
+          cp public/icon-512.png store-output/afterdark-icon-512x512.png
           cp public/icon-512.png store-output/store-icon-512x512.png
+          cp public/icon-192.png store-output/icon-192.png
           cp public/feature-graphic-1024x500.png store-output/feature-graphic-1024x500.png
-          grep -E "versionCode|versionName" android/app/build.gradle | tee store-output/VERSION-DETAILS.txt
-          sha256sum store-output/*.aab store-output/*.apk | tee store-output/SHA256SUMS.txt
+          CERT_INFO=$(keytool -printcert -jarfile store-output/com.afterdark.universe.aab 2>/dev/null | grep -E "Owner:|SHA1:|SHA256:" || true)
+          cat <<EOF > store-output/KEYSTORE-CREDENTIALS.txt
+          ==================================================================
+          AFTERDARK — UPTODOWN & PHONEPE INDUS STORE KEYSTORE (.JKS) BUNDLE
+          ==================================================================
+          1. Keystore File Included: afterdark-upload.jks
+          2. Key Alias:              ${ANDROID_KEY_ALIAS}
+          3. Keystore Password:      (Your ANDROID_KEYSTORE_PASSWORD secret, or default: AfterDarkIndus2026)
+          4. Key Password:           (Your ANDROID_KEY_PASSWORD secret, or default: AfterDarkIndus2026)
 
-      - name: Upload PhonePe Indus Appstore bundle
+          Verified Certificate Fingerprints on APK & AAB:
+          ${CERT_INFO}
+          ==================================================================
+          EOF
+          grep -E "versionCode|versionName" android/app/build.gradle | tee store-output/VERSION-DETAILS.txt
+          sha256sum store-output/afterdark-upload.jks store-output/icon-512.png store-output/*.aab store-output/*.apk | tee store-output/SHA256SUMS.txt
+
+      - name: Upload PhonePe Indus & Uptodown Store bundle
         uses: actions/upload-artifact@v4
         with:
           name: AFTERDARK-Indus-Store-Bundle

@@ -1,11 +1,16 @@
-name: Build and publish AFTERDARK Android APK
+name: Build and publish AFTERDARK Android APK (Uptodown, Indus & GitHub Releases)
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
-    # Trigger APK build whenever wrapper config, custom icons, styles, or APK generator scripts change
+    tags:
+      - "v*"
+    # Trigger APK build & Uptodown auto-release whenever app code, version manifest, icons, or wrapper config change
     paths:
+      - "package.json"
+      - "src/**"
+      - "public/**"
       - "capacitor.config.json"
       - "icon-192.svg"
       - "icon-512.svg"
@@ -42,14 +47,15 @@ jobs:
           packages: 'platform-tools platforms;android-35 platforms;android-36 build-tools;35.0.0 build-tools;36.0.0'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Generate Web & Store PNG Icons
+      - name: Generate Web, Store PNG Icons & Uptodown Manifest
         run: node scripts/configure-android-apk.mjs
       - name: Build web assets
         run: npm run build
       - name: Create Android wrapper
         run: npx cap add android
-      - name: Prepare Release Signing Keystore (.jks via GitHub Secrets)
+      - name: Prepare Release Signing Keystore (.jks via GitHub Secrets or Persistent Release Keystore)
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -67,16 +73,19 @@ jobs:
                   CANDIDATE_ALIAS="$DETECTED_ALIAS"
                 fi
                 CANDIDATE_KEY_PASS="${KEY_PASS:-$KEYSTORE_PASS}"
-                if [ -n "$CANDIDATE_ALIAS" ] && keytool -importkeystore -noprompt \
-                  -srckeystore /tmp/candidate.jks \
-                  -srcstorepass "$KEYSTORE_PASS" \
-                  -srcalias "$CANDIDATE_ALIAS" \
-                  -srckeypass "$CANDIDATE_KEY_PASS" \
-                  -destkeystore android/app/afterdark-upload.jks \
-                  -deststoretype JKS \
-                  -deststorepass "$KEYSTORE_PASS" \
-                  -destalias "$CANDIDATE_ALIAS" \
-                  -destkeypass "$CANDIDATE_KEY_PASS" >/dev/null 2>&1; then
+                if [ -n "$CANDIDATE_ALIAS" ]; then
+                  if ! keytool -importkeystore -noprompt \
+                    -srckeystore /tmp/candidate.jks \
+                    -srcstorepass "$KEYSTORE_PASS" \
+                    -srcalias "$CANDIDATE_ALIAS" \
+                    -srckeypass "$CANDIDATE_KEY_PASS" \
+                    -destkeystore android/app/afterdark-upload.jks \
+                    -deststoretype JKS \
+                    -deststorepass "$KEYSTORE_PASS" \
+                    -destalias "$CANDIDATE_ALIAS" \
+                    -destkeypass "$CANDIDATE_KEY_PASS" >/dev/null 2>&1; then
+                    cp /tmp/candidate.jks android/app/afterdark-upload.jks
+                  fi
                   STORE_PASS="$KEYSTORE_PASS"
                   ALIAS_NAME="$CANDIDATE_ALIAS"
                   ALIAS_PASS="$CANDIDATE_KEY_PASS"
@@ -88,12 +97,29 @@ jobs:
           fi
           rm -f /tmp/candidate.jks /tmp/keystore-list.txt
 
+          # If no secret keystore is configured, automatically reuse afterdark-upload.jks from the latest GitHub Release so the certificate NEVER changes between runs
+          if [ "$VALID_SECRET_KEYSTORE" -eq 0 ]; then
+            STORE_PASS="${KEYSTORE_PASS:-AfterDarkIndus2026}"
+            ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
+            ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
+            rm -rf /tmp/prev-jks && mkdir -p /tmp/prev-jks
+            if gh release download --pattern "afterdark-upload.jks" -D /tmp/prev-jks >/dev/null 2>&1 && [ -s /tmp/prev-jks/afterdark-upload.jks ]; then
+              if keytool -list -v -keystore /tmp/prev-jks/afterdark-upload.jks -storepass "$STORE_PASS" > /tmp/prev-list.txt 2>/dev/null; then
+                DETECTED_PREV_ALIAS=$(awk -F': ' '/Alias name:/ {print $2; exit}' /tmp/prev-list.txt | tr -d '\r[:space:]')
+                cp /tmp/prev-jks/afterdark-upload.jks android/app/afterdark-upload.jks
+                ALIAS_NAME="${DETECTED_PREV_ALIAS:-$ALIAS_NAME}"
+                VALID_SECRET_KEYSTORE=1
+                echo "Reused persistent afterdark-upload.jks from previous release (Alias: $ALIAS_NAME) to prevent signature mismatch."
+              fi
+            fi
+            rm -rf /tmp/prev-jks /tmp/prev-list.txt
+          fi
+
           if [ "$VALID_SECRET_KEYSTORE" -eq 0 ]; then
             rm -f android/app/afterdark-upload.jks
-            STORE_PASS=$(openssl rand -hex 16)
-            ALIAS_NAME="afterdark_key"
-            ALIAS_PASS="$STORE_PASS"
-            echo "::add-mask::$STORE_PASS"
+            STORE_PASS="${KEYSTORE_PASS:-AfterDarkIndus2026}"
+            ALIAS_NAME="${KEY_ALIAS:-afterdark_key}"
+            ALIAS_PASS="${KEY_PASS:-$STORE_PASS}"
             keytool -genkeypair -noprompt -v \
               -keystore android/app/afterdark-upload.jks \
               -storetype JKS \
@@ -118,7 +144,7 @@ jobs:
         run: |
           node scripts/configure-android-apk.mjs
           python3 -c "import xml.etree.ElementTree as ET, sys; [ET.parse(f) for f in sys.argv[1:]]" android/app/src/main/AndroidManifest.xml android/app/src/main/res/values/styles.xml android/app/src/main/res/values/strings.xml android/app/src/main/res/values/ic_launcher_background.xml
-      - name: Build Signed Release APK & AAB (com.afterdark.universe)
+      - name: Build Signed Release APK & AAB for Uptodown & PhonePe Indus (com.afterdark.universe)
         run: |
           chmod +x android/gradlew
           (cd android && ./gradlew assembleRelease bundleRelease --no-daemon)
@@ -128,11 +154,25 @@ jobs:
           test -s "$AAB_FILE"
           cp "$APK_FILE" afterdark.apk
           cp "$APK_FILE" AFTERDARK.apk
+          cp "$APK_FILE" AFTERDARK-uptodown-universal.apk
           cp "$APK_FILE" com.afterdark.universe.apk
           cp "$AAB_FILE" afterdark-release.aab
           cp "$AAB_FILE" AFTERDARK.aab
           cp "$AAB_FILE" com.afterdark.universe.aab
-      - name: Build Signed Release APK & AAB for Legacy Listing (com.afterdark.app)
+      - name: Build Signed Release APK & AAB for Fresh Indus Package (com.afterdark.indus)
+        env:
+          ANDROID_PACKAGE_ID: "com.afterdark.indus"
+          ANDROID_APP_NAME: "AFTERDARK"
+        run: |
+          node scripts/configure-android-apk.mjs
+          (cd android && ./gradlew assembleRelease bundleRelease --no-daemon)
+          APK_INDUS=$(find android/app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          AAB_INDUS=$(find android/app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          test -s "$APK_INDUS"
+          test -s "$AAB_INDUS"
+          cp "$APK_INDUS" com.afterdark.indus.apk
+          cp "$AAB_INDUS" com.afterdark.indus.aab
+      - name: Build Signed Release APK & AAB for Legacy Listing (com.afterdark.app) & Bundle Keystore + Icons
         env:
           ANDROID_PACKAGE_ID: "com.afterdark.app"
           ANDROID_APP_NAME: "AFTERDARK"
@@ -145,44 +185,123 @@ jobs:
           test -s "$AAB_LEGACY"
           cp "$APK_LEGACY" com.afterdark.app.apk
           cp "$AAB_LEGACY" com.afterdark.app.aab
+
+          # Copy exact signing keystore (.jks), Uptodown manifest, and new dot-free icons to root
+          cp android/app/afterdark-upload.jks afterdark-upload.jks
+          cp public/uptodown-manifest.json uptodown-manifest.json
+          cp public/icon-512.png icon-512.png
+          cp public/icon-512.png afterdark-icon-512x512.png
+          cp public/icon-192.png icon-192.png
+          cp public/feature-graphic-1024x500.png feature-graphic-1024x500.png
+
+          RESOLVED_VER_CODE=$((202608 + ${GITHUB_RUN_NUMBER:-0}))
+          RESOLVED_VER_NAME="2.0.2.$((8 + ${GITHUB_RUN_NUMBER:-0}))"
+          echo "RESOLVED_VER_CODE=$RESOLVED_VER_CODE" >> "$GITHUB_ENV"
+          echo "RESOLVED_VER_NAME=$RESOLVED_VER_NAME" >> "$GITHUB_ENV"
+
+          CERT_INFO=$(keytool -printcert -jarfile com.afterdark.universe.aab 2>/dev/null | grep -E "Owner:|SHA1:|SHA256:" || true)
+          cat <<EOF > KEYSTORE_CREDENTIALS.txt
+          ==================================================================
+          AFTERDARK — UPTODOWN & PHONEPE INDUS STORE KEYSTORE (.JKS) BUNDLE
+          ==================================================================
+          Version Name:              ${RESOLVED_VER_NAME}
+          Version Code:              ${RESOLVED_VER_CODE}
+          1. Keystore File Included: afterdark-upload.jks
+          2. Key Alias:              ${ANDROID_KEY_ALIAS}
+          3. Keystore Password:      (Your ANDROID_KEYSTORE_PASSWORD secret, or default: AfterDarkIndus2026)
+          4. Key Password:           (Your ANDROID_KEY_PASSWORD secret, or default: AfterDarkIndus2026)
+
+          Verified Certificate Fingerprints on APK & AAB:
+          ${CERT_INFO}
+
+          Included Files:
+          - AFTERDARK-uptodown-universal.apk                        (Uptodown Universal APK — All ABIs, Play-Services-Free)
+          - afterdark.apk / AFTERDARK.apk                           (Direct GitHub Release Universal APK)
+          - com.afterdark.universe.aab & com.afterdark.universe.apk (Package: com.afterdark.universe)
+          - com.afterdark.indus.aab & com.afterdark.indus.apk       (Fresh Package if old draft locked signature)
+          - com.afterdark.app.aab & com.afterdark.app.apk           (Package: com.afterdark.app)
+          - afterdark-upload.jks                                    (Exact matching .jks keystore for AAB upload)
+          - uptodown-manifest.json                                  (Machine-readable Uptodown Auto-Sync & Monetization metadata)
+          - icon-512.png / afterdark-icon-512x512.png               (New 512x512 App Icon — NO DOT)
+          - feature-graphic-1024x500.png                            (1024x500 Store Banner — NO DOT)
+          ==================================================================
+          EOF
           rm -f android/app/afterdark-upload.jks android/app/afterdark-upload.keystore
-          sha256sum afterdark.apk AFTERDARK.apk com.afterdark.universe.apk com.afterdark.app.apk afterdark-release.aab com.afterdark.universe.aab com.afterdark.app.aab
-      - name: Keep build artifacts (Signed APK, Signed AAB & Store Graphics)
+          sha256sum afterdark-upload.jks icon-512.png AFTERDARK-uptodown-universal.apk com.afterdark.universe.apk com.afterdark.universe.aab com.afterdark.indus.apk com.afterdark.indus.aab com.afterdark.app.apk com.afterdark.app.aab
+      - name: Keep build artifacts (Signed Universal APK, Signed AAB, Matching .jks Keystore, Uptodown Manifest & Dot-Free Icons)
         uses: actions/upload-artifact@v4
         with:
           name: afterdark-android-apk
           path: |
+            afterdark-upload.jks
+            KEYSTORE_CREDENTIALS.txt
+            uptodown-manifest.json
+            icon-512.png
+            afterdark-icon-512x512.png
+            icon-192.png
+            feature-graphic-1024x500.png
+            AFTERDARK-uptodown-universal.apk
             afterdark.apk
             AFTERDARK.apk
             com.afterdark.universe.apk
+            com.afterdark.indus.apk
             com.afterdark.app.apk
             afterdark-release.aab
             AFTERDARK.aab
             com.afterdark.universe.aab
+            com.afterdark.indus.aab
             com.afterdark.app.aab
             public/icon-512.png
             public/feature-graphic-1024x500.png
           if-no-files-found: error
           retention-days: 30
-      - name: Publish Store-Ready APK & AAB release
+      - name: Publish Semantic GitHub Release for Uptodown Auto-Sync & Direct APK Downloads
         continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: android-build-${{ github.run_number }}
-          name: AFTERDARK Store-Signed Android APK & AAB ${{ github.run_number }}
+          tag_name: v${{ env.RESOLVED_VER_NAME }}
+          name: AFTERDARK v${{ env.RESOLVED_VER_NAME }} (versionCode ${{ env.RESOLVED_VER_CODE }} · Uptodown & Indus Store Ready)
           body: |
-            Store-Signed Release Android builds of AFTERDARK for **PhonePe Indus Appstore**:
-            - **If your Indus Appstore listing uses Package Name `com.afterdark.universe`**: upload `com.afterdark.universe.apk` (or `com.afterdark.universe.aab` / `AFTERDARK.apk`)
-            - **If your existing Indus Appstore listing is locked to `com.afterdark.app`**: upload `com.afterdark.app.apk` (or `com.afterdark.app.aab`)
-            - `icon-512.png`: 512x512 High-Res Store Listing Icon
+            ### 🌙 AFTERDARK Official Android Release `v${{ env.RESOLVED_VER_NAME }}` (`versionCode ${{ env.RESOLVED_VER_CODE }}`)
+
+            Automated build & multi-store release for **Uptodown Android App Store**, **PhonePe Indus Appstore**, and **Direct Android APK Installation**.
+
+            #### 📦 Primary Downloads
+            - 🟢 **[`AFTERDARK-uptodown-universal.apk`](https://github.com/${{ github.repository }}/releases/latest/download/AFTERDARK-uptodown-universal.apk)** — Universal Android APK (`com.afterdark.universe`) for **Uptodown** & all Android devices (ARM64, ARMv7, x86_64; zero Google Play Services lock-in; Uptodown monetization enabled).
+            - 📲 **[`afterdark.apk`](https://github.com/${{ github.repository }}/releases/latest/download/afterdark.apk)** — Direct 1-click Android APK download.
+            - 🟣 **`com.afterdark.universe.aab` / `com.afterdark.universe.apk`** — Signed bundle & APK for **PhonePe Indus Appstore**.
+            - 🆕 **`com.afterdark.indus.aab` / `com.afterdark.indus.apk`** — Fresh package slot (`com.afterdark.indus`) signed with the same `.jks` key.
+            - 🔐 **`afterdark-upload.jks` + `KEYSTORE_CREDENTIALS.txt`** — Exact matching JKS keystore & verified SHA-1/SHA-256 fingerprints.
+            - 🎨 **`icon-512.png` + `feature-graphic-1024x500.png`** — High-resolution dot-free crescent moon store graphics.
           files: |
+            AFTERDARK-uptodown-universal.apk
             afterdark.apk
             AFTERDARK.apk
             com.afterdark.universe.apk
+            com.afterdark.indus.apk
             com.afterdark.app.apk
             afterdark-release.aab
             AFTERDARK.aab
             com.afterdark.universe.aab
+            com.afterdark.indus.aab
             com.afterdark.app.aab
-            public/icon-512.png
+            afterdark-upload.jks
+            KEYSTORE_CREDENTIALS.txt
+            uptodown-manifest.json
+            icon-512.png
+            afterdark-icon-512x512.png
+            feature-graphic-1024x500.png
           make_latest: true
+      - name: Notify Uptodown Auto-Sync Webhook (if configured)
+        if: always()
+        env:
+          UPTODOWN_WEBHOOK_URL: ${{ secrets.UPTODOWN_WEBHOOK_URL }}
+        run: |
+          if [ -n "${UPTODOWN_WEBHOOK_URL:-}" ]; then
+            curl -fsSL -X POST "$UPTODOWN_WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d @uptodown-manifest.json || true
+            echo "Notified Uptodown webhook with latest release manifest."
+          else
+            echo "Standard GitHub Release v${RESOLVED_VER_NAME} published; Uptodown GitHub crawler will auto-detect via /releases/latest."
+          fi

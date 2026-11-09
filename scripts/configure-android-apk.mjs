@@ -290,9 +290,51 @@ function generateWebAndStorePngIcons() {
     const featureGraphic = renderStoreBannerPng(1024, 500, 0);
     fs.writeFileSync(path.join(PUBLIC_DIR, 'icon-192.png'), icon192);
     fs.writeFileSync(path.join(PUBLIC_DIR, 'icon-512.png'), icon512);
+    fs.writeFileSync(path.join(PUBLIC_DIR, 'afterdark-icon-512x512.png'), icon512);
     fs.writeFileSync(path.join(PUBLIC_DIR, 'feature-graphic-1024x500.png'), featureGraphic);
+
+    const runNumber = Math.max(0, Number.parseInt(process.env.GITHUB_RUN_NUMBER || '0', 10) || 0);
+    const resolvedVersionCode = 202608 + runNumber;
+    const resolvedVersionName = runNumber > 0 ? `2.0.2.${8 + runNumber}` : '2.0.2.8';
+    const resolvedAppName = String(process.env.ANDROID_APP_NAME || 'AFTERDARK').trim();
+
+    const uptodownManifest = {
+      app_name: resolvedAppName,
+      package_name: 'com.afterdark.universe',
+      version_name: resolvedVersionName,
+      version_code: resolvedVersionCode,
+      min_sdk_version: 22,
+      target_sdk_version: 35,
+      universal_architecture: ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'],
+      requires_google_play_services: false,
+      license: 'Free',
+      age_rating: '18+',
+      category: 'Social / Communication / Dating',
+      website_url: 'https://afterdark-social-universe.vercel.app',
+      privacy_policy_url: 'https://afterdark-social-universe.vercel.app/privacy-policy.html',
+      github_releases_latest_url: 'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest',
+      direct_apk_download_url:
+        'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/AFTERDARK-uptodown-universal.apk',
+      fallback_apk_download_url:
+        'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk',
+      monetization: {
+        uptodown_monetization_enabled: true,
+        pricing_model: 'FREE_DOWNLOAD',
+        in_app_monetization_type: 'AFFILIATE_BRAND_DISCOVERY_AND_ZERO_FEE_UPI_INTENT',
+        google_play_billing_dependency: false,
+        commission_free_standalone: true,
+        uptodown_promotional_campaigns_supported: true
+      },
+      updated_at: new Date().toISOString()
+    };
+    fs.writeFileSync(
+      path.join(PUBLIC_DIR, 'uptodown-manifest.json'),
+      JSON.stringify(uptodownManifest, null, 2) + '\n',
+      'utf8'
+    );
+
     console.log(
-      '[configure-android-apk] Generated public/icon-192.png, public/icon-512.png (512x512 Store Icon), and public/feature-graphic-1024x500.png.'
+      '[configure-android-apk] Generated dot-free public/icon-192.png, public/icon-512.png, public/afterdark-icon-512x512.png, public/feature-graphic-1024x500.png, and public/uptodown-manifest.json.'
     );
   } catch (err) {
     console.warn('[configure-android-apk] Could not write public PNG icons:', err?.message);
@@ -333,6 +375,28 @@ function configureAndroidResources() {
 </resources>
 `;
   fs.writeFileSync(path.join(valuesDir, 'ic_launcher_background.xml'), icBgXml, 'utf8');
+
+  // Remove any default Capacitor vector launcher drawables that could override our dot-free PNG mipmaps
+  for (const dFolder of ['drawable', 'drawable-v24']) {
+    for (const fName of ['ic_launcher_foreground.xml', 'ic_launcher_background.xml']) {
+      const legacyDrawable = path.join(RES_DIR, dFolder, fName);
+      if (fs.existsSync(legacyDrawable)) {
+        fs.rmSync(legacyDrawable, { force: true });
+      }
+    }
+  }
+
+  // Write canonical adaptive icon XMLs in mipmap-anydpi-v26 pointing strictly to our dot-free mipmaps
+  const anyDpiDir = path.join(RES_DIR, 'mipmap-anydpi-v26');
+  fs.mkdirSync(anyDpiDir, { recursive: true });
+  const adaptiveIconXml = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+</adaptive-icon>
+`;
+  fs.writeFileSync(path.join(anyDpiDir, 'ic_launcher.xml'), adaptiveIconXml, 'utf8');
+  fs.writeFileSync(path.join(anyDpiDir, 'ic_launcher_round.xml'), adaptiveIconXml, 'utf8');
 
   // Dark theme + camera notch protection (`android:fitsSystemWindows="true"`) in styles.xml
   const stylesXml = `<?xml version="1.0" encoding="utf-8"?>
@@ -492,6 +556,19 @@ function configureAndroidResources() {
         <meta-data
             android:name="indus.appstore.payment.provider"
             android:value="PHONEPE_UPI_INTENT_AND_FREE_BYPASS" />
+        <!-- Uptodown App Store Distribution, Auto-Sync & Monetization Compliance Metadata -->
+        <meta-data
+            android:name="com.uptodown.distribution.channel"
+            android:value="UPTODOWN_OFFICIAL_GITHUB_AUTOSYNC" />
+        <meta-data
+            android:name="com.uptodown.monetization.enabled"
+            android:value="true" />
+        <meta-data
+            android:name="com.uptodown.monetization.model"
+            android:value="FREE_APP_WITH_PARTNER_BRAND_DISCOVERY_AND_PROMOTIONS" />
+        <meta-data
+            android:name="com.uptodown.gms.required"
+            android:value="false" />
     </application>
 </manifest>
 `;
@@ -508,8 +585,48 @@ function configureAndroidResources() {
 
   // Sync monotonically increasing versionCode & versionName + applicationId + Release Signing in android/app/build.gradle
   const runNumber = Math.max(0, Number.parseInt(process.env.GITHUB_RUN_NUMBER || '0', 10) || 0);
-  const resolvedVersionCode = 202600 + runNumber;
-  const resolvedVersionName = runNumber > 0 ? `2.0.2.${7 + runNumber}` : '2.0.2.7';
+  const resolvedVersionCode = 202608 + runNumber;
+  const resolvedVersionName = runNumber > 0 ? `2.0.2.${8 + runNumber}` : '2.0.2.8';
+
+  // Write machine-readable Uptodown Auto-Sync & Monetization Manifest to public/uptodown-manifest.json
+  try {
+    const uptodownManifest = {
+      app_name: resolvedAppName,
+      package_name: 'com.afterdark.universe',
+      version_name: resolvedVersionName,
+      version_code: resolvedVersionCode,
+      min_sdk_version: 22,
+      target_sdk_version: 35,
+      universal_architecture: ['arm64-v8a', 'armeabi-v7a', 'x86_64', 'x86'],
+      requires_google_play_services: false,
+      license: 'Free',
+      age_rating: '18+',
+      category: 'Social / Communication / Dating',
+      website_url: 'https://afterdark-social-universe.vercel.app',
+      privacy_policy_url: 'https://afterdark-social-universe.vercel.app/privacy-policy.html',
+      github_releases_latest_url: 'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest',
+      direct_apk_download_url:
+        'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/AFTERDARK-uptodown-universal.apk',
+      fallback_apk_download_url:
+        'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk',
+      monetization: {
+        uptodown_monetization_enabled: true,
+        pricing_model: 'FREE_DOWNLOAD',
+        in_app_monetization_type: 'AFFILIATE_BRAND_DISCOVERY_AND_ZERO_FEE_UPI_INTENT',
+        google_play_billing_dependency: false,
+        commission_free_standalone: true,
+        uptodown_promotional_campaigns_supported: true
+      },
+      updated_at: new Date().toISOString()
+    };
+    fs.writeFileSync(
+      path.join(PUBLIC_DIR, 'uptodown-manifest.json'),
+      JSON.stringify(uptodownManifest, null, 2) + '\n',
+      'utf8'
+    );
+  } catch (err) {
+    console.warn('[configure-android-apk] Could not write uptodown-manifest.json:', err?.message);
+  }
 
   const gradlePath = path.resolve(ROOT_DIR, 'android/app/build.gradle');
   if (fs.existsSync(gradlePath)) {
@@ -542,6 +659,7 @@ function configureAndroidResources() {
             keyPassword '${keyPassword}'
             v1SigningEnabled true
             v2SigningEnabled true
+            v3SigningEnabled true
         }
     }`;
 
@@ -561,7 +679,7 @@ function configureAndroidResources() {
   }
 
   console.log(
-    `[configure-android-apk] Configured ${resolvedAppName} (${resolvedPackageId}) v${resolvedVersionName} (versionCode ${resolvedVersionCode}) icons, manifest, strings.xml & release signing.`
+    `[configure-android-apk] Configured ${resolvedAppName} (${resolvedPackageId}) v${resolvedVersionName} (versionCode ${resolvedVersionCode}) icons, manifest, strings.xml, Uptodown manifest & release signing.`
   );
 }
 

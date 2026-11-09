@@ -111,7 +111,7 @@ test('Custom E2EE passphrase adds second encryption layer on message records', a
   );
 });
 
-test('Release v2.0.2.7 manifest provides meaningful 4-segment version breakdown and store matrix', async () => {
+test('Release v2.0.2.8 manifest provides meaningful 4-segment version breakdown and store matrix including Uptodown', async () => {
   const {
     APP_VERSION,
     VERSION_SEGMENTS,
@@ -120,17 +120,21 @@ test('Release v2.0.2.7 manifest provides meaningful 4-segment version breakdown 
     decodeVersionString
   } = await import('./version-manifest.js');
 
-  assert.equal(APP_VERSION, '2.0.2.7');
+  assert.equal(APP_VERSION, '2.0.2.8');
   assert.equal(VERSION_SEGMENTS.length, 4);
-  assert.equal(VERSION_SEGMENTS.map((s) => s.digit).join('.'), '2.0.2.7');
+  assert.equal(VERSION_SEGMENTS.map((s) => s.digit).join('.'), '2.0.2.8');
   assert.equal(VERSION_UPDATE_LOCATIONS.length >= 6, true);
-  assert.equal(STORE_COMPATIBILITY_MATRIX.length >= 3, true);
+  assert.equal(STORE_COMPATIBILITY_MATRIX.length >= 4, true);
+  assert.equal(
+    STORE_COMPATIBILITY_MATRIX.some((s) => s.storeId === 'uptodown-android'),
+    true
+  );
 
-  const decoded = decodeVersionString('2.0.2.7');
+  const decoded = decodeVersionString('2.0.2.8');
   assert.equal(decoded.majorGen, 2);
   assert.equal(decoded.platformChannel, 0);
   assert.equal(decoded.featureMilestone, 2);
-  assert.equal(decoded.patchScope, 7);
+  assert.equal(decoded.patchScope, 8);
 });
 
 test('Top 100 Indian Brands catalog contains exactly 100 unique Indian brands for in-chat advertisements', async () => {

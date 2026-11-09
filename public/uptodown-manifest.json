@@ -1,0 +1,32 @@
+{
+  "app_name": "AFTERDARK",
+  "package_name": "com.afterdark.universe",
+  "version_name": "2.0.2.8",
+  "version_code": 202608,
+  "min_sdk_version": 22,
+  "target_sdk_version": 35,
+  "universal_architecture": [
+    "arm64-v8a",
+    "armeabi-v7a",
+    "x86_64",
+    "x86"
+  ],
+  "requires_google_play_services": false,
+  "license": "Free",
+  "age_rating": "18+",
+  "category": "Social / Communication / Dating",
+  "website_url": "https://afterdark-social-universe.vercel.app",
+  "privacy_policy_url": "https://afterdark-social-universe.vercel.app/privacy-policy.html",
+  "github_releases_latest_url": "https://github.com/Dipayanhaldar/AFTERDARK/releases/latest",
+  "direct_apk_download_url": "https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/AFTERDARK-uptodown-universal.apk",
+  "fallback_apk_download_url": "https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk",
+  "monetization": {
+    "uptodown_monetization_enabled": true,
+    "pricing_model": "FREE_DOWNLOAD",
+    "in_app_monetization_type": "AFFILIATE_BRAND_DISCOVERY_AND_ZERO_FEE_UPI_INTENT",
+    "google_play_billing_dependency": false,
+    "commission_free_standalone": true,
+    "uptodown_promotional_campaigns_supported": true
+  },
+  "updated_at": "2026-11-09T16:17:33.583Z"
+}
