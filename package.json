@@ -1,7 +1,7 @@
 {
   "name": "afterdark",
   "private": true,
-  "version": "2.0.2.6",
+  "version": "2.0.2.7",
   "type": "module",
   "scripts": {
     "dev": "node server.js",
@@ -9,6 +9,7 @@
     "start": "vite build && NODE_ENV=production node server.js",
     "preview": "vite preview",
     "lint": "vite build",
+    "test": "node --test src/*.test.js",
     "android:sync": "cap sync android"
   },
   "dependencies": {

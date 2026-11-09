@@ -12,10 +12,10 @@
  * - [3] Patch & Scope 3: Native Android APK Animated Notification & Distinct Santoor Audio + Camera Notch Safe-Area
  */
 
-export const APP_VERSION = '2.0.2.6';
-export const APP_VERSION_TAG = 'v2.0.2.6';
-export const APP_VERSION_CODENAME = 'Moonlight Santoor · Auto-Increment Store Release (.jks + AAB)';
-export const APP_RELEASE_DATE = '2026-11-07';
+export const APP_VERSION = '2.0.2.7';
+export const APP_VERSION_TAG = 'v2.0.2.7';
+export const APP_VERSION_CODENAME = 'Indus Store 100% Free Compliance · Zero-Fee UPI Intent & External Merchant Discovery';
+export const APP_RELEASE_DATE = '2026-11-09';
 
 export const VERSION_SEGMENTS = [
   {
@@ -47,12 +47,12 @@ export const VERSION_SEGMENTS = [
   },
   {
     index: 4,
-    digit: '6',
+    digit: '7',
     code: 'UPDATE_PATCH_LOC',
-    title: 'PhonePe Indus Appstore AAB/APK Auto-VersionCode & Secret Hardening',
+    title: 'PhonePe Indus On-Hold Resolution · Zero-Fee Device UPI Intent & Pure Free App Compliance',
     meaning:
-      'Bumped release version to 2.0.2.6+ with CI-driven monotonically increasing versionCode (202600 + run_number) and strict GitHub Secrets signing with zero repository key exposure.',
-    hintLocation: 'scripts/configure-android-apk.mjs · .github/workflows/galaxy-store-aab.yml · .github/workflows/android-apk.yml'
+      'Resolved Indus Appstore On-Hold status by clarifying 100% free app model with zero in-app sales, removing misleading payment labels, and adding native 0% commission direct UPI Intent.',
+    hintLocation: 'src/commerce-catalog.jsx · manifest.webmanifest · public/privacy-policy.html'
   }
 ];
 

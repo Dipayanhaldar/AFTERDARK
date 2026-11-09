@@ -22,7 +22,8 @@ import {
   playOutgoingMessageSound,
   playMessageSeenSound,
   triggerIncomingPartnerAlert,
-  requestNativeNotificationPermission
+  requestNativeNotificationPermission,
+  isAndroidApkRuntime
 } from './notification-sound';
 import {
   purgeStaleServiceWorkers,
@@ -719,7 +720,9 @@ export function GuestApp() {
         guestToken
       );
       setBanner(
-        `🔒 Private order details saved for "${res.order.itemName}" on ${res.order.brandName} (Hidden from partner chat). Click "Proceed to Official ${res.order.brandName}" to pay!`
+        isAndroidApkRuntime()
+          ? `🔒 Saved "${res.order.itemName}" (${res.order.brandName}). Complete via PhonePe / UPI (0% fee) or open ${res.order.brandName} directly!`
+          : `🔒 Private order details saved for "${res.order.itemName}" on ${res.order.brandName} (Hidden from partner chat). Click "Proceed to Official ${res.order.brandName}" to pay!`
       );
     } catch (err) {
       setError(err.message);

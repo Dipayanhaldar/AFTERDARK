@@ -404,6 +404,37 @@ function configureAndroidResources() {
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
+    <!-- Android 11-15 (API 30-35) Package Visibility for PhonePe Indus Appstore & Zero-Fee UPI Payment Gateway -->
+    <queries>
+        <package android:name="com.phonepe.app" />
+        <package android:name="com.phonepe.app.preprod" />
+        <package android:name="in.org.npci.upiapp" />
+        <package android:name="com.google.android.apps.nbu.paisa.user" />
+        <package android:name="net.one97.paytm" />
+        <package android:name="in.amazon.mshop.android.shopping" />
+        <package android:name="com.whatsapp" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="upi" android:host="pay" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="phonepe" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="tez" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="paytmmp" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="bhim" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:hardwareAccelerated="true"
@@ -428,6 +459,15 @@ function configureAndroidResources() {
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- Deep-Link & PhonePe / UPI Payment Return Callback Filter -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="${resolvedPackageId}" android:host="payment-callback" />
+                <data android:scheme="afterdark" android:host="payment-callback" />
+            </intent-filter>
+
         </activity>
 
         <provider
@@ -443,6 +483,15 @@ function configureAndroidResources() {
         <meta-data
             android:name="android.allow_multiple_resumed_activities"
             android:value="true" />
+        <meta-data
+            android:name="com.phonepe.android.sdk.isUAT"
+            android:value="false" />
+        <meta-data
+            android:name="com.phonepe.android.sdk.AppId"
+            android:value="AFTERDARK_INDUS_UPI_FREE" />
+        <meta-data
+            android:name="indus.appstore.payment.provider"
+            android:value="PHONEPE_UPI_INTENT_AND_FREE_BYPASS" />
     </application>
 </manifest>
 `;
@@ -460,7 +509,7 @@ function configureAndroidResources() {
   // Sync monotonically increasing versionCode & versionName + applicationId + Release Signing in android/app/build.gradle
   const runNumber = Math.max(0, Number.parseInt(process.env.GITHUB_RUN_NUMBER || '0', 10) || 0);
   const resolvedVersionCode = 202600 + runNumber;
-  const resolvedVersionName = runNumber > 0 ? `2.0.2.${6 + runNumber}` : '2.0.2.6';
+  const resolvedVersionName = runNumber > 0 ? `2.0.2.${7 + runNumber}` : '2.0.2.7';
 
   const gradlePath = path.resolve(ROOT_DIR, 'android/app/build.gradle');
   if (fs.existsSync(gradlePath)) {

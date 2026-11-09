@@ -139,12 +139,22 @@ export function isAndroidApkEnvironment() {
   } catch {
     // ignore storage errors
   }
+  const proto = String(window.location?.protocol || '').toLowerCase();
+  const host = String(window.location?.hostname || '').toLowerCase();
+  const port = String(window.location?.port || '');
+  const isCapacitorOrigin =
+    proto === 'capacitor:' ||
+    proto === 'file:' ||
+    (host === 'localhost' && !port && proto === 'https:');
+
   const ua = String(navigator.userAgent || '');
   const isCapacitor = Boolean(
-    window.Capacitor ||
+    isCapacitorOrigin ||
+      window.Capacitor ||
       ua.includes('Capacitor') ||
       ua.includes('; wv)') ||
-      ua.includes('AfterDarkAPK')
+      ua.includes('AfterDarkAPK') ||
+      ua.includes('PhonePeIndusStore')
   );
   const isAndroidStandalone =
     /Android/i.test(ua) &&

@@ -9,6 +9,7 @@
   },
   "android": {
     "allowMixedContent": false,
-    "backgroundColor": "#0c0612"
+    "backgroundColor": "#0c0612",
+    "appendUserAgent": "AfterDarkAPK PhonePeIndusStore"
   }
 }
