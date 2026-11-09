@@ -85,7 +85,7 @@ keytool -genkeypair -v \
   -alias afterdark_key \
   -storepass YourStrongPassword123 \
   -keypass YourStrongPassword123 \
-  -dname "CN=Dipayan Haldar, OU=AFTERDARK, O=AFTERDARK Universe, L=Hyderabad, ST=Telangana, C=IN"
+  -dname "CN=AFTERDARK Publisher, OU=AFTERDARK, O=AFTERDARK Universe, L=Hyderabad, ST=Telangana, C=IN"
 ```
 *(Replace `YourStrongPassword123` with your own secure password).*
 
@@ -140,7 +140,7 @@ Microsoft Store supports Progressive Web Apps (PWAs) natively with **zero commis
 6. In the modal:
    - **Package ID:** `com.afterdark.universe`
    - **App Name:** `AFTERDARK`
-   - **Publisher Display Name:** `Dipayan Haldar`
+   - **Publisher Display Name:** `AFTERDARK Official`
    - **Publisher ID:** (Obtained from Microsoft Partner Center, see Step 3.2)
 7. Click **"Generate"** and download the `.zip` containing your `.msixbundle`.
 
@@ -179,12 +179,12 @@ When submitting to PhonePe Indus Appstore, Microsoft Store, or Samsung Galaxy St
 - **Guest Access URL:** `https://afterdark-social-universe.vercel.app/guest`
 - **Host Testing Account:**
   - Email: `review-host@afterdark.internal` (or use 1-click Google Sign-In)
-  - Display Name: `Dipayan (Host)`
+  - Display Name: `Reviewer (Host)`
 - **Guest Room Pairing Verification:**
   - Active 6-Digit Passcode: `202611`
   - Direct Guest Join Link: `https://afterdark-social-universe.vercel.app/guest?code=202611`
 - **Privacy Policy URL:** `https://afterdark-social-universe.vercel.app/privacy-policy.html`
-- **Developer Support Contact:** `dipayanhaldar3@gmail.com`
+- **Developer Support Contact:** *(Use the support contact configured in your store console)*
 
 ---
 

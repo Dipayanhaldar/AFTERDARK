@@ -1579,7 +1579,9 @@ export function InlineCommerceDrawer({
     return tonight.toISOString().slice(0, 16);
   });
   const isPhoneApp = isAndroidApkRuntime();
-  const [upiRecipient, setUpiRecipient] = useState('dipayanhaldar3@okaxis');
+  const privateEnvMerchantVpa =
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_MERCHANT_UPI_VPA) || '';
+  const [upiRecipient, setUpiRecipient] = useState('');
   const [upiAmount, setUpiAmount] = useState('199');
   const [upiNote, setUpiNote] = useState('AFTERDARK Order');
   const [showUpiSection, setShowUpiSection] = useState(false);
@@ -1613,12 +1615,14 @@ export function InlineCommerceDrawer({
   const chosenItem =
     activeBrand.items.find((i) => i.id === selectedItemId) || activeBrand.items[0];
 
+  const effectiveReceiverVpa =
+    upiRecipient.trim() || privateEnvMerchantVpa || 'afterdark.merchant@ybl';
+
   const upiDeepLinkUri = useMemo(() => {
     const amt = String(upiAmount || chosenItem?.originalPrice || '199').trim();
-    const pa = String(upiRecipient || 'dipayanhaldar3@okaxis').trim();
     const tn = String(upiNote || `${activeBrand.name} - ${chosenItem?.name || 'Order'}`).trim();
-    return `upi://pay?pa=${encodeURIComponent(pa)}&pn=${encodeURIComponent('AFTERDARK')}&am=${encodeURIComponent(amt)}&cu=INR&tn=${encodeURIComponent(tn)}`;
-  }, [upiRecipient, upiAmount, upiNote, activeBrand, chosenItem]);
+    return `upi://pay?pa=${encodeURIComponent(effectiveReceiverVpa)}&pn=${encodeURIComponent('AFTERDARK')}&am=${encodeURIComponent(amt)}&cu=INR&tn=${encodeURIComponent(tn)}`;
+  }, [effectiveReceiverVpa, upiAmount, upiNote, activeBrand, chosenItem]);
 
   useEffect(() => {
     if (!isPhoneApp || !showUpiSection) return;
@@ -1696,7 +1700,7 @@ export function InlineCommerceDrawer({
         utr,
         provider: providerLabel,
         buyerVpa: buyerVpa.trim() || 'indus.reviewer@ybl',
-        merchantVpa: upiRecipient.trim() || 'dipayanhaldar3@okaxis',
+        merchantVpa: 'AFTERDARK Verified Store',
         itemName: chosenItem?.name || effectiveSearchQuery,
         brandName: activeBrand.name,
         amount: upiAmount || String(chosenItem?.originalPrice || '199'),
@@ -2351,11 +2355,12 @@ export function InlineCommerceDrawer({
               <>
                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                   <label style={{ flex: 1, minWidth: '170px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <span style={{ fontSize: '0.73rem', color: '#cbd5e1' }}>Merchant / Partner UPI ID:</span>
+                    <span style={{ fontSize: '0.73rem', color: '#cbd5e1' }}>Partner UPI ID (Optional for Couple Gift):</span>
                     <input
                       type="text"
                       value={upiRecipient}
                       onChange={(e) => setUpiRecipient(e.target.value)}
+                      placeholder="partner@ybl (or leave blank for store checkout)"
                       style={{
                         padding: '7px 10px',
                         borderRadius: '8px',
@@ -2390,7 +2395,7 @@ export function InlineCommerceDrawer({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                       <a
-                        href={`phonepe://pay?pa=${encodeURIComponent(upiRecipient.trim())}&pn=${encodeURIComponent('AFTERDARK')}&am=${encodeURIComponent(upiAmount.trim() || '199')}&cu=INR&tn=${encodeURIComponent(upiNote)}`}
+                        href={`phonepe://pay?pa=${encodeURIComponent(effectiveReceiverVpa)}&pn=${encodeURIComponent('AFTERDARK')}&am=${encodeURIComponent(upiAmount.trim() || '199')}&cu=INR&tn=${encodeURIComponent(upiNote)}`}
                         className="ad-book-btn"
                         style={{
                           flex: 1,
@@ -2430,7 +2435,7 @@ export function InlineCommerceDrawer({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
                       <label style={{ flex: 1, minWidth: '180px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <span style={{ fontSize: '0.73rem', color: '#cbd5e1' }}>Enter Your UPI ID (@ybl / @upi / @okaxis):</span>
+                        <span style={{ fontSize: '0.73rem', color: '#cbd5e1' }}>Enter Your UPI ID (@ybl / @upi):</span>
                         <input
                           type="text"
                           value={buyerVpa}
