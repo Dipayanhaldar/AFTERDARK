@@ -1344,11 +1344,25 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
     typeof window !== 'undefined' &&
     /(^|\.)afterdark-guest-connector\.onrender\.com$/i.test(window.location.hostname);
   const isCapacitorNative = isCapacitorNativeOrigin();
+  const configuredApiOrigin =
+    typeof import.meta !== 'undefined' &&
+    import.meta.env &&
+    typeof import.meta.env.VITE_API_BASE_URL === 'string'
+      ? import.meta.env.VITE_API_BASE_URL.trim().replace(/\/+$/, '')
+      : '';
+  const normalizedConfiguredApiOrigin = configuredApiOrigin
+    ? configuredApiOrigin.replace(/\/api$/i, '')
+    : '';
 
+  // Guest pages are separately hosted static assets. Route them to the
+  // canonical API origin even when the invite URL has no ?api= parameter.
+  if (normalizedConfiguredApiOrigin) {
+    addCandidateBase(`${normalizedConfiguredApiOrigin}/api`);
+  }
   if (isRenderStaticHost || isCapacitorNative) {
     addCandidateBase(`${STABLE_PUBLIC_ORIGIN}/api`);
   }
-  if (!isRenderStaticHost && !isCapacitorNative) {
+  if (!isRenderStaticHost && !isCapacitorNative && !normalizedConfiguredApiOrigin) {
     addCandidateBase('/api');
   }
   if (
