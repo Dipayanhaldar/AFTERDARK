@@ -350,7 +350,7 @@ async function verifyFirebaseIdToken(idToken) {
     if (!response.ok) throw new Error('Unable to retrieve Firebase signing certificates.');
     firebaseSigningCerts = await response.json();
     const cacheControl = response.headers.get('cache-control') || '';
-    const maxAge = Number((cacheControl.match(/max-age=(\\d+)/i) || [])[1] || 3600);
+    const maxAge = Number((cacheControl.match(/max-age=(\d+)/i) || [])[1] || 3600);
     firebaseSigningCertsExpiresAt = Date.now() + Math.max(60, maxAge) * 1000;
   }
 
