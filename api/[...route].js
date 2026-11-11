@@ -4,7 +4,8 @@ import {
   randomBytes,
   randomInt,
   scrypt as scryptCb,
-  timingSafeEqual
+  timingSafeEqual,
+  createVerify
 } from 'node:crypto';
 import { promisify } from 'node:util';
 import { getLocalDatabase, ObjectId } from './local-db.js';
@@ -305,6 +306,86 @@ function json(res, status, payload, req = null) {
 
 function hashValue(value) {
   return createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+// Verify Firebase ID tokens using Google's rotating public signing certificates.
+// This avoids storing a Firebase service-account private key on Vercel/Render.
+let firebaseSigningCerts = null;
+let firebaseSigningCertsExpiresAt = 0;
+
+async function verifyFirebaseIdToken(idToken) {
+  if (typeof idToken !== 'string' || !idToken.trim()) {
+    throw new Error('Firebase ID token is required.');
+  }
+
+  const parts = idToken.split('.');
+  if (parts.length !== 3) throw new Error('Malformed Firebase ID token.');
+
+  let header;
+  let claims;
+  try {
+    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+    claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+  } catch {
+    throw new Error('Malformed Firebase ID token.');
+  }
+
+  if (header.alg !== 'RS256' || !header.kid) {
+    throw new Error('Unsupported Firebase ID token signature.');
+  }
+
+  const projectId = String(
+    process.env.FIREBASE_PROJECT_ID ||
+    process.env.VITE_FIREBASE_PROJECT_ID ||
+    process.env.GCLOUD_PROJECT ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    ''
+  ).trim();
+  if (!projectId) throw new Error('Firebase project ID is not configured on the server.');
+
+  if (!firebaseSigningCerts || Date.now() >= firebaseSigningCertsExpiresAt) {
+    const response = await fetch(
+      'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com'
+    );
+    if (!response.ok) throw new Error('Unable to retrieve Firebase signing certificates.');
+    firebaseSigningCerts = await response.json();
+    const cacheControl = response.headers.get('cache-control') || '';
+    const maxAge = Number((cacheControl.match(/max-age=(\\d+)/i) || [])[1] || 3600);
+    firebaseSigningCertsExpiresAt = Date.now() + Math.max(60, maxAge) * 1000;
+  }
+
+  const certificate = firebaseSigningCerts[header.kid];
+  if (!certificate) {
+    firebaseSigningCerts = null;
+    firebaseSigningCertsExpiresAt = 0;
+    throw new Error('Firebase signing key is not recognized. Please retry.');
+  }
+
+  const verifier = createVerify('RSA-SHA256');
+  verifier.update(parts[0] + '.' + parts[1]);
+  verifier.end();
+  if (!verifier.verify(certificate, Buffer.from(parts[2], 'base64url'))) {
+    throw new Error('Firebase ID token signature is invalid.');
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (
+    claims.aud !== projectId ||
+    claims.iss !== `https://securetoken.google.com/${projectId}` ||
+    typeof claims.sub !== 'string' ||
+    !claims.sub ||
+    claims.sub.length > 128 ||
+    !Number.isFinite(claims.exp) ||
+    claims.exp <= now ||
+    !Number.isFinite(claims.iat) ||
+    claims.iat > now + 300 ||
+    !claims.email ||
+    claims.email_verified !== true
+  ) {
+    throw new Error('Firebase ID token claims are invalid or expired.');
+  }
+
+  return claims;
 }
 
 function randomToken(bytes = 24) {
@@ -1007,21 +1088,28 @@ export default async function handler(req, res) {
 
     // Google Account Authentication (Firebase Auth / Google Sign-In)
     if (action === 'auth/google' && req.method === 'POST') {
-      const email = String(body.email || '')
-        .trim()
-        .toLowerCase();
-      const googleUid = String(body.uid || body.sub || '').trim();
-      const photoURL = String(body.photoURL || '').trim();
+      let firebaseClaims;
+      try {
+        firebaseClaims = await verifyFirebaseIdToken(body.idToken);
+      } catch (error) {
+        return json(
+          res,
+          401,
+          { error: error.message || 'Google sign-in verification failed.' },
+          req
+        );
+      }
+
+      // Identity fields are taken only from the verified Firebase token, never from client-supplied profile fields.
+      const email = String(firebaseClaims.email).trim().toLowerCase();
+      const googleUid = String(firebaseClaims.sub).trim();
+      const photoURL = String(firebaseClaims.picture || '').trim();
       const displayName =
-        String(body.displayName || '')
+        String(firebaseClaims.name || '')
           .trim()
           .slice(0, 40) ||
         email.split('@')[0] ||
         'Google Partner';
-
-      if (!email || !email.includes('@')) {
-        return json(res, 400, { error: 'Valid Google Account email is required.' }, req);
-      }
 
       let user = await db.collection('users').findOne({ email });
       const nowIso = new Date().toISOString();
