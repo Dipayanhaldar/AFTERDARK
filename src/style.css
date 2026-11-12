@@ -135,21 +135,8 @@ a {
 
 .ad-brand-mark.ad-animated-logo {
   animation: adBrandAuraPulse 4.6s ease-in-out infinite;
-}
-
-.ad-brand-mark.ad-animated-logo::after {
-  content: '';
-  position: absolute;
-  inset: -40%;
-  background: linear-gradient(
-    120deg,
-    transparent 35%,
-    rgba(255, 255, 255, 0.38) 50%,
-    transparent 65%
-  );
-  transform: translateX(-120%) rotate(18deg);
-  animation: adLogoShimmerSweep 5.8s ease-in-out infinite;
-  pointer-events: none;
+  will-change: transform;
+  transform: translateZ(0);
 }
 
 .ad-brand-mark:hover {
@@ -162,10 +149,11 @@ a {
 .ad-logo-moon-glyph {
   position: relative;
   z-index: 1;
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
   transform-origin: 50% 50%;
-  animation: adMoonCradleFloat 3.8s ease-in-out infinite;
 }
 
 @keyframes adBrandAuraPulse {

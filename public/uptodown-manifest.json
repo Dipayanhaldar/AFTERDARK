@@ -17,9 +17,9 @@
   "category": "Social / Communication / Dating",
   "website_url": "https://afterdark-social-universe.vercel.app",
   "privacy_policy_url": "https://afterdark-social-universe.vercel.app/privacy-policy.html",
-  "github_releases_latest_url": "https://github.com/Dipayanhaldar/AFTERDARK/releases/latest",
-  "direct_apk_download_url": "https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/AFTERDARK-uptodown-universal.apk",
-  "fallback_apk_download_url": "https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk",
+  "github_releases_latest_url": "https://github.com/afterdark-universe/AFTERDARK/releases/latest",
+  "direct_apk_download_url": "https://github.com/afterdark-universe/AFTERDARK/releases/latest/download/AFTERDARK-uptodown-universal.apk",
+  "fallback_apk_download_url": "https://github.com/afterdark-universe/AFTERDARK/releases/latest/download/afterdark.apk",
   "monetization": {
     "uptodown_monetization_enabled": true,
     "pricing_model": "FREE_DOWNLOAD",
@@ -28,5 +28,5 @@
     "commission_free_standalone": true,
     "uptodown_promotional_campaigns_supported": true
   },
-  "updated_at": "2026-11-09T16:59:22.861Z"
+  "updated_at": "2026-11-12T10:11:20.199Z"
 }

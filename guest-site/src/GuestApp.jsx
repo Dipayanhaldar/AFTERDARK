@@ -27,8 +27,11 @@ import {
 import {
   purgeStaleServiceWorkers,
   getClientDeviceId,
+  enableSingleDevicePartnerTestMode,
+  isSingleDevicePartnerTestMode,
   isCurrentDeviceTheLinkGenerator,
   resilientApiRequest,
+  verifyGuestSixDigitOtp,
   subscribeToCoupleSync
 } from './couple-sync';
 import { signInWithGoogleAccount } from './google-auth';
@@ -170,7 +173,7 @@ function mergePhotosStable(prev, incoming) {
   return incoming;
 }
 
-export function GuestApp() {
+export function GuestApp({ onSwitchToHost = null } = {}) {
   const urlContext = useMemo(() => readInviteParamsFromLocation(), []);
   const inviteToken = urlContext.token;
   const storageKey = `${GUEST_TOKEN_PREFIX}${inviteToken || 'default'}`;
@@ -189,12 +192,13 @@ export function GuestApp() {
   );
   const [revokedError, setRevokedError] = useState('');
   const [sameDeviceOrIpBlock, setSameDeviceOrIpBlock] = useState(() => {
+    if (isSingleDevicePartnerTestMode()) return '';
     const myDev = getClientDeviceId();
     if (
       isCurrentDeviceTheLinkGenerator(inviteToken) ||
       (urlContext.cdev && urlContext.cdev === myDev)
     ) {
-      return '🚫 Same-Device Blocked: You generated this Couple Link on this device! One device cannot chat with itself. Please send the QR code or link to your partner’s separate phone/device.';
+      return '🚫 Same-Device Blocked: You generated this Couple Link on this device! One device cannot chat with itself. Send the QR code or link to your partner’s separate phone/device, or tap "Test as Partner on This Device" below.';
     }
     return '';
   });
@@ -330,12 +334,13 @@ export function GuestApp() {
     async function init() {
       const myDev = getClientDeviceId();
       if (
-        isCurrentDeviceTheLinkGenerator(inviteToken) ||
-        (urlContext.cdev && urlContext.cdev === myDev)
+        !isSingleDevicePartnerTestMode() &&
+        (isCurrentDeviceTheLinkGenerator(inviteToken) ||
+          (urlContext.cdev && urlContext.cdev === myDev))
       ) {
         if (mounted) {
           setSameDeviceOrIpBlock(
-            '🚫 Same-Device Blocked: You generated this Couple Link on this device! One device cannot chat with itself. Please send the QR code or link to your partner’s separate phone/device.'
+            '🚫 Same-Device Blocked: You generated this Couple Link on this device! One device cannot chat with itself. Send the QR code or link to your partner’s separate phone/device, or tap "Test as Partner on This Device" below.'
           );
         }
         return;
@@ -356,11 +361,14 @@ export function GuestApp() {
           }
           return;
         }
-        if (data?.invite?.sameDeviceOrIpBlocked || data?.invite?.ownInvite) {
+        if (
+          !isSingleDevicePartnerTestMode() &&
+          (data?.invite?.sameDeviceOrIpBlocked || data?.invite?.ownInvite)
+        ) {
           if (mounted) {
             setSameDeviceOrIpBlock(
               data.invite.blockReason ||
-                '🚫 Security Block: Same Device or Same IP Address Detected! The link generator cannot open or chat as the Guest from the same device or IP network.'
+                '🚫 Security Block: Same Device Detected! The link generator cannot open or chat as the Guest from the same device unless Partner Test Mode is enabled below.'
             );
           }
           return;
@@ -403,6 +411,7 @@ export function GuestApp() {
     let pollInFlight = false;
     const refresh = async () => {
       if (pollInFlight) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       pollInFlight = true;
       try {
         const [messageData, photoData] = await Promise.all([
@@ -528,23 +537,18 @@ export function GuestApp() {
     setBusy(true);
     try {
       const targetToken = inviteToken || 'otp-direct';
-      const data = await api(`/guest/invites/${encodeURIComponent(targetToken)}/approve`, {
-        method: 'POST',
-        body: JSON.stringify({
-          inviteToken: targetToken,
-          guestDisplayName:
-            guestName.trim() || invitePreview?.recipientHint || urlContext.hint || 'Meri Jaan',
-          creatorDisplayName:
-            invitePreview?.creatorDisplayName || urlContext.creator || 'Your Partner',
-          verificationCode: normalizedCode,
-          code: normalizedCode,
-          expectedSignature: urlContext.k || '',
-          creatorDeviceId: urlContext.cdev || '',
-          creatorIp: urlContext.cip || '',
-          deviceId: getClientDeviceId(),
-          ageConfirmed: true,
-          adult: true
-        })
+      const data = await verifyGuestSixDigitOtp({
+        inviteToken: targetToken,
+        verificationCode: normalizedCode,
+        guestDisplayName:
+          guestName.trim() || invitePreview?.recipientHint || urlContext.hint || 'Meri Jaan',
+        creatorDisplayName:
+          invitePreview?.creatorDisplayName || urlContext.creator || 'Your Partner',
+        expectedSignature: urlContext.k || '',
+        creatorDeviceId: urlContext.cdev || '',
+        creatorIp: urlContext.cip || '',
+        allowSameDeviceTest: isSingleDevicePartnerTestMode(),
+        urlContext
       });
 
       const issuedToken = data.guestSessionToken || data.sessionToken;
@@ -854,7 +858,16 @@ export function GuestApp() {
       <header className="ad-header guest-topbar">
         <div className="ad-brand guest-brand">
           <span className="ad-brand-mark guest-moon-icon ad-animated-logo" aria-hidden="true">
-            <span className="ad-logo-moon-glyph">☾</span>
+            <svg
+              className="ad-logo-moon-glyph"
+              viewBox="0 0 24 24"
+              width="22"
+              height="22"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M14.8 3.2C9.7 3.2 5.6 7.3 5.6 12.4C5.6 17.5 9.7 21.6 14.8 21.6C16.7 21.6 18.4 21 19.9 20C18.8 20.4 17.7 20.5 16.5 20.4C11.9 20.1 8.3 16.2 8.5 11.5C8.6 7.4 11.7 4 15.6 3.3C15.4 3.2 15.1 3.2 14.8 3.2Z" />
+            </svg>
           </span>
           <div className="guest-brand-text">
             <p className="ad-brand-title guest-brand-name">AFTERDARK</p>
@@ -872,6 +885,19 @@ export function GuestApp() {
               </span>
             </div>
           )}
+          <button
+            type="button"
+            className="ad-tool-btn guest-tool-btn"
+            onClick={() => {
+              if (typeof onSwitchToHost === 'function') {
+                onSwitchToHost();
+              } else {
+                window.location.href = 'https://afterdark-social-universe.vercel.app/';
+              }
+            }}
+          >
+            👑 Creator / Host Dashboard
+          </button>
           <button
             type="button"
             className={`ad-tool-btn guest-tool-btn ${activeDrawer === 'store' ? 'active' : ''}`}
@@ -951,17 +977,31 @@ export function GuestApp() {
           <section className="ad-section">
             <div className="ad-card ad-narrow guest-otp-card">
               <div className="ad-pill-row guest-pill-row">
-                <span className="ad-pill guest-pill">🚫 SAME DEVICE BLOCKED</span>
-                <span className="ad-pill guest-pill">🔐 TWO SEPARATE DEVICES REQUIRED</span>
+                <span className="ad-pill guest-pill">🚫 SAME DEVICE DETECTED</span>
+                <span className="ad-pill guest-pill">🔐 PARTNER OR TEST MODE</span>
               </div>
               <h1 className="guest-hero-title">One Device Cannot Chat With Itself</h1>
               <p className="ad-lead guest-hero-lead">{sameDeviceOrIpBlock}</p>
-              <div className="ad-cta-row" style={{ marginTop: '16px' }}>
+              <div className="ad-cta-row" style={{ marginTop: '16px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   className="ad-btn ad-btn-primary guest-btn guest-btn-primary"
                   onClick={() => {
-                    window.location.href = '/';
+                    enableSingleDevicePartnerTestMode();
+                    setSameDeviceOrIpBlock('');
+                  }}
+                >
+                  🔓 Test as Partner on This Device (Open 6-Digit OTP Gate) →
+                </button>
+                <button
+                  type="button"
+                  className="ad-btn ad-btn-secondary guest-btn"
+                  onClick={() => {
+                    if (typeof onSwitchToHost === 'function') {
+                      onSwitchToHost();
+                    } else {
+                      window.location.href = 'https://afterdark-social-universe.vercel.app/';
+                    }
                   }}
                 >
                   ← Return to My Host Dashboard

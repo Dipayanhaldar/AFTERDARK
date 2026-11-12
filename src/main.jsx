@@ -32,6 +32,7 @@ import {
   purgeStaleServiceWorkers,
   buildPublicInviteLinks,
   clearCreatorSessionCache,
+  enableSingleDevicePartnerTestMode,
   getClientDeviceId,
   isGuestInviteLocation,
   isInternalPreviewOrigin,
@@ -322,6 +323,7 @@ function App() {
     return saved;
   });
   const [showCustomDomainConfig, setShowCustomDomainConfig] = useState(false);
+  const [showInlineGuestPortal, setShowInlineGuestPortal] = useState(false);
 
   // Single-Invite Generator Form (only accessible when NO invite is active)
   const [generatorForm, setGeneratorForm] = useState({
@@ -523,17 +525,18 @@ function App() {
     if (!currentToken) return;
     try {
       const effectiveUser = explicitUser || user || readCachedUser();
+      const effectiveInvite = activeInvite || readCachedInvite(effectiveUser);
       const queryParams = new URLSearchParams();
       const inviteBelongsToUser =
-        activeInvite &&
-        effectiveUser?.id &&
-        activeInvite.creatorId &&
-        String(activeInvite.creatorId) === String(effectiveUser.id);
+        effectiveInvite &&
+        (!effectiveInvite.creatorId ||
+          !effectiveUser?.id ||
+          String(effectiveInvite.creatorId) === String(effectiveUser.id));
       if (inviteBelongsToUser) {
-        if (activeInvite?.inviteToken) queryParams.set('inviteToken', activeInvite.inviteToken);
-        if (activeInvite?.verificationCode) queryParams.set('otp', activeInvite.verificationCode);
-        if (activeInvite?.partnerCustomName || activeInvite?.recipientHint) {
-          queryParams.set('hint', activeInvite.partnerCustomName || activeInvite.recipientHint);
+        if (effectiveInvite?.inviteToken) queryParams.set('inviteToken', effectiveInvite.inviteToken);
+        if (effectiveInvite?.verificationCode) queryParams.set('otp', effectiveInvite.verificationCode);
+        if (effectiveInvite?.partnerCustomName || effectiveInvite?.recipientHint) {
+          queryParams.set('hint', effectiveInvite.partnerCustomName || effectiveInvite.recipientHint);
         }
       }
       const connBelongsToUser =
@@ -590,21 +593,26 @@ function App() {
         setActiveInvite((prev) => stabilizeInviteState(prev, nextInvite));
       } else if (
         inviteBelongsToUser &&
-        activeInvite?.inviteToken &&
-        activeInvite?.verificationCode &&
-        activeInvite?.status !== 'revoked' &&
+        effectiveInvite?.inviteToken &&
+        effectiveInvite?.verificationCode &&
+        effectiveInvite?.status !== 'revoked' &&
         currentInviteData?.invite?.status !== 'revoked'
       ) {
+        const restoredInvite =
+          resolvedUser?.id && !effectiveInvite.creatorId
+            ? { ...effectiveInvite, creatorId: resolvedUser.id }
+            : effectiveInvite;
+        setActiveInvite((prev) => stabilizeInviteState(prev, restoredInvite));
         // Server cold-started; re-sync the creator's active invite so Guest OTP validation succeeds
         resilientApiRequest(
           '/invites/sync',
           {
             method: 'POST',
-            body: JSON.stringify(activeInvite)
+            body: JSON.stringify(restoredInvite)
           },
           currentToken
         ).catch(() => {});
-      } else {
+      } else if (currentInviteData?.invite?.status === 'revoked') {
         setActiveInvite(null);
         try {
           localStorage.removeItem(INVITE_CACHE_KEY);
@@ -764,19 +772,21 @@ function App() {
     let pollInFlight = false;
     const refresh = async () => {
       if (pollInFlight) return;
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       pollInFlight = true;
       try {
+        const effectiveInvite = activeInvite || readCachedInvite(user);
         const queryParams = new URLSearchParams();
         const inviteBelongsToUser =
-          activeInvite &&
-          user?.id &&
-          activeInvite.creatorId &&
-          String(activeInvite.creatorId) === String(user.id);
+          effectiveInvite &&
+          (!effectiveInvite.creatorId ||
+            !user?.id ||
+            String(effectiveInvite.creatorId) === String(user.id));
         if (inviteBelongsToUser) {
-          if (activeInvite?.inviteToken) queryParams.set('inviteToken', activeInvite.inviteToken);
-          if (activeInvite?.verificationCode) queryParams.set('otp', activeInvite.verificationCode);
-          if (activeInvite?.partnerCustomName || activeInvite?.recipientHint) {
-            queryParams.set('hint', activeInvite.partnerCustomName || activeInvite.recipientHint);
+          if (effectiveInvite?.inviteToken) queryParams.set('inviteToken', effectiveInvite.inviteToken);
+          if (effectiveInvite?.verificationCode) queryParams.set('otp', effectiveInvite.verificationCode);
+          if (effectiveInvite?.partnerCustomName || effectiveInvite?.recipientHint) {
+            queryParams.set('hint', effectiveInvite.partnerCustomName || effectiveInvite.recipientHint);
           }
         }
         const connBelongsToUser =
@@ -1284,6 +1294,10 @@ function App() {
     document.body.appendChild && document.body.removeChild(anchor);
   }
 
+  if (showInlineGuestPortal) {
+    return <GuestApp onSwitchToHost={() => setShowInlineGuestPortal(false)} />;
+  }
+
   return (
     <div className="ad-shell">
       <FlirtyHumanVerificationModal />
@@ -1293,7 +1307,16 @@ function App() {
       <header className="ad-header">
         <div className="ad-brand">
           <span className="ad-brand-mark ad-animated-logo" aria-hidden="true">
-            <span className="ad-logo-moon-glyph">☾</span>
+            <svg
+              className="ad-logo-moon-glyph"
+              viewBox="0 0 24 24"
+              width="22"
+              height="22"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M14.8 3.2C9.7 3.2 5.6 7.3 5.6 12.4C5.6 17.5 9.7 21.6 14.8 21.6C16.7 21.6 18.4 21 19.9 20C18.8 20.4 17.7 20.5 16.5 20.4C11.9 20.1 8.3 16.2 8.5 11.5C8.6 7.4 11.7 4 15.6 3.3C15.4 3.2 15.1 3.2 14.8 3.2Z" />
+            </svg>
           </span>
           <div>
             <p className="ad-brand-title">AFTERDARK</p>
@@ -1303,7 +1326,6 @@ function App() {
           </div>
         </div>
 
-        {/* Clean Navigation: Once signed in, never show Sign-In again, and never mix the Guest Site into the Main Site */}
         <nav className="ad-nav" aria-label="Creator Workspace Navigation">
           {user && (
             <>
@@ -1323,6 +1345,19 @@ function App() {
               </button>
             </>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              enableSingleDevicePartnerTestMode();
+              setShowInlineGuestPortal(true);
+            }}
+            style={{
+              borderColor: 'rgba(255, 179, 107, 0.5)',
+              color: '#fde68a'
+            }}
+          >
+            🔑 Join Partner (Enter 6-Digit OTP)
+          </button>
           {user && (
             <div className="ad-user-chip">
               <span>
@@ -1644,9 +1679,16 @@ function App() {
                     </div>
 
                     <div className="ad-copy-box">
-                      <small>Your Private Partner Invite Link ♥</small>
+                      <small>Your Private Partner Invite Link (Primary Guest Portal) ♥</small>
                       <code>{guestInviteLink}</code>
                     </div>
+
+                    {inviteLinks.guestAppUrl && inviteLinks.guestAppUrl !== guestInviteLink && (
+                      <div className="ad-copy-box" style={{ marginTop: '8px' }}>
+                        <small>Dedicated Guest Connector Site (guest-site) ♥</small>
+                        <code>{inviteLinks.guestAppUrl}</code>
+                      </div>
+                    )}
 
                     <div className="ad-cta-row">
                       <button
@@ -1655,6 +1697,31 @@ function App() {
                         onClick={() => copyText(guestInviteLink, 'Partner Invite Link')}
                       >
                         📋 Copy Link to Send to Partner
+                      </button>
+
+                      {inviteLinks.guestAppUrl && inviteLinks.guestAppUrl !== guestInviteLink && (
+                        <button
+                          type="button"
+                          className="ad-btn ad-btn-secondary"
+                          onClick={() => copyText(inviteLinks.guestAppUrl, 'Guest Connector Site Link')}
+                        >
+                          📋 Copy Guest Connector Link
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="ad-btn ad-btn-secondary"
+                        onClick={() => {
+                          enableSingleDevicePartnerTestMode();
+                          if (guestInviteLink && !isAndroidApkRuntime()) {
+                            window.location.href = guestInviteLink;
+                          } else {
+                            setShowInlineGuestPortal(true);
+                          }
+                        }}
+                      >
+                        🔑 Open Guest OTP Portal
                       </button>
 
                       {typeof navigator !== 'undefined' && navigator.share && (
@@ -1825,7 +1892,7 @@ function App() {
                 <h2>Your Partner Hasn&apos;t Entered the OTP Yet</h2>
                 <p className="ad-muted">
                   Share your unique QR code or Guest Website Link and the 6-digit OTP (
-                  <strong>{activeInvite?.verificationCode || '—'}</strong>) with your partner. As soon as they verify the OTP on the Guest Website, your private chat will open here automatically!
+                  <strong>{activeInvite?.verificationCode || readCachedInvite(user)?.verificationCode || '—'}</strong>) with your partner. As soon as they verify the OTP on the Guest Website, your private chat will open here automatically!
                 </p>
                 <div className="ad-cta-row">
                   <button
@@ -1834,6 +1901,16 @@ function App() {
                     onClick={() => setTab('invite')}
                   >
                     ← Back to My Link &amp; QR Code
+                  </button>
+                  <button
+                    type="button"
+                    className="ad-btn ad-btn-secondary"
+                    onClick={() => {
+                      enableSingleDevicePartnerTestMode();
+                      setShowInlineGuestPortal(true);
+                    }}
+                  >
+                    🔑 Open Guest OTP Portal (Test Pairing) →
                   </button>
                 </div>
               </div>

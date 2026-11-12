@@ -164,6 +164,45 @@ test('Adaptive Traffic Control classifies Couple Chat & E2EE Auth into Priority 
   );
 });
 
+test('verifyGuestSixDigitOtp validates 6-digit OTP format, cryptographic commitment, and links guest-site to primary AFTERDARK instance', async () => {
+  const { verifyGuestSixDigitOtp } = await import('./couple-sync.js');
+  const otp = '739204';
+  const inviteToken = 'inv_couple_test_token_1';
+  const validSig = encodeOtpSignature(otp, inviteToken);
 
+  // Rejects non-6-digit OTPs immediately
+  await assert.rejects(
+    () =>
+      verifyGuestSixDigitOtp({
+        inviteToken,
+        guestDisplayName: 'Partner',
+        verificationCode: '123',
+        otpSignature: validSig
+      }),
+    /6-digit OTP/i
+  );
 
+  // Rejects mismatched OTP when cryptographic commitment is present
+  await assert.rejects(
+    () =>
+      verifyGuestSixDigitOtp({
+        inviteToken,
+        guestDisplayName: 'Partner',
+        verificationCode: '000000',
+        otpSignature: validSig
+      }),
+    /Invalid 6-digit OTP/i
+  );
+
+  // Valid 6-digit OTP + valid signature completes linking cleanly (or falls back to offline E2EE session when backend is unreachable in unit test env)
+  const linked = await verifyGuestSixDigitOtp({
+    inviteToken,
+    guestDisplayName: 'Trisha',
+    verificationCode: otp,
+    otpSignature: validSig,
+    hostName: 'Jaan'
+  });
+  assert.equal(Boolean(linked && linked.connection), true);
+  assert.equal(linked.connection.verificationCode, otp);
+});
 

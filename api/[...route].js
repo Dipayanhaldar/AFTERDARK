@@ -138,6 +138,7 @@ function issueSignedGuestToken({
   return signTokenPayload('ad_g2', {
     cid: String(connectionId),
     inv: String(inviteToken || ''),
+    otp: String(verificationCode || '').slice(0, 6),
     otpHash: hashValue(String(verificationCode || '')),
     dev: String(guestDeviceId || ''),
     name: String(guestDisplayName || 'Meri Jaan').slice(0, 40),
@@ -432,6 +433,31 @@ async function getGuestFromRequest(req, db) {
         ? new ObjectId(String(verifiedGuest.cid))
         : verifiedGuest.cid;
       connection = await db.collection('connections').findOne({ _id: cid });
+      if (!connection && verifiedGuest.inv) {
+        connection = await db.collection('connections').findOne({
+          inviteToken: verifiedGuest.inv,
+          status: 'active'
+        });
+      }
+      if (!connection && verifiedGuest.otp) {
+        const nowIso = new Date().toISOString();
+        const channelId = buildChannelId(verifiedGuest.inv || verifiedGuest.otp, String(cid));
+        await db.collection('connections').insertOne({
+          _id: cid,
+          creatorId: null,
+          creatorDisplayName: 'Your Partner',
+          guestDisplayName: verifiedGuest.name || 'Meri Jaan',
+          guestDeviceId: verifiedGuest.dev || '',
+          recipientHint: verifiedGuest.name || 'Meri Jaan',
+          inviteToken: verifiedGuest.inv || `otp_${verifiedGuest.otp}`,
+          verificationCode: verifiedGuest.otp,
+          channelId,
+          status: 'active',
+          createdAt: nowIso,
+          approvedAt: nowIso
+        });
+        connection = await db.collection('connections').findOne({ _id: cid });
+      }
       if (connection && connection.status === 'active') {
         guestSession = {
           tokenHash,
@@ -1005,6 +1031,42 @@ export default async function handler(req, res) {
       );
     }
 
+    // Public Firebase Client Config Discovery (never exposes server secrets)
+    if (action === 'auth/firebase-config' && req.method === 'GET') {
+      const apiKey = String(
+        process.env.VITE_FIREBASE_API_KEY || process.env.FIREBASE_API_KEY || ''
+      ).trim();
+      const projectId = String(
+        process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || ''
+      ).trim();
+      const authDomain = String(
+        process.env.VITE_FIREBASE_AUTH_DOMAIN ||
+          process.env.FIREBASE_AUTH_DOMAIN ||
+          (projectId ? `${projectId}.firebaseapp.com` : '')
+      ).trim();
+      const appId = String(
+        process.env.VITE_FIREBASE_APP_ID || process.env.FIREBASE_APP_ID || ''
+      ).trim();
+      const googleClientId = String(
+        process.env.VITE_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || ''
+      ).trim();
+      return json(
+        res,
+        200,
+        {
+          configured: Boolean(apiKey && projectId),
+          config: {
+            apiKey,
+            authDomain,
+            projectId,
+            appId,
+            googleClientId
+          }
+        },
+        req
+      );
+    }
+
     // Google Account Authentication (Firebase Auth / Google Sign-In)
     if (action === 'auth/google' && req.method === 'POST') {
       const email = String(body.email || '')
@@ -1562,15 +1624,21 @@ export default async function handler(req, res) {
         );
       }
 
-      // Step 3: Enforce Same-Device Security Block (One device cannot chat with itself!)
+      // Step 3: Enforce Same-Device Security Block (unless Reviewer / Partner Test Mode is explicitly enabled)
+      const allowSameDeviceTest = Boolean(body.allowSameDeviceTest);
       const effectiveCreatorDev = invite?.creatorDeviceId || String(body.creatorDeviceId || '').trim();
-      if (guestDeviceId && effectiveCreatorDev && guestDeviceId === effectiveCreatorDev) {
+      if (
+        !allowSameDeviceTest &&
+        guestDeviceId &&
+        effectiveCreatorDev &&
+        guestDeviceId === effectiveCreatorDev
+      ) {
         return json(
           res,
           403,
           {
             error:
-              '🚫 Security Block: One device cannot chat with itself! You generated this Couple Link on this device. Please send the QR code or link to your partner’s separate phone/device.'
+              '🚫 Security Block: One device cannot chat with itself! You generated this Couple Link on this device. Send the QR code or link to your partner’s separate phone/device, or tap "Test as Partner on This Device" to preview.'
           },
           req
         );
@@ -1588,22 +1656,11 @@ export default async function handler(req, res) {
       }
 
       // Step 4b: If server cold-started and invite wasn't in DB, rehydrate from inviteToken + 6-digit OTP
+      // (Supports both full invite link tokens AND direct 6-digit OTP entry on guest-site)
       if (!invite) {
         const expectedSig = String(body.expectedSignature || '').trim();
-        if (!rawToken || rawToken === 'otp-direct') {
-          recordSecurityFailure(otpLockoutKey);
-          return json(
-            res,
-            401,
-            {
-              error:
-                'No active host session matches this 6-digit OTP. Please check the 6-digit code on your partner’s screen or scan their QR code.'
-            },
-            req
-          );
-        }
-
-        if (expectedSig && !verifyOtpSignature(suppliedOtp, rawToken, expectedSig)) {
+        const isDirectOtpEntry = !rawToken || rawToken === 'otp-direct';
+        if (!isDirectOtpEntry && expectedSig && !verifyOtpSignature(suppliedOtp, rawToken, expectedSig)) {
           recordSecurityFailure(otpLockoutKey);
           return json(
             res,
@@ -1613,9 +1670,10 @@ export default async function handler(req, res) {
           );
         }
 
+        const effectiveRehydratedToken = isDirectOtpEntry ? `otp_${suppliedOtp}` : rawToken;
         const insertedInvite = await db.collection('invites').insertOne({
-          inviteToken: rawToken,
-          tokenHash: hashValue(rawToken),
+          inviteToken: effectiveRehydratedToken,
+          tokenHash: hashValue(effectiveRehydratedToken),
           verificationCode: suppliedOtp,
           codeHash: hashValue(suppliedOtp),
           creatorId: null,
@@ -2158,15 +2216,21 @@ export default async function handler(req, res) {
         .slice(0, 6);
 
       // Only allow cold-start invite/connection rehydration when tokenHint + otpHint belong to this creator
-      // or were created with creatorId: null during a serverless cold-start.
+      // or were created with creatorId: null during a serverless cold-start or direct 6-digit OTP verification.
       // NEVER adopt connections or invites owned by another creatorId!
-      if (tokenHint && otpHint.length === 6) {
-        const existingInvite = await db.collection('invites').findOne({ inviteToken: tokenHint });
+      if (otpHint.length === 6) {
+        const effectiveTokenHint = tokenHint || `otp_${otpHint}`;
+        const existingInvite = await db.collection('invites').findOne({
+          $or: [
+            ...(tokenHint ? [{ inviteToken: tokenHint }] : []),
+            { creatorId: null, verificationCode: otpHint }
+          ]
+        });
         let belongsToCreator = false;
         if (!existingInvite) {
           await db.collection('invites').insertOne({
-            inviteToken: tokenHint,
-            tokenHash: hashValue(tokenHint),
+            inviteToken: effectiveTokenHint,
+            tokenHash: hashValue(effectiveTokenHint),
             verificationCode: otpHint,
             codeHash: hashValue(otpHint),
             creatorId: creator._id,
@@ -2180,7 +2244,12 @@ export default async function handler(req, res) {
         } else if (!existingInvite.creatorId && verifyOtpMatchesInvite(existingInvite, otpHint)) {
           await db.collection('invites').updateOne(
             { _id: existingInvite._id, creatorId: null },
-            { $set: { creatorId: creator._id } }
+            {
+              $set: {
+                creatorId: creator._id,
+                ...(tokenHint ? { inviteToken: tokenHint, tokenHash: hashValue(tokenHint) } : {})
+              }
+            }
           );
           belongsToCreator = true;
         } else if (
@@ -2195,11 +2264,16 @@ export default async function handler(req, res) {
           await db.collection('connections').updateMany(
             {
               creatorId: null,
-              inviteToken: tokenHint,
               verificationCode: otpHint,
               status: 'active'
             },
-            { $set: { creatorId: creator._id } }
+            {
+              $set: {
+                creatorId: creator._id,
+                creatorDisplayName: creator.displayName,
+                ...(tokenHint ? { inviteToken: tokenHint } : {})
+              }
+            }
           );
         }
       }
@@ -2230,7 +2304,7 @@ export default async function handler(req, res) {
         ? { $or: [{ _id: new ObjectId(rawConnId) }, { _id: rawConnId }] }
         : { $or: [{ _id: rawConnId }, { id: rawConnId }, { channelId: rawConnId }] };
 
-      const connection = await db.collection('connections').findOne(idQuery);
+      let connection = await db.collection('connections').findOne(idQuery);
 
       // Strict Ownership Verification: NEVER allow Account B to read, adopt, or write Account A's or unowned connections!
       if (
@@ -2247,6 +2321,33 @@ export default async function handler(req, res) {
           },
           req
         );
+      }
+
+      // Cold-start serverless rehydration when Creator supplies their own verified inviteToken + 6-digit OTP
+      if (!connection) {
+        const tokenHint = String(url.searchParams.get('inviteToken') || '').trim();
+        const otpHint = String(url.searchParams.get('otp') || '')
+          .replace(/\D/g, '')
+          .slice(0, 6);
+        const peerHint = String(url.searchParams.get('peer') || 'Meri Jaan').trim();
+        if (tokenHint && otpHint.length === 6) {
+          const nowIso = new Date().toISOString();
+          const newId = isHexObjectId ? new ObjectId(rawConnId) : rawConnId;
+          await db.collection('connections').insertOne({
+            _id: newId,
+            creatorId: creator._id,
+            creatorDisplayName: creator.displayName,
+            guestDisplayName: peerHint,
+            recipientHint: peerHint,
+            inviteToken: tokenHint,
+            verificationCode: otpHint,
+            channelId: buildChannelId(tokenHint, String(rawConnId)),
+            status: 'active',
+            createdAt: nowIso,
+            approvedAt: nowIso
+          });
+          connection = await db.collection('connections').findOne({ _id: newId });
+        }
       }
 
       if (!connection) {

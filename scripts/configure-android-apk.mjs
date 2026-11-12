@@ -285,6 +285,9 @@ function renderStoreBannerPng(width, height, variant = 0) {
 function generateWebAndStorePngIcons() {
   try {
     fs.mkdirSync(PUBLIC_DIR, { recursive: true });
+    const guestPublicDir = path.join(ROOT_DIR, 'guest-site', 'public');
+    fs.mkdirSync(guestPublicDir, { recursive: true });
+
     const icon192 = renderAfterDarkIconPng(192, 'store');
     const icon512 = renderAfterDarkIconPng(512, 'store');
     const featureGraphic = renderStoreBannerPng(1024, 500, 0);
@@ -293,10 +296,16 @@ function generateWebAndStorePngIcons() {
     fs.writeFileSync(path.join(PUBLIC_DIR, 'afterdark-icon-512x512.png'), icon512);
     fs.writeFileSync(path.join(PUBLIC_DIR, 'feature-graphic-1024x500.png'), featureGraphic);
 
+    // Also keep guest-site/public icons in sync with the dot-free crescent moon
+    fs.writeFileSync(path.join(guestPublicDir, 'icon-192.png'), icon192);
+    fs.writeFileSync(path.join(guestPublicDir, 'icon-512.png'), icon512);
+    fs.writeFileSync(path.join(guestPublicDir, 'afterdark-icon-512x512.png'), icon512);
+
     const runNumber = Math.max(0, Number.parseInt(process.env.GITHUB_RUN_NUMBER || '0', 10) || 0);
     const resolvedVersionCode = 202608 + runNumber;
     const resolvedVersionName = runNumber > 0 ? `2.0.2.${8 + runNumber}` : '2.0.2.8';
     const resolvedAppName = String(process.env.ANDROID_APP_NAME || 'AFTERDARK').trim();
+    const repoSlug = String(process.env.GITHUB_REPOSITORY || 'afterdark-universe/AFTERDARK').trim();
 
     const uptodownManifest = {
       app_name: resolvedAppName,
@@ -312,11 +321,9 @@ function generateWebAndStorePngIcons() {
       category: 'Social / Communication / Dating',
       website_url: 'https://afterdark-social-universe.vercel.app',
       privacy_policy_url: 'https://afterdark-social-universe.vercel.app/privacy-policy.html',
-      github_releases_latest_url: 'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest',
-      direct_apk_download_url:
-        'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/AFTERDARK-uptodown-universal.apk',
-      fallback_apk_download_url:
-        'https://github.com/Dipayanhaldar/AFTERDARK/releases/latest/download/afterdark.apk',
+      github_releases_latest_url: `https://github.com/${repoSlug}/releases/latest`,
+      direct_apk_download_url: `https://github.com/${repoSlug}/releases/latest/download/AFTERDARK-uptodown-universal.apk`,
+      fallback_apk_download_url: `https://github.com/${repoSlug}/releases/latest/download/afterdark.apk`,
       monetization: {
         uptodown_monetization_enabled: true,
         pricing_model: 'FREE_DOWNLOAD',
@@ -334,7 +341,7 @@ function generateWebAndStorePngIcons() {
     );
 
     console.log(
-      '[configure-android-apk] Generated dot-free public/icon-192.png, public/icon-512.png, public/afterdark-icon-512x512.png, public/feature-graphic-1024x500.png, and public/uptodown-manifest.json.'
+      '[configure-android-apk] Generated dot-free public/icon-192.png, public/icon-512.png, public/afterdark-icon-512x512.png, guest-site/public icons, public/feature-graphic-1024x500.png, and public/uptodown-manifest.json.'
     );
   } catch (err) {
     console.warn('[configure-android-apk] Could not write public PNG icons:', err?.message);

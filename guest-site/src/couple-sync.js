@@ -59,8 +59,29 @@ export function getClientDeviceId() {
   }
 }
 
+export function enableSingleDevicePartnerTestMode() {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem('afterdark_allow_partner_test_v1', 'true');
+  } catch {
+    // ignore
+  }
+}
+
+export function isSingleDevicePartnerTestMode() {
+  if (typeof window === 'undefined') return false;
+  try {
+    return sessionStorage.getItem('afterdark_allow_partner_test_v1') === 'true';
+  } catch {
+    return false;
+  }
+}
+
 export function isCurrentDeviceTheLinkGenerator(inviteToken = '') {
   if (typeof window === 'undefined') return false;
+  if (isSingleDevicePartnerTestMode()) return false;
+  const cleanToken = String(inviteToken || '').trim();
+  if (!cleanToken || cleanToken === 'otp-direct') return false;
   try {
     const activeCreatorSession = localStorage.getItem(CREATOR_SESSION_KEY);
     const cachedInviteRaw = localStorage.getItem(CREATOR_INVITE_CACHE_KEY);
@@ -69,7 +90,7 @@ export function isCurrentDeviceTheLinkGenerator(inviteToken = '') {
       if (
         cachedInvite &&
         cachedInvite.status !== 'revoked' &&
-        (!inviteToken || cachedInvite.inviteToken === inviteToken)
+        cachedInvite.inviteToken === cleanToken
       ) {
         return true;
       }
@@ -79,7 +100,7 @@ export function isCurrentDeviceTheLinkGenerator(inviteToken = '') {
       const myDeviceId = getClientDeviceId();
       const foundInvite = (state.invites || []).find(
         (i) =>
-          (!inviteToken || i.inviteToken === inviteToken) &&
+          i.inviteToken === cleanToken &&
           (i.creatorDeviceId === myDeviceId || i.status === 'pending' || i.status === 'active')
       );
       if (foundInvite) return true;
@@ -779,9 +800,9 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
       cleanPath === 'guest/verify-otp'
         ? String(body.inviteToken || body.token || 'otp-direct').trim()
         : decodeURIComponent(parts[0] === 'guest' ? parts[2] : parts[1]);
-    if (isCurrentDeviceTheLinkGenerator(rawToken)) {
+    if (!body.allowSameDeviceTest && isCurrentDeviceTheLinkGenerator(rawToken)) {
       throw new Error(
-        '🚫 Security Block: One device cannot chat with itself! You generated this Couple Link on this device. Please open the link on your partner’s separate device.'
+        '🚫 Security Block: One device cannot chat with itself! You generated this Couple Link on this device. Please open the link on your partner’s separate device, or tap "Test as Partner on This Device".'
       );
     }
     const suppliedOtp = String(body.verificationCode || body.code || body.otp || '')
@@ -827,17 +848,15 @@ function executeLocalFallback(path, options = {}, token = '', urlContext = {}) {
       throw new Error('Invalid 6-digit OTP! Please enter the exact 6-digit code shown on your partner’s screen.');
     }
     if (!invite) {
-      if (!rawToken || rawToken === 'otp-direct') {
-        throw new Error(
-          'No active host session matches this 6-digit OTP. Please check the 6-digit code on your partner’s screen.'
-        );
-      }
-      if (sigFromUrl && !verifyOtpSignature(suppliedOtp, rawToken, sigFromUrl)) {
+      const isDirect = !rawToken || rawToken === 'otp-direct';
+      if (!isDirect && sigFromUrl && !verifyOtpSignature(suppliedOtp, rawToken, sigFromUrl)) {
         throw new Error('Invalid 6-digit OTP for this invite link. Please check with your partner.');
       }
     }
 
-    const effectiveToken = invite?.inviteToken || rawToken;
+    const effectiveToken =
+      invite?.inviteToken ||
+      (rawToken && rawToken !== 'otp-direct' ? rawToken : `otp_${suppliedOtp}`);
     const channelId = `chan_${String(effectiveToken).replace(/[^a-zA-Z0-9]/g, '').slice(0, 14)}`;
 
     saveSessionE2eeContext(effectiveToken, {
@@ -1331,12 +1350,8 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
     if (cleanOrigin.includes('://ais-dev-')) {
       cleanOrigin = cleanOrigin.replace('://ais-dev-', '://ais-pre-');
     }
-    if (
-      typeof window !== 'undefined' &&
-      cleanOrigin &&
-      cleanOrigin !== window.location.origin
-    ) {
-      addCandidateBase(`${cleanOrigin}/api`);
+    if (cleanOrigin) {
+      addCandidateBase(`${cleanOrigin.replace(/\/api$/i, '')}/api`);
     }
   }
 
@@ -1344,26 +1359,30 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
     typeof window !== 'undefined' &&
     /(^|\.)afterdark-guest-connector\.onrender\.com$/i.test(window.location.hostname);
   const isCapacitorNative = isCapacitorNativeOrigin();
-  const configuredApiOrigin =
-    typeof import.meta !== 'undefined' &&
-    import.meta.env &&
-    typeof import.meta.env.VITE_API_BASE_URL === 'string'
-      ? import.meta.env.VITE_API_BASE_URL.trim().replace(/\/+$/, '')
-      : '';
-  const normalizedConfiguredApiOrigin = configuredApiOrigin
-    ? configuredApiOrigin.replace(/\/api$/i, '')
+  const envObj = (typeof import.meta !== 'undefined' && import.meta.env) || {};
+  const rawConfiguredOrigin = String(
+    envObj.VITE_API_BASE_URL ||
+      envObj.VITE_MAIN_APP_URL ||
+      envObj.VITE_PRIMARY_APP_URL ||
+      envObj.VITE_AFTERDARK_PRIMARY_URL ||
+      ''
+  )
+    .trim()
+    .replace(/\/+$/, '');
+  const normalizedConfiguredApiOrigin = rawConfiguredOrigin
+    ? rawConfiguredOrigin.replace(/\/api$/i, '')
     : '';
 
   // Guest pages are separately hosted static assets. Route them to the
-  // canonical API origin even when the invite URL has no ?api= parameter.
+  // canonical primary AFTERDARK API origin using available environment variables.
   if (normalizedConfiguredApiOrigin) {
     addCandidateBase(`${normalizedConfiguredApiOrigin}/api`);
   }
+  if (!isRenderStaticHost && !isCapacitorNative) {
+    addCandidateBase('/api');
+  }
   if (isRenderStaticHost || isCapacitorNative) {
     addCandidateBase(`${STABLE_PUBLIC_ORIGIN}/api`);
-  }
-  if (!isRenderStaticHost && !isCapacitorNative && !normalizedConfiguredApiOrigin) {
-    addCandidateBase('/api');
   }
   if (
     typeof window !== 'undefined' &&
@@ -1473,3 +1492,110 @@ export async function resilientApiRequest(path, options = {}, token = '', urlCon
   const fallbackData = executeLocalFallback(path, requestOptions, token, urlContext);
   return await postProcessE2eeResponse(fallbackData, cleanPath, urlContext);
 }
+
+/**
+ * Core 6-Digit OTP Verification Engine linking `guest-site` (or `/guest`)
+ * to the primary AFTERDARK instance using configured environment variables
+ * (`VITE_API_BASE_URL`, `VITE_MAIN_APP_URL`, `VITE_PRIMARY_APP_URL`) and URL context.
+ */
+export async function verifyGuestSixDigitOtp({
+  inviteToken = '',
+  verificationCode = '',
+  guestDisplayName = 'Meri Jaan',
+  creatorDisplayName = 'Your Partner',
+  hostName = '',
+  expectedSignature = '',
+  otpSignature = '',
+  creatorDeviceId = '',
+  creatorIp = '',
+  allowSameDeviceTest = false,
+  urlContext = {}
+} = {}) {
+  const normalizedCode = String(verificationCode || '')
+    .replace(/\D/g, '')
+    .slice(0, 6);
+  if (normalizedCode.length !== 6) {
+    throw new Error('Please enter the 6-digit OTP shared by your partner.');
+  }
+
+  const targetToken = String(inviteToken || urlContext?.token || 'otp-direct').trim() || 'otp-direct';
+  const resolvedSig = String(expectedSignature || otpSignature || urlContext?.k || '').trim();
+  if (
+    targetToken &&
+    targetToken !== 'otp-direct' &&
+    resolvedSig &&
+    !verifyOtpSignature(normalizedCode, targetToken, resolvedSig)
+  ) {
+    throw new Error('Invalid 6-digit OTP for this invite link. Please check with your partner.');
+  }
+
+  const effectiveAllowSameDevice = Boolean(allowSameDeviceTest || isSingleDevicePartnerTestMode());
+  const resolvedHostName =
+    String(creatorDisplayName || hostName || urlContext?.creator || 'Your Partner').trim() ||
+    'Your Partner';
+  const payload = {
+    inviteToken: targetToken,
+    token: targetToken,
+    guestDisplayName: String(guestDisplayName || urlContext?.hint || 'Meri Jaan').trim() || 'Meri Jaan',
+    creatorDisplayName: resolvedHostName,
+    verificationCode: normalizedCode,
+    otpCode: normalizedCode,
+    code: normalizedCode,
+    otp: normalizedCode,
+    expectedSignature: resolvedSig,
+    creatorDeviceId: String(creatorDeviceId || urlContext?.cdev || '').trim(),
+    creatorIp: String(creatorIp || urlContext?.cip || '').trim(),
+    allowSameDeviceTest: effectiveAllowSameDevice,
+    deviceId: getClientDeviceId(),
+    ageConfirmed: true,
+    adult: true
+  };
+
+  const mergedUrlContext = {
+    ...urlContext,
+    token: targetToken,
+    otp: normalizedCode,
+    k: resolvedSig
+  };
+
+  let data = null;
+  try {
+    data = await resilientApiRequest(
+      '/guest/verify-otp',
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      },
+      '',
+      mergedUrlContext
+    );
+  } catch (primaryErr) {
+    // Fallback to token-scoped approval route on the primary AFTERDARK instance
+    data = await resilientApiRequest(
+      `/guest/invites/${encodeURIComponent(targetToken)}/approve`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      },
+      '',
+      mergedUrlContext
+    ).catch(() => {
+      throw primaryErr;
+    });
+  }
+
+  const resolvedToken = data?.connection?.inviteToken || targetToken;
+  saveSessionE2eeContext(resolvedToken, {
+    verificationCode: normalizedCode,
+    locked: false
+  });
+  if (targetToken && targetToken !== resolvedToken) {
+    saveSessionE2eeContext(targetToken, {
+      verificationCode: normalizedCode,
+      locked: false
+    });
+  }
+
+  return data;
+}
+
